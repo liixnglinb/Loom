@@ -1,0 +1,44 @@
+/* ============================================================
+   ModelFlow · 丝滑过渡层（V+1 叠加层，不侵入原 style.css 规则）
+   原理：#view 容器内容由 SPA hash 路由整块替换（innerHTML）。
+   本层用 MutationObserver 监听容器子树替换，自动播放入场动画；
+   同时为按钮 / 卡片 / 输入控件补通用微过渡。
+   prefers-reduced-motion 用户自动降级为无动画。
+   ============================================================ */
+
+/* ---------- 视图入场动画 ---------- */
+
+  to   { opacity: 1; }
+}
+
+
+/* 视图离场：下一次替换前先淡出（由脚本控制时序） */
+
+
+/* ---------- 控件微过渡（基于既有 class，不改原规则） ---------- */
+button, .tn-link, .pill, .card, .tool-card, .chip,
+input[type="text"], input[type="password"], input[type="number"],
+select, textarea {
+  transition: background-color .16s ease, border-color .16s ease,
+              color .16s ease, box-shadow .16s ease, transform .12s ease,
+              opacity .16s ease;
+}
+button:active, .pill:active, .tn-link:active { transform: scale(.97); }
+
+/* 卡片悬浮轻抬（只对原本就有 hover 反馈的卡片类生效，避免无意义动效） */
+.card:hover, .tool-card:hover { transform: translateY(-1px); }
+
+/* 对话框 / 弹层的出现动画（若既有 .modal/.dialog 结构则自动生效） */
+
+
+/* toast 轻滑入 */
+.toast { transition: opacity .2s ease, transform .2s cubic-bezier(.22,.61,.36,1); }
+
+/* ---------- 无障碍：用户偏好减少动效时全部关闭 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  
+  
+  button, .pill, .card, .tool-card { transition: none; }
+  button:active, .pill:active { transform: none; }
+  .card:hover, .tool-card:hover { transform: none; }
+}
