@@ -124,121 +124,6 @@ COMPETITION_STEPS = [
      "check": "step_audit.py improve"},
 ]
 
-# ---------------- 非竞赛流水线（10 套） ----------------
-# 每步：skill 对应桌面 skills/<skill>/SKILL.md；out 为该步主产物文件；
-# role∈executor/reviewer/editor，映射到设置页角色模型；check 为空则跳过自检。
-NON_COMPETITION_STEPS = {
-    "idea_discovery": [
-        {"key": "lit", "label": "文献调研", "skill": "research-lit",
-         "out": "LITERATURE_REVIEW.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "idea", "label": "头脑风暴", "skill": "idea-creator",
-         "out": "IDEA_SHORTLIST.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "novelty", "label": "验新颖性", "skill": "novelty-check",
-         "out": "NOVELTY_CHECK.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "review", "label": "方案评审", "skill": "research-review",
-         "out": "REVIEW.md", "checkpoint": False, "role": "reviewer", "check": ""},
-        {"key": "refine", "label": "方案细化", "skill": "research-refine",
-         "out": "IDEA_REPORT.md", "checkpoint": True, "role": "executor", "check": ""},
-    ],
-    "experiment_bridge": [
-        {"key": "plan", "label": "实验方案", "skill": "experiment-plan",
-         "out": "EXPERIMENT_PLAN.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "run", "label": "跑实验", "skill": "run-experiment",
-         "out": "RESULTS.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "monitor", "label": "监测实验", "skill": "monitor-experiment",
-         "out": "EXPERIMENT_LOG.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "analyze", "label": "结果分析", "skill": "analyze-results",
-         "out": "ANALYSIS.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "figure", "label": "论文图表", "skill": "paper-figure",
-         "out": "FIGURES.md", "checkpoint": True, "role": "executor", "check": ""},
-    ],
-    "auto_review": [
-        {"key": "analyze", "label": "论文分析", "skill": "paper-analysis",
-         "out": "ANALYSIS.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "quality", "label": "质量审查", "skill": "quality-check",
-         "out": "QUALITY_REVIEW.md", "checkpoint": False, "role": "reviewer", "check": ""},
-        {"key": "loop", "label": "自动评审循环", "skill": "auto-review-loop",
-         "out": "AUTO_REVIEW.md", "checkpoint": True, "role": "reviewer", "check": ""},
-        {"key": "rebuttal", "label": "审稿回应", "skill": "rebuttal",
-         "out": "REBUTTAL.md", "checkpoint": False, "role": "executor", "check": ""},
-    ],
-    "paper_writing": [
-        {"key": "plan", "label": "大纲规划", "skill": "paper-plan",
-         "out": "PAPER_PLAN.md", "checkpoint": True, "role": "executor", "check": ""},
-        {"key": "analyze", "label": "数据分析", "skill": "paper-analysis",
-         "out": "RESULTS.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "figure", "label": "图表生成", "skill": "paper-figure",
-         "out": "FIGURES.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "paper", "label": "正文撰写", "skill": "paper-write",
-         "out": "paper/main.md", "checkpoint": True, "role": "editor", "check": ""},
-        {"key": "compile", "label": "编译 PDF", "skill": "paper-compile",
-         "out": "paper/main.pdf", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "improve", "label": "论文改进循环", "skill": "auto-paper-improvement-loop",
-         "out": "IMPROVED_PAPER.md", "checkpoint": False, "role": "executor", "check": ""},
-    ],
-    "full_pipeline": [
-        {"key": "lit", "label": "文献调研", "skill": "research-lit",
-         "out": "LITERATURE_REVIEW.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "refine", "label": "方案细化", "skill": "research-refine",
-         "out": "METHOD_PLAN.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "review", "label": "评审改进", "skill": "auto-review-loop",
-         "out": "AUTO_REVIEW.md", "checkpoint": True, "role": "reviewer", "check": ""},
-        {"key": "paper", "label": "正文撰写", "skill": "paper-write",
-         "out": "paper/main.md", "checkpoint": True, "role": "editor", "check": ""},
-        {"key": "compile", "label": "编译 PDF", "skill": "paper-compile",
-         "out": "paper/main.pdf", "checkpoint": False, "role": "executor", "check": ""},
-    ],
-    "thesis_proposal": [
-        {"key": "lit", "label": "文献调研", "skill": "literature-review",
-         "out": "LITERATURE_REVIEW.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "proposal", "label": "开题撰写", "skill": "thesis-proposal",
-         "out": "THESIS_PROPOSAL.md", "checkpoint": True, "role": "editor", "check": ""},
-        {"key": "format", "label": "格式优化", "skill": "format-profile",
-         "out": "FORMAT_PROFILE.json", "checkpoint": False, "role": "executor", "check": ""},
-    ],
-    "literature_review": [
-        {"key": "search", "label": "文献检索", "skill": "literature-review",
-         "out": "LITERATURE_REVIEW.md", "checkpoint": True, "role": "executor", "check": ""},
-        {"key": "quality", "label": "质量审查", "skill": "quality-check",
-         "out": "QUALITY_REVIEW.md", "checkpoint": False, "role": "reviewer", "check": ""},
-    ],
-    "course_paper": [
-        {"key": "plan", "label": "大纲规划", "skill": "course-plan",
-         "out": "OUTLINE.md", "checkpoint": True, "role": "executor", "check": ""},
-        {"key": "analyze", "label": "数据分析", "skill": "paper-analysis",
-         "out": "RESULTS.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "figure", "label": "图表生成", "skill": "paper-figure",
-         "out": "FIGURES.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "paper", "label": "正文撰写", "skill": "course-paper",
-         "out": "COURSE_PAPER.md", "checkpoint": True, "role": "editor", "check": ""},
-        {"key": "format", "label": "格式优化", "skill": "format-profile",
-         "out": "FORMAT_PROFILE.json", "checkpoint": False, "role": "executor", "check": ""},
-    ],
-    "course_report": [
-        {"key": "plan", "label": "事实提取+大纲", "skill": "course-report-plan",
-         "out": "OUTLINE.md", "checkpoint": True, "role": "executor", "check": ""},
-        {"key": "figure", "label": "图表生成", "skill": "paper-figure",
-         "out": "FIGURES.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "arch", "label": "架构/流程图", "skill": "mermaid-diagram diagram-design",
-         "out": "ARCHITECTURE.md", "checkpoint": False, "role": "executor", "check": ""},
-        {"key": "paper", "label": "正文撰写", "skill": "course-report",
-         "out": "COURSE_REPORT.md", "checkpoint": True, "role": "editor", "check": ""},
-        {"key": "format", "label": "格式优化", "skill": "format-profile",
-         "out": "FORMAT_PROFILE.json", "checkpoint": False, "role": "executor", "check": ""},
-    ],
-    "humanities_paper": [
-        {"key": "plan", "label": "论文规划", "skill": "humanities-plan",
-         "out": "OUTLINE.md", "checkpoint": True, "role": "executor", "check": ""},
-        {"key": "paper", "label": "正文撰写", "skill": "humanities-write",
-         "out": "HUMANITIES_PAPER.md", "checkpoint": True, "role": "editor", "check": ""},
-        {"key": "format", "label": "格式优化", "skill": "format-profile",
-         "out": "FORMAT_PROFILE.json", "checkpoint": False, "role": "executor", "check": ""},
-    ],
-}
-
-# 全部流水线：竞赛 + 10 套非竞赛
-PIPELINES = {"competition": COMPETITION_STEPS}
-PIPELINES.update(NON_COMPETITION_STEPS)
 
 # ---------------- 第二套国赛流程：BZD 双审精制流（cumcm-bzd-2026） ----------------
 # 与「极速全自动流」(competition) 并存，新建竞赛时二选一。9 阶段=题面解析→策略→执行→稳健→
@@ -263,6 +148,8 @@ COMPETITION_STEPS_BZD = [
     {"key": "stage09_release", "label": "终稿装配与合规出库", "skill": "bzd-2026-stage-09 diagram-design",
      "out": "SUBMISSION.md", "checkpoint": False, "role": "executor", "check": ""},
 ]
+# 全部流水线：仅两套国赛工作流（极速流 competition + BZD 双审精制流 competition_bzd）
+PIPELINES = {"competition": COMPETITION_STEPS}
 PIPELINES["competition_bzd"] = COMPETITION_STEPS_BZD
 
 # 是否为竞赛类

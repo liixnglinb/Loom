@@ -457,26 +457,6 @@ def update_apply():
 PIPELINE_CATALOG = {
     "competition_bzd": {"g": "comp", "emoji": "🏅", "name": "国赛 · BZD 双审精制流",
         "desc": "BZD 2026 双审精制：题面解析→策略→执行→稳健→写作→摘要→两轮独立审查（章节自查+综合评审）→合规出库，含 26 项 AI 合规清单。正式比赛冲奖推荐（时间约 2-3 天）", "time": "~2-3 天"},
-    "idea_discovery": {"g": "acad", "emoji": "🧪", "name": "Idea 发现",
-        "desc": "文献调研 → 头脑风暴 → 验新颖性 → 方案评审 → 方案细化，产出可执行的 Idea 报告", "time": "~30-90 分钟"},
-    "experiment_bridge": {"g": "acad", "emoji": "🔬", "name": "实验桥接",
-        "desc": "实验方案 → 跑实验 → 监测 → 结果分析 → 论文级图表 + LaTeX 表", "time": "~40-120 分钟"},
-    "auto_review": {"g": "acad", "emoji": "📝", "name": "自动审稿",
-        "desc": "论文分析 → 质量审查 → 自动评审循环 → 审稿回应", "time": "~20-60 分钟"},
-    "paper_writing": {"g": "acad", "emoji": "📄", "name": "论文写作",
-        "desc": "大纲规划 → 数据分析 → 图表生成 → 正文撰写 → 编译 PDF → 改进循环", "time": "~30-120 分钟"},
-    "full_pipeline": {"g": "acad", "emoji": "🚀", "name": "全流程（科研）",
-        "desc": "文献调研 → 方案细化 → 评审改进 → 正文撰写 → 编译 PDF，从 idea 到投稿", "time": "~2-5 小时"},
-    "thesis_proposal": {"g": "acad", "emoji": "📋", "name": "开题报告",
-        "desc": "文献调研 → 开题撰写 → 格式优化", "time": "~30-60 分钟"},
-    "literature_review": {"g": "acad", "emoji": "📚", "name": "文献综述",
-        "desc": "文献检索 → 真实性验证 → 主题聚类 → 综述撰写 → 质量审查", "time": "~30-60 分钟"},
-    "course_paper": {"g": "acad", "emoji": "📖", "name": "课程论文",
-        "desc": "大纲规划 → 数据分析 → 图表生成 → 撰写嵌入图 → 格式优化", "time": "~25-50 分钟"},
-    "course_report": {"g": "acad", "emoji": "📊", "name": "课程报告",
-        "desc": "事实提取+大纲 → 图表生成 → 架构/流程图 → 撰写嵌入图 → 格式优化", "time": "~25-50 分钟"},
-    "humanities_paper": {"g": "acad", "emoji": "🖋", "name": "人文社科论文",
-        "desc": "论文规划 → 正文撰写 → 格式优化（文字论证 + 文献对话，默认 Word）", "time": "~25-50 分钟"},
 }
 
 @app.get("/api/pipelines")

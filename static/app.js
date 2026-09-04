@@ -304,11 +304,6 @@ const ST = {
 const TEMPLATE_META = {
   competition:['竞赛极速流','competition','🏆'],
   competition_bzd:['BZD 双审精制流','competition','🏅'],
-  idea_discovery:['Idea 发现','acad','🧪'], experiment_bridge:['实验桥接','acad','🔬'],
-  auto_review:['自动审稿','acad','📝'], paper_writing:['论文写作','acad','📄'],
-  full_pipeline:['全流程（科研）','acad','🚀'], thesis_proposal:['开题报告','acad','📋'],
-  literature_review:['文献综述','acad','📚'], course_paper:['课程论文','acad','📖'],
-  course_report:['课程报告','acad','📊'], humanities_paper:['人文社科论文','acad','🖋'],
 };
 const STATUS_TXT = {completed:['已完成','st-completed'], running:['运行中','st-running'],
   failed:['失败','st-failed'], pending:['待运行','st-pending'], paused:['已暂停','st-pending']};
