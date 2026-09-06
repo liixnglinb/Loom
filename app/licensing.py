@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import subprocess
 import time
 import uuid
@@ -24,9 +25,18 @@ import requests
 from . import paths
 
 SERVER = "https://lxlrwxs.top/modelflow"
-# 注意：此密钥仅用于本地快速预检。权威授权判断由服务端 /api/check 完成，
-# 即使此密钥被反编译泄露，伪造的令牌也无法通过在线校验（码不存在/已吊销会被拒绝）。
-SECRET = "1adee14c497b3b976a3beb1aa602744a8a54b04782e2b2526ccb0800924b9af3"
+# 注意：此密钥仅用于本地快速预检。权威授权判断由服务端 /api/check 完成。
+# 密钥不再写入源码（旧值曾随公开仓库 Voyra 泄露，2026-09-06 轮换）：
+#   - 打包发布：构建前设置环境变量 MODELFLOW_LICENSE_SECRET，运行
+#     scripts/make_secret_build.py 生成 app/_secret_build.py（已 gitignore，
+#     PyInstaller 打包时一并带入 exe）；
+#   - 本地开发：直接设置同名环境变量即可。
+# 服务端（Voyra 仓库 functions/_mf.js）读取的 MF_LICENSE_SECRET 必须与此为同一值。
+try:
+    from ._secret_build import SECRET as _BUILD_SECRET  # type: ignore
+except Exception:
+    _BUILD_SECRET = ""
+SECRET = os.environ.get("MODELFLOW_LICENSE_SECRET", "") or _BUILD_SECRET
 
 OFFLINE_GRACE_SECONDS = 7 * 24 * 3600  # 离线宽限 7 天
 ONLINE_CHECK_INTERVAL = 3600             # 在线校验最短间隔 1 小时（避免频繁请求）
@@ -97,7 +107,10 @@ def _clear() -> None:
 
 
 def _verify_local(code: str, mid: str, token: str) -> bool:
-    """本地快速预检（HMAC）。仅用于快速筛选，权威判断在 _check_online。"""
+    """本地快速预检（HMAC）。仅用于快速筛选，权威判断在 _check_online。
+    密钥未注入时返回 False（fail closed）：防止伪造 license.json 套取离线宽限。"""
+    if not SECRET:
+        return False
     expect = hmac.new(SECRET.encode(), f"{code}|{mid}".encode(),
                       hashlib.sha256).hexdigest()[:32]
     return hmac.compare_digest(expect, token or "")
