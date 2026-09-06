@@ -20,7 +20,11 @@ description: BZD 双审精制流 · 阶段3 建模执行。Use when 执行 cumcm
    - F 灵敏度分析（只对决定结论/参数依赖强/来源不确定的主模型：选参→基准范围步长→固定其余逐次重解→参数-结果图→敏感参数与稳定区间→结论是否改变；S=(ΔY/Y)/(ΔX/X)；多因素用正交/响应面/网格/蒙特卡洛/Sobol；禁止全部参数机械 ±10%）
 4. 跨问联动：递进问显式写出前问输出→后问接口→单位时间转换→误差传播；"只写基于问题一而实际重算"=假联动（P1）。
 5. 图表纪律：表承数值图承趋势；同一组结果只留一种主表达；图表三有（前引/中引用/后解释）；正文表格 ≤15 行；单图约 70% 文本宽。
-6. 写作落地素材：代码转正文（函数名替换为中文语义名/数学符号）与结果分析段（180-220 字连续段落）写入素材文件。
+6. ⛔ **图的生产规范（论文级，必读必执行）**：`cat _utils/figure_production_rules.md` 并按 A–D 节执行——
+   - **数据图**：风格基线 `_utils/plot_utils.py`（setup_style）+ 图型选型 `_utils/chart_library.md` + 配方 `_utils/figure_recipes_*.md` / `_utils/get_recipe.py` → 写 `figures/gen_fig_<key>.py` → 出矢量 PDF → `$PYTHON _utils/figure_check.py figures/fig_<key>.pdf` 质检（FAIL 必修，最多 3 轮）。
+   - **流程图/架构图/技术路线图**：手写 HTML+CSS（flex/grid 自动布局、公式 `\(...\)`、黑白基调低饱和）→ **3 候选择优**（结构不同 3 版 → `$PYTHON _utils/screenshot_capture.py --geom-check` 几何自检 → 四维打分：逻辑忠实 40%/信息 20%/对齐 20%/融合 20% → 选 1）→ 选中版 `$PYTHON _utils/screenshot_capture.py --file figures/fig_<name>.html --out figures/fig_<name>.pdf --format pdf [--render-math]` 转单页矢量 PDF；落败候选清理、打分留痕 `_tmp/fig_choice_notes.md`（⛔ 不进论文）。
+   - 每张图通过后，在 `SOLVING_RESULTS.md` 图索引区追加 `- fig_<name>.pdf — 建议 caption：<≤20字>`，供 stage05 直接 `\includegraphics`。
+7. 写作落地素材：代码转正文（函数名替换为中文语义名/数学符号）与结果分析段（180-220 字连续段落）写入素材文件。
 
 ## 产物
 

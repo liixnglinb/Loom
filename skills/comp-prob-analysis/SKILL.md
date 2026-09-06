@@ -710,15 +710,15 @@ cat DATA_PROFILE.json    # 看清每个文件的 total_rows / n_sheets / 各 she
 
 # 1. 读范例和套餐：了解各方法类型推荐的图表组合
 
-cat _utils/figure_exemplars.md 2>/dev/null || cat skills/shared-scripts/figure_exemplars.md
+cat _utils/figure_exemplars.md 2>/dev/null
 
 # 2. 读选择指南：了解每种图表的适用场景、数据特征匹配、配色规则
 
-cat _utils/figure_style_guide.md 2>/dev/null || cat skills/shared-scripts/figure_style_guide.md
+cat _utils/figure_style_guide.md 2>/dev/null
 
 # 3. 配方库（可选参考，60+ 张 SCI 级图表代码模板，paper-figure 会按本规划提取）
 
-ls _utils/figure_recipes_*.md 2>/dev/null || ls skills/shared-scripts/figure_recipes_*.md
+ls _utils/figure_recipes_*.md 2>/dev/null
 
 ```
 

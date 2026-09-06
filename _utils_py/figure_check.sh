@@ -466,8 +466,7 @@ fi
 # 实测：某工作区 14 张图有 3 张跑偏（等高线→barh / 棒棒糖→plot / 收敛曲线→bar），
 # 而两个高分工作区 32 张可判定图 0 误报 —— 信号强、误伤低。仅 WARNING，不进退出码。
 _RA=""
-for _p in _utils/recipe_audit.py skills/shared-scripts/recipe_audit.py \
-          ../skills/shared-scripts/recipe_audit.py; do
+for _p in _utils/recipe_audit.py; do
     [ -f "$_p" ] && _RA="$_p" && break
 done
 if [ -n "$_RA" ]; then

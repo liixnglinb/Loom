@@ -46,3 +46,5 @@ dist_app/
 dist/
 release/
 *.pkg
+# ===== 会话工具元数据 =====
+.workbuddy/

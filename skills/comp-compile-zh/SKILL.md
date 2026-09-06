@@ -68,10 +68,6 @@ if [ -f "_utils/compile_utils.sh" ]; then
 
     bash _utils/compile_utils.sh paper/
 
-elif [ -f "skills/shared-scripts/compile_utils.sh" ]; then
-
-    bash skills/shared-scripts/compile_utils.sh paper/
-
 else
 
     echo "compile_utils.sh not found, manual cleanup needed"
@@ -488,8 +484,7 @@ When fixing errors in main.tex, only fix the specific error (e.g., add a missing
 
 ```bash
 
-bash _utils/compile_check.sh paper/ 2>/dev/null || bash skills/shared-scripts/compile_check.sh paper/
-
+bash _utils/compile_check.sh paper/ 2>/dev/null
 ```
 
 
@@ -1092,11 +1087,11 @@ echo "--- Full check scripts ---"
 
 #    图堆叠/模板包冲突…」等一大批检查的权威裁判，下面手工项里与之重叠的已删除。
 
-bash _utils/compile_check.sh paper/ 2>/dev/null || bash skills/shared-scripts/compile_check.sh paper/ 2>/dev/null
+bash _utils/compile_check.sh paper/ 2>/dev/null
 
 CC_EXIT=$?
 
-bash _utils/writing_check.sh paper/ 2>/dev/null || bash skills/shared-scripts/writing_check.sh paper/ 2>/dev/null
+bash _utils/writing_check.sh paper/ 2>/dev/null
 
 WC_EXIT=$?
 
@@ -1212,7 +1207,7 @@ echo "--- 声称↔代码 静态扫描（第 3 道闸）---"
 
 CC_SCRIPT=""
 
-for f in _utils/claim_code_check.py skills/shared-scripts/claim_code_check.py; do
+for f in _utils/claim_code_check.py; do
 
     [ -f "$f" ] && { CC_SCRIPT="$f"; break; }
 

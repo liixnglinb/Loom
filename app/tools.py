@@ -8,7 +8,6 @@
   - paper_data_check       论文数据真实性检查（docx/pdf/table 三模式）
   - tikz_vision_check      TikZ 图视觉自检（vision LLM + 防震荡刹车）
   - derive_reference_from_docx  从 docx 派生通用排版参考
-  - watchdog               任务监控（training/download）
 """
 from __future__ import annotations
 
@@ -267,16 +266,6 @@ def tool_derive_docx(docx_path: str, out_dir: str = "") -> dict:
     return r
 
 
-# ---------- 监控 ----------
-
-def tool_watchdog(action: str = "status", base_dir: str = "") -> dict:
-    """任务监控（training/download）。base_dir 默认 /tmp/MH Agent-watchdog。"""
-    bd = base_dir or "/tmp/MH Agent-watchdog"
-    r = _run_tool("watchdog", [f"--{action}"], timeout=30,
-                  cwd=str(Path("/") if sys.platform != "win32" else paths.BASE))
-    return r
-
-
 # ---------- DOCX 导出（md → Word 中文论文） ----------
 
 def tool_docx_export(source: str, title: str = "", out_dir: str = "") -> dict:
@@ -305,5 +294,4 @@ TOOLS = {
     "tikz_vision_check": tool_tikz_vision_check,
     "derive_docx": tool_derive_docx,
     "docx_export": tool_docx_export,
-    "watchdog": tool_watchdog,
 }

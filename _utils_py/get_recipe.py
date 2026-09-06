@@ -21,13 +21,13 @@ RECIPE_FILES = {
 }
 
 def find_recipe_file(category):
-    """在 _utils/ 或 skills/shared-scripts/ 中查找配方文件"""
+    """在 _utils/ 中查找配方文件"""
     filename = RECIPE_FILES.get(category.lower())
     if not filename:
         return None
-    # 搜索路径：_utils/（workspace 运行时）、脚本同目录、skills/shared-scripts/
+    # 搜索路径：_utils/（workspace 运行时）、脚本同目录
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    for search_dir in ['_utils', script_dir, 'skills/shared-scripts', '../skills/shared-scripts']:
+    for search_dir in ['_utils', script_dir]:
         path = os.path.join(search_dir, filename)
         if os.path.isfile(path):
             return path
@@ -68,7 +68,7 @@ def main():
     path = find_recipe_file(category)
     if not path:
         print(f"ERROR: 找不到配方文件 {RECIPE_FILES[category]}")
-        print("  检查 _utils/ 或 skills/shared-scripts/ 目录")
+        print("  检查 _utils/ 目录")
         sys.exit(1)
 
     with open(path, 'r', encoding='utf-8', errors='replace') as f:

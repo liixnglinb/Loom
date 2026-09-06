@@ -31,7 +31,16 @@ Generate figures and tables from data: **Data source: 当前工作区 RESULTS.md
 1) 按「数据形态+要回答的问题」定类别；2) 只看图名选 3 个候选；3) 按 适配度>可读性>高级感 终选 1 个，
 并在脚本头注释写 `候选: ...` 与 `选图理由：...` 两行（理由格式见 guide）。**禁止不做选型直接开画、禁止把 3 个候选全画出来。**
 
-`shared-scripts/plot_utils.py` is the **MANDATORY** style baseline. Every `gen_fig_*.py` script **MUST** begin with `from _utils.plot_utils import setup_style, save_fig, PALETTE, COLORS; setup_style()`.
+⛔ **图表生成方案（读工作区 CLAUDE.md 的 `MH_FIG_MODE`，前端「图表生成方案」已注入）**：
+- `MH_FIG_MODE=0`（默认，内置图表库）：严格按上面 Step 0 走软件内置 100+ 图表模板库（chart_select_guide + chart_library + figure_recipes）。
+- `MH_FIG_MODE=1`（Nature 顶刊 AI 生成，用户已显式授权联网）：**覆盖上面 Step 0 的内置选型**。对每类数据图：
+  1) 先 `WebSearch` 联网检索 Nature / Science / Cell 等顶刊中同型图的真实构图与风格（如 half-violin、脊线图、errorbar+散点阵、迷你箱线、上下镜像分布等顶刊常见技法）；
+  2) 找到公开源码的用 `WebFetch` 抓取取经（配色 hex、线宽、标注、统计检验记号写法）；
+  3) 在脚本头注释写明 `候选: 检索到顶刊图 X ...` 与 `选图理由：...` 两行；
+  4) 仍以 `from _utils.plot_utils import setup_style, save_fig, PALETTE, COLORS; setup_style()` 起手，把检索到的顶刊风格落到具体参数里。
+  该模式仍受下方 Output Contract 全量约束：300 DPI、矢量 PDF/SVG、无图内标题、命名规范、figure_check.sh exit 0。
+
+`_utils/plot_utils.py` is the **MANDATORY** style baseline. Every `gen_fig_*.py` script **MUST** begin with `from _utils.plot_utils import setup_style, save_fig, PALETTE, COLORS; setup_style()`.
 
 
 
@@ -83,7 +92,7 @@ Stats tables: `stats_utils.py` provides `regression_table`, `descriptive_table`,
 
 
 
-**Must produce all planned figures (per PAPER_PLAN.md or skill-specific plan)** as `figures/fig_*.png/pdf` plus `figures/latex_includes.tex` (or, in docx mode, the same PNGs without latex_includes.tex requirement).
+**Produce the planned figures (per PAPER_PLAN.md or skill-specific plan)** as `figures/fig_*.png/pdf` plus `figures/latex_includes.tex` (or, in docx mode, the same PNGs without latex_includes.tex requirement). 规划图以"尽力产出"为原则：合理的缺图（冗余/重复/数据不足）允许缺失并如实记录，**禁止为凑数硬画无用图**（详见下方图对账软门）。
 
 
 
@@ -167,13 +176,14 @@ if [ -n "$PLAN_FILE" ]; then
 
   if [ "$MISSING_COUNT" -gt 0 ]; then
 
-    echo "❌ FIGURE_MANIFEST 对账失败(仅数据图): 规划 $TOTAL_EXPECTED 张, 缺失 $MISSING_COUNT 张:"
+    echo "⚠️ 图对账(数据图): 规划 $TOTAL_EXPECTED 张, 实际产出 $((TOTAL_EXPECTED - MISSING_COUNT)) 张, 缺失 $MISSING_COUNT 张:"
 
     for m in $MISSING_FIGS; do echo "    - $m"; done
 
-    echo "⛔ 必须把这些数据图全部产出才能结束 paper-figure 步骤(流程/架构/路线图由 paper-figure-html 负责, 不在此列)"
-
-    PASS=false
+    echo "    ── 策略: 缺图不硬补、不为画图而画图 ──"
+    echo "    · 若所缺图确实必要且补画成本低(已在前面画过同类) → 顺手补上更佳;"
+    echo "    · 若缺图为冗余/重复/数据不足的规划图 → 保留缺失并继续, 不阻塞本步完成, 不 PASS=false;"
+    echo "    · 禁止为凑数生成空洞/无数据支撑的图。最终缺失清单如实记录, 交由论文步按现有图撰写。"
 
   else
 
@@ -533,7 +543,7 @@ fi
 
 # 改用 head 取前 1500 行的核心规则部分; 需要更细规则时再 grep 或 Read 工具按需读
 
-(cat _utils/figure_style_guide.md 2>/dev/null || cat skills/shared-scripts/figure_style_guide.md) | head -1500
+(cat _utils/figure_style_guide.md 2>/dev/null) | head -1500
 
 ```
 
@@ -543,27 +553,27 @@ fi
 
 echo "=== Advanced ==="
 
-(cat _utils/figure_recipes_advanced.md 2>/dev/null || cat skills/shared-scripts/figure_recipes_advanced.md 2>/dev/null) | grep '^## '
+(cat _utils/figure_recipes_advanced.md 2>/dev/null) | grep '^## '
 
 echo "=== Basic ==="
 
-(cat _utils/figure_recipes_basic.md 2>/dev/null || cat skills/shared-scripts/figure_recipes_basic.md 2>/dev/null) | grep '^## '
+(cat _utils/figure_recipes_basic.md 2>/dev/null) | grep '^## '
 
 echo "=== Academic ==="
 
-(cat _utils/figure_recipes_academic.md 2>/dev/null || cat skills/shared-scripts/figure_recipes_academic.md 2>/dev/null) | grep '^## '
+(cat _utils/figure_recipes_academic.md 2>/dev/null) | grep '^## '
 
 echo "=== Competition ==="
 
-(cat _utils/figure_recipes_competition.md 2>/dev/null || cat skills/shared-scripts/figure_recipes_competition.md 2>/dev/null) | grep '^## '
+(cat _utils/figure_recipes_competition.md 2>/dev/null) | grep '^## '
 
 echo "=== Empirical ==="
 
-(cat _utils/figure_recipes_empirical.md 2>/dev/null || cat skills/shared-scripts/figure_recipes_empirical.md 2>/dev/null) | grep '^## '
+(cat _utils/figure_recipes_empirical.md 2>/dev/null) | grep '^## '
 
 echo "=== Basic (fallback only) ==="
 
-(cat _utils/figure_recipes_basic.md 2>/dev/null || cat skills/shared-scripts/figure_recipes_basic.md 2>/dev/null) | grep '^## '
+(cat _utils/figure_recipes_basic.md 2>/dev/null) | grep '^## '
 
 ```
 
@@ -1347,9 +1357,7 @@ grep -ohE '\((basic|advanced|empirical|competition|academic)[[:space:]]*#[[:spac
 
         echo "########## $cat #$num ##########"
 
-        "$PYTHON" _utils/get_recipe.py "$cat" "$num" 2>/dev/null \
-
-            || "$PYTHON" skills/shared-scripts/get_recipe.py "$cat" "$num" 2>/dev/null
+        "$PYTHON" _utils/get_recipe.py "$cat" "$num" 2>/dev/null
 
         echo
 
@@ -1420,18 +1428,6 @@ If you skip this step and generate a figure with matplotlib default blue, no gra
 import os, sys, shutil
 
 os.makedirs('_utils', exist_ok=True)
-
-for src in ['plot_utils.py']:
-
-    for search in ['skills/shared-scripts', '../skills/shared-scripts']:
-
-        p = os.path.join(search, src)
-
-        if os.path.isfile(p):
-
-            shutil.copy2(p, f'_utils/{src}')  # copies .py file, NOT .pdf
-
-            break
 
 sys.path.insert(0, '.')  # plain dot, NOT '.pdf'
 
@@ -1569,7 +1565,7 @@ def cn(s):
 
 - 环境已预装 `geopandas`，直接 `import geopandas as gpd` 即可
 
-- GeoJSON 文件：`_utils/china_provinces.geojson`（首次运行自动从 `skills/shared-scripts/` 复制或从阿里云 DataV 下载）
+- GeoJSON 文件：`_utils/china_provinces.geojson`（缺失时自动从阿里云 DataV 下载）
 
 - **⛔ 绝对不要用散点图代替地图！** 必须用 `gdf.plot()` 画省份多边形轮廓
 
@@ -1641,7 +1637,7 @@ def cn(s):
 
 ```bash
 
-bash _utils/figure_check.sh 2>/dev/null || bash skills/shared-scripts/figure_check.sh
+bash _utils/figure_check.sh 2>/dev/null
 
 RC=$?
 
@@ -1716,12 +1712,6 @@ PYTHON=""; for _c in "$MH_PYTHON" python python3; do [ -z "$_c" ] && continue; i
 # ── 预热1：预复制 plot_utils.py（消除并发 copy2 竞态）──
 
 mkdir -p _utils
-
-for _s in skills/shared-scripts ../skills/shared-scripts; do
-
-    [ -f "$_s/plot_utils.py" ] && cp "$_s/plot_utils.py" _utils/plot_utils.py && break
-
-done
 
 # ── 预热2：单进程触发字体缓存构建（后续并发只读不重建）──
 
@@ -2642,7 +2632,7 @@ fi
 
 # 4. Figure check script passes
 
-bash _utils/figure_check.sh 2>/dev/null || bash skills/shared-scripts/figure_check.sh 2>/dev/null
+bash _utils/figure_check.sh 2>/dev/null
 
 FC_EXIT=$?
 

@@ -1,4 +1,4 @@
-/* 由 cc-switch 预设提取生成，已精简为国内头部平台；勿手改，重跑 _extract_cc_presets.py 再生成 */
+/* 供应商目录（手工维护，精简为国内头部平台）：新增条目按现有字段补 name/rawName/provider/api_base/cat/catLabel/logo/site */
 window.PROVIDER_CATALOG = [
 {"name":"深度求索","rawName":"DeepSeek","agents":["claude","claude-desktop"],"provider":"anthropic","api_base":"https://api.deepseek.com/anthropic","cat":"cn_official","catLabel":"国内官方","logo":"logos/cc/deepseek.svg","site":"https://platform.deepseek.com","key_url":""},
 {"name":"阿里云百炼","rawName":"Bailian","agents":["claude","claude-desktop"],"provider":"anthropic","api_base":"https://dashscope.aliyuncs.com/apps/anthropic","cat":"cn_official","catLabel":"国内官方","logo":"logos/cc/bailian.svg","site":"https://bailian.console.aliyun.com","key_url":""},

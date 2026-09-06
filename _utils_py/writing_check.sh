@@ -55,7 +55,7 @@ cite_in_body=$(grep -roh '\\cite' "$PAPER_DIR"/sections/*.tex "$PAPER_DIR"/main.
 #     对不上且无 DOI/arXiv 的 = 编造 → FAIL。无留档则只做结构+DOI核验，不误伤合法无 DOI 的书籍。
 if [ -f "$PAPER_DIR/references.bib" ]; then
     _BIBCHK=""
-    for _c in _utils/bib_authenticity_check.py skills/shared-scripts/bib_authenticity_check.py; do
+    for _c in _utils/bib_authenticity_check.py; do
         [ -f "$_c" ] && { _BIBCHK="$_c"; break; }
     done
     if [ -n "$_BIBCHK" ]; then

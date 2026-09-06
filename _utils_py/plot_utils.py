@@ -507,7 +507,7 @@ def setup_style(palette='auto'):
     if not zh_fonts:
         # 没有任何中文字体——尝试加载内置字体文件
         _bundled_font = None
-        for search_dir in ['_utils', 'skills/shared-scripts', '../skills/shared-scripts']:
+        for search_dir in ['_utils']:
             font_path = os.path.join(search_dir, 'NotoSansSC-Regular.ttf')
             if os.path.isfile(font_path):
                 _bundled_font = os.path.abspath(font_path)
@@ -531,7 +531,7 @@ def setup_style(palette='auto'):
                 pass
         if not zh_fonts:
             print("WARNING: No Chinese fonts found — Chinese text will show as □")
-            print("  Fix: place NotoSansSC-Regular.ttf in skills/shared-scripts/")
+            print("  Fix: place NotoSansSC-Regular.ttf in _utils/")
             print("  Or install: Windows=SimHei, Linux=fonts-noto-cjk-extra, macOS=built-in")
             zh_fonts = ['DejaVu Sans']
 

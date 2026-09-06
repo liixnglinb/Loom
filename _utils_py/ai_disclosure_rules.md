@@ -57,7 +57,7 @@ PY
   ```
   然后调注入脚本插 `\input`（none 模式不插附录）：
   ```bash
-  INJ=_utils/inject_ai_disclosure.py; [ -f "$INJ" ] || INJ=skills/shared-scripts/inject_ai_disclosure.py
+  INJ=_utils/inject_ai_disclosure.py
   $PYTHON "$INJ" --main paper/main.tex --mode none
   ```
 - **docx 版**（-docx）：在 `paper/main.md` 的 `## 参考文献` 标题**之前**插入：
@@ -101,7 +101,7 @@ PY
 ### 3d. 注入 \input（仅 LaTeX，docx 跳过）
 ```bash
 mkdir -p paper/appendix
-INJ=_utils/inject_ai_disclosure.py; [ -f "$INJ" ] || INJ=skills/shared-scripts/inject_ai_disclosure.py
+INJ=_utils/inject_ai_disclosure.py
 $PYTHON "$INJ" --main paper/main.tex --mode used
 ```
 脚本会在参考文献前插声明、附录环境(appendices/appendixx/\appendix，或退而求其次在 A_code 之后)内插详情（幂等、找不到锚点自动降级，不阻断编译）。

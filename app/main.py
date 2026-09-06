@@ -977,7 +977,7 @@ def tool_docx_export_api(q: DocxExportIn):
 def tool_index():
     """工具集能力清单。"""
     return {"tools": sorted(tools_mod.TOOLS.keys()),
-            "desc": "科研工具集：scholar(文献)/gpt-image(生图)/review(评审)/data-check(数据检查)/tikz-check(TikZ视觉)/derive-docx(样式派生)/watchdog(监控)"}
+            "desc": "科研工具集：scholar(文献)/gpt-image(生图)/review(评审)/data-check(数据检查)/tikz-check(TikZ视觉)/derive-docx(样式派生)"}
 
 class WsPingIn(BaseModel):
     type: str = "ping"

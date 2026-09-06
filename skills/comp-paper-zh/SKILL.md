@@ -54,7 +54,7 @@ echo "FAST_MODE=$FAST_MODE"
 
 ```bash
 
-cat _utils/writing_rules.md 2>/dev/null || cat skills/shared-scripts/writing_rules.md
+cat _utils/writing_rules.md 2>/dev/null
 
 ```
 
@@ -1581,6 +1581,12 @@ mkdir -p _tmp
 
 ### Step 4: Write each chapter
 
+**⛔ 逐章推进铁律（防长文退化，最高优先级）**：正文**严格一章一节地写**，禁止一次性把全部章节正文生成完再落盘。
+- 一次只写一章 → 立即写入对应 `paper/sections/N_xxx.tex` → 对该章做最小自检（文件已落盘、数字均取自 RESULTS.md/summarize 输出的真实值、正文引用的 `fig_*` 确实存在于 `figures/` 目录）→ 记录进度（完成章节清单写进 `paper/WRITE_PROGRESS.md`）→ 才开始下一章；
+- 写完一章出现上下文吃紧（明显开始重复/丢细节）→ 主动停下来：已写章节保持完好，用一份新的简洁消息继续下一章（依赖 `paper/sections/` 下的既有文件续写，不重复生成已写内容）；
+- 每章内部同样从粗到细：先拖骨架（该章要回答的问题+要点列表，见 Template 章节清单），再逐节填充公式/表格/图表引用；
+- 摘要（abstract）在全部章节完成后再写（见 Step 5.6），不要提前。
+
 
 
 **⛔ CRITICAL: ALL numerical results in the paper MUST come from `figures/*.json` or `RESULTS.md`.**
@@ -2351,7 +2357,7 @@ echo "AI_DISC=$AI_DISC"
 
   ```bash
 
-  cat _utils/ai_disclosure_rules.md 2>/dev/null || cat skills/shared-scripts/ai_disclosure_rules.md
+  cat _utils/ai_disclosure_rules.md 2>/dev/null
 
   ```
 
@@ -2365,7 +2371,7 @@ echo "AI_DISC=$AI_DISC"
 
 ```bash
 
-bash _utils/writing_check.sh paper/ 2>/dev/null || bash skills/shared-scripts/writing_check.sh paper/
+bash _utils/writing_check.sh paper/ 2>/dev/null
 
 ```
 

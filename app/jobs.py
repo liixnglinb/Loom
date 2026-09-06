@@ -801,10 +801,10 @@ def _fmt_config_params(config):
         "rich_mode": "丰满模式",
         "logic_review": "逻辑对抗复核",
         "flow_engine": "流程图引擎",
-        "color_scheme": "图表配色",
-        "chart_style": "图表风格",
+        "color_scheme": "流程图配色",
         "data_palette": "数据图配色方案",
         "data_layout": "图表版式",
+        "fig_mode": "图表生成方案",
         "img_count": "图片数量",
         "tbl_count": "表格数量",
         "model_count": "模型数量",
@@ -902,8 +902,7 @@ TEMPLATE_DIR_CANDIDATES = [
     paths.BASE / "_templates",
 ]
 _CLASS_TEMPLATE_HINTS = [          # 文档类名 → 模板目录名（子串匹配，命中即用）
-    ("cumcmthesis", ["cumcm", "huazhong"]),
-    ("mathorcupmodeling", ["mathorcup"]),
+    ("cumcmthesis", ["cumcm"]),
 ]
 
 def _template_base():
@@ -1027,59 +1026,43 @@ def compile_pdf(ws, rounds=3, timeout=300):
 
 CONTEST_TEMPLATE_MAP = [          # 赛项关键词 → 模板目录（_templates/<name>/）
     ("国赛", "cumcm"), ("cumcm", "cumcm"),
-    ("华中杯", "huazhong"), ("mathorcup", "mathorcup"), ("mathorcups", "mathorcup"),
-    ("华为杯", "huawei"), ("美赛", "mcm"), ("mcm", "mcm"), ("icm", "mcm"),
-    ("电工杯", "diangongbei"), ("东三省", "dongsansheng"), ("辽宁省", "dongsansheng"),
-    ("数维杯", "shuweibei"), ("华数杯", "huashubei"), ("五一杯", "wuyi"),
-    ("长三角", "changsanjiao"), ("统计建模", "stats"), ("亚太", "apmcm_zh"),
-    ("apmcm", "apmcm"),
 ]
 
 def _contest_template_names(config):
-    """根据表单赛项名推断要注入工作区的模板目录列表（匹配 + cumcm 兜底）。"""
+    """根据表单赛项名推断要注入工作区的模板目录列表（匹配 + cumcm 兜底）。
+
+    模板库已精简为只随包分发国赛 cumcm 一套；其余赛项（前端仍在开发中）
+    一律兜底注入 cumcm 模板。
+    """
     contest = str((config or {}).get("contest") or "")
     low = contest.lower()
-    hits = []
     for kw, d in CONTEST_TEMPLATE_MAP:
         if kw.lower() in low or kw in contest:
-            if d not in hits:
-                hits.append(d)
-            break                      # 首个命中即止，避免 apmcm 连带 apmcm_zh
-    return hits or ["cumcm"]
+            return [d]
+    return ["cumcm"]
 
 
 # ---------------- 图表风格标记映射（前端选择 → skill 自动读取的环境变量） ----------------
 # 1) 图表配色 color_scheme（纯黑白/朴素竞赛/现代精致）→ paper-figure-html 的 MH_DIAGRAM_STYLE
 _DIAGRAM_STYLE = {"bw": "2", "plain": "0", "modern": "1"}
-# 2) 数据图配色 data_palette（中文名）→ plot_utils.PALETTES 键
+# 2) 数据图配色 data_palette（中文名）→ plot_utils.PALETTES 键（只保留 UI 热门 8 个）
 _DATA_PALETTE = {
-    "经典柔和（原默认）": "soft", "Okabe-Ito 经典": "okabe_ito", "Tol 柔和": "tol_muted",
-    "Tol 明快": "tol_vibrant", "北欧 Nord": "nord",
-    "日暮渐变": "sunburst", "海洋青蓝": "ocean", "珊瑚": "coral", "明快春日": "spring",
-    # —— 期刊 / 顶刊风 ——
-    "期刊顶刊（SCI）": "journal", "Nature 顶刊": "nature", "NEJM 医学": "nejm",
-    "Science 学术": "science", "Tableau 专业": "tableau", "NPG 自然": "npg",
+    "Okabe-Ito 经典": "okabe_ito",
+    "优雅 Elegant": "elegant",
+    "Nature 顶刊": "nature",
     "色盲友好（Wong）": "colorblind",
-    # —— 气质风格 ——
-    "优雅 Elegant": "elegant", "柔和粉彩": "pastel", "薄荷薰衣草": "mint_lav",
-    "鼠尾草玫瑰": "sage_rose", "大地森林": "earth_forest", "孔雀青": "peacock",
-    "沙漠暖沙": "desert", "钴蓝珊瑚": "cobalt_coral", "星空紫金": "plum_gold",
-    # —— 复古 / 个性 ——
-    "火烈鸟": "flamingo", "复古霓虹": "retro", "荷兰田野": "dutch_field",
-    "红酒": "wine", "苔藓陶土": "moss_clay", "青橙": "teal_orange",
-    # —— 知名配色库（GitHub 公认） ——
     "现代明亮（Urban）": "urban", "科研经典（SCI）": "sci_std",
     "Kelly 对比": "kelly", "材质亮色": "plasma_bright",
 }
-# 3) 图表版式 data_layout（中文名）→ plot_utils.STYLE_FAMILIES 键
+# 3) 图表版式 data_layout（中文名）→ plot_utils.STYLE_FAMILIES 键（只保留 UI 9 个）
 _DATA_LAYOUT = {
     "清爽开放": "clean_open", "柔和网格": "soft_grid", "框线期刊": "framed_journal",
     "极简无框": "minimal_bare", "粗描边": "bold_edge", "清晰深轴": "crisp_dark",
-    "SCI 期刊框线": "sci_frame", "柔和细网格": "soft_mesh", "加粗面板": "bold_panel",
-    "通透留白": "airy_open", "点状网格": "dotted_grid", "紧凑期刊": "journal_compact",
+    "SCI 期刊框线": "sci_frame", "通透留白": "airy_open", "点状网格": "dotted_grid",
 }
-# 4) 图表风格 chart_style（默认柔和学术 soft / Nature）——仅在用户未手选具体配色时，
-#    Nature 才强制锁定 nature 配色；soft 视为默认（不强制，保留种子随机去指纹）。
+# 4) 图表生成方案（fig_mode）→ paper-figure 读 MH_FIG_MODE：
+#    builtin = 0 走软件内置 100+ 图表模板库；nature_ai = 1 联网检索 Nature 顶刊风格图
+_FIG_MODE = {"builtin": "0", "nature_ai": "1"}
 _CUSTOM_FALLBACK_COLORS = "#5B9BD5,#ED7D7D,#7BC8A4,#B0B0B0,#9B8EC4,#F4A261"
 
 
@@ -1095,20 +1078,20 @@ def _fig_markers(config):
     cs = (cfg.get("color_scheme") or "bw")
     dg = _DIAGRAM_STYLE.get(cs, "2")
     markers.append(f"MH_DIAGRAM_STYLE={dg}")
-    # 数据图配色（优先手选 data_palette，其次 chart_style=Nature）
+    # 数据图配色（数据图配色方案手动选择；未手选时不强制，保留种子随机去指纹）
     pal = (cfg.get("data_palette") or "").strip()
-    chart_style = (cfg.get("chart_style") or "soft").strip()
     if pal in _DATA_PALETTE:
         markers.append(f"MH_DATA_FIG_PALETTE={_DATA_PALETTE[pal]}")
     elif pal == "自定义":
         markers.append("MH_DATA_FIG_PALETTE=custom")
         markers.append(f"MH_DATA_FIG_COLORS={_CUSTOM_FALLBACK_COLORS}")
-    elif chart_style == "nature":
-        markers.append("MH_DATA_FIG_PALETTE=nature")
     # 图表版式（data_layout）
     lay = (cfg.get("data_layout") or "").strip()
     if lay in _DATA_LAYOUT:
         markers.append(f"MH_DATA_FIG_STYLE={_DATA_LAYOUT[lay]}")
+    # 图表生成方案：builtin=0 内置图表库（默认） / nature_ai=1 联网检索 Nature 顶刊风格
+    fm = _FIG_MODE.get((cfg.get("fig_mode") or "builtin").strip(), "0")
+    markers.append(f"MH_FIG_MODE={fm}")
     # 数据图视觉质检（paper-figure 读 MH_DATA_FIG_VISION=1）
     if cfg.get("data_fig_check"):
         markers.append("MH_DATA_FIG_VISION=1")
@@ -1306,6 +1289,9 @@ def prepare_cli_workspace(ws, config, file_index, step_list=None, current=None, 
         cs = (config or {}).get("color_scheme") or "bw"
         cs_name = {"bw": "纯黑白线稿", "plain": "朴素竞赛", "modern": "现代精致"}.get(cs, cs)
         rules.append(f"- 图表配色风格族 = {cs_name}（用户手选，全程遵守）")
+        fm = (config or {}).get("fig_mode") or "builtin"
+        fm_name = {"builtin": "内置图表库（100+ 模板）", "nature_ai": "Nature 顶刊 AI 生成（联网）"}.get(fm, fm)
+        rules.append(f"- 图表生成方案 = {fm_name}（用户选定，全程遵守；paper-figure 步骤按 MH_FIG_MODE 执行）")
         pl = (config or {}).get("page_limit")
         if pl:
             rules.append(f"- 论文正文页数 ≤ {pl} 页（不含附录与参考文献）")
@@ -1878,8 +1864,142 @@ def run_step_via_cli(ws, prompt, system_text="", provider="anthropic",
     return final_text, meta
 
 
+def _run_one_step(wid, config, ws, step, step_list, template, file_index, steps, idx, total):
+    """执行单个步骤主体：解析模型→CLI 会话→落盘→自检→状态写库/推送。
+
+    返回 (ok, err)；ok=False 表示本步失败（调用方负责整条流水线失败收尾）。
+    供 execute_job 顺序执行与第 4/5 步（figure/arch）并行执行共用。
+    """
+    role = step.get("key") or step.get("role", "executor")
+    provider, api_base, api_key, model = resolve_model(role, config)
+    step_start = time.time()
+    steps[step["key"]] = {"status": "running", "label": step["label"],
+                          "skill": step["skill"], "checkpoint": step.get("checkpoint", False),
+                          "model": model, "executor": "cli",
+                          "msg": "执行中"}
+    db.update_workflow(wid, steps=steps, step=step["key"],
+                       progress=int(idx / total * 100))
+    _push(wid, {"type": "step", "step": step["key"], "status": "running",
+                "label": step["label"], "progress": int(idx / total * 100), "msg": "执行中"})
+    try:
+        system = compose_skill_prompt(step["skill"], template, step["key"])
+        user = build_user_message(step, config, file_index, template)
+        copied = prepare_cli_workspace(ws, config, file_index,
+                                       step_list=step_list,
+                                       current=step, template=template)
+        if copied:
+            _push(wid, {"type": "log", "step": step["key"],
+                        "msg": f"模板注入 ws/_templates/: {'，'.join(copied)}"})
+        out_text, cli_meta = run_step_via_cli(
+            ws, user, system_text=system or "", provider=provider,
+            api_base=api_base, api_key=api_key, model=model,
+            wid=wid, step_key=step["key"])
+        used_rounds = int(cli_meta.get("num_turns") or 1)
+        cost = cli_meta.get("cost")
+        extra = f" · {cli_meta.get('tool_calls', 0)} 次工具调用"
+        if cost is not None:
+            extra += f" · ${cost:.3f}"
+        _push(wid, {"type": "log", "step": step["key"],
+                    "msg": f"CLI 会话完成：{used_rounds} 轮{extra}"})
+        _push(wid, {"type": "log", "step": step["key"],
+                    "msg": f"步骤完成：{step['label']}（{(out_text or '')[:80]}...）"})
+        ws = ws_path(wid)
+        out_file = ws / step["out"]
+        if step["out"].endswith((".tex", ".md", ".txt")):
+            out_file.parent.mkdir(parents=True, exist_ok=True)
+            out_file.write_text(out_text or "", encoding="utf-8")
+        ok, detail = run_check(ws, wid, step["key"], step)
+        if step["key"] == "review":
+            policy = ((config.get("review_policy") or "").strip().lower()
+                      or (db.get_setting("review_policy", "") or "").strip().lower()
+                      or "disclose")
+            if policy not in ("disclose", "block"):
+                policy = "disclose"
+            if ok and policy == "disclose":
+                verd = ws / "COMP_REVIEW_VERDICT.json"
+                fatal = major = minor = -1
+                if verd.is_file():
+                    try:
+                        vd = json.loads(verd.read_text(encoding="utf-8"))
+                        fatal = int(vd.get("fatal", vd.get("fatal_count", -1)))
+                        major = int(vd.get("major", vd.get("major_count", -1)))
+                        minor = int(vd.get("minor", vd.get("minor_count", -1)))
+                    except Exception:
+                        pass
+                if fatal == 0 and major >= 0:
+                    _push(wid, {"type": "log", "step": "review",
+                                "msg": f"复核披露：fatal={fatal} major={major} minor={minor} → 按披露模式放行，后续步骤须在论文中如实降级披露这些问题"})
+                    detail = (detail or "") + f" | 复核披露: fatal={fatal} major={major} minor={minor}（disclose 放行）"
+                else:
+                    _push(wid, {"type": "log", "step": "review",
+                                "msg": "复核披露模式：未解析到 COMP_REVIEW_VERDICT.json 或含 fatal，按普通完成继续（详见 COMP_REVIEW.md）"})
+        if step["key"] in ("compile", "improve"):
+            tex_cand = ws / "paper" / "main.tex"
+            if not tex_cand.is_file():
+                tex_cand = ws / "main.tex"
+            pdf_cand = tex_cand.parent / "main.pdf"
+            if tex_cand.is_file() and (not pdf_cand.exists()
+                                       or pdf_cand.stat().st_size == 0):
+                ok_c, detail_c = compile_pdf(ws)
+                _push(wid, {"type": "log", "step": step["key"],
+                            "msg": f"本地兜底编译：{'成功' if ok_c else '失败'} —— {detail_c[:160]}"})
+                if not ok_c:
+                    ok = False
+                if detail in ("", "无自检脚本"):
+                    detail = detail_c
+                else:
+                    detail = f"{detail_c} | 自检: {detail}"
+            else:
+                ok_cli = pdf_cand.is_file() and pdf_cand.stat().st_size > 1000
+                if not ok_cli and not tex_cand.is_file():
+                    ok_cli = True
+                if not ok_cli:
+                    detail = detail or ("PDF 编译由 CLI 会话完成" if ok_cli else "CLI 未产出 main.pdf")
+            if step["key"] == "compile" and out_text:
+                try:
+                    (ws / "compile_note.md").write_text(out_text, encoding="utf-8")
+                except OSError:
+                    pass
+        dur = int(time.time() - step_start)
+        steps[step["key"]] = {"status": "done" if ok else "warn",
+                              "label": step["label"], "skill": step["skill"],
+                              "checkpoint": step.get("checkpoint", False),
+                              "model": model, "executor": "cli",
+                              "duration": dur,
+                              "msg": (detail or "")[:200], "out": step["out"]}
+        db.update_workflow(wid, steps=steps,
+                           progress=int((idx + 1) / total * 100))
+        _push(wid, {"type": "step", "step": step["key"],
+                    "status": "done" if ok else "warn",
+                    "label": step["label"], "duration": dur,
+                    "progress": int((idx + 1) / total * 100)})
+        if (config.get("manual_checkpoint") and step.get("checkpoint")
+                and idx + 1 < total):
+            _pause_event(wid).clear()
+            steps[step["key"]]["msg"] = ((steps[step["key"]].get("msg") or "") + "｜人工检查点：已暂停，预览产物后点继续")[:200]
+            db.update_workflow(wid, steps=steps, status="paused")
+            _push(wid, {"type": "step", "step": step["key"], "status": "paused",
+                        "label": step["label"],
+                        "msg": "人工检查点：预览产出后在运行页点「继续」恢复流水线"})
+            _push(wid, {"type": "status", "status": "paused",
+                        "msg": f"人工检查点（{step['label']}）：预览产物后点继续"})
+            _pause_event(wid).wait()
+            db.update_workflow(wid, status="running")
+            _push(wid, {"type": "status", "status": "running", "msg": "已过检查点，继续流水线"})
+        return (True, None)
+    except Exception as e:
+        dur = int(time.time() - step_start)
+        steps[step["key"]] = {"status": "failed", "label": step["label"],
+                              "skill": step["skill"], "model": model,
+                              "duration": dur, "msg": str(e)[:200]}
+        db.update_workflow(wid, steps=steps)
+        _push(wid, {"type": "step", "step": step["key"], "status": "failed",
+                    "label": step["label"], "msg": str(e)[:120]})
+        return (False, e)
+
+
 def execute_job(wid):
-    """后台运行：按模板路由到对应流水线，顺序执行全部步骤，更新数据库进度。"""
+    """后台运行：按模板路由到对应流水线，顺序执行全部步骤（第 4/5 步并行），更新数据库进度。"""
     w = db.get_workflow(wid)
     if not w:
         return
@@ -1901,7 +2021,9 @@ def execute_job(wid):
 
     total = len(step_list)
 
-    for idx, step in enumerate(step_list):
+    idx = 0
+    while idx < len(step_list):
+        step = step_list[idx]
         # 暂停检查（修复4）：DB 状态为 paused 时阻塞等待 resume 置位
         if db.get_workflow(wid).get("status") == "paused":
             ev = _pause_event(wid)
@@ -1913,149 +2035,31 @@ def execute_job(wid):
             ev.wait()  # 阻塞直到 resume 置位
             db.update_workflow(wid, status="running")
             _push(wid, {"type": "status", "status": "running", "msg": "已恢复"})
-        # 按步骤解析本次调用所用的模型与密钥（role=步骤 key，支持「每步指定」覆盖）
-        role = step.get("key") or step.get("role", "executor")
-        provider, api_base, api_key, model = resolve_model(role, config)
-        # 执行引擎：固定 Claude Code CLI（agent 自主读写/跑码/编译）。
-        # 找不到 CLI 直接失败并提示安装，绝不降级为 API 直连。
-        # 记录步骤状态
-        step_start = time.time()
-        steps[step["key"]] = {"status": "running", "label": step["label"],
-                              "skill": step["skill"], "checkpoint": step.get("checkpoint", False),
-                              "model": model, "executor": "cli",
-                              "msg": "执行中"}
-        db.update_workflow(wid, steps=steps, step=step["key"],
-                           progress=int(idx / total * 100))
-        _push(wid, {"type": "step", "step": step["key"], "status": "running",
-                    "label": step["label"], "progress": int(idx / total * 100), "msg": "执行中"})
-        try:
-            system = compose_skill_prompt(step["skill"], template, step["key"])
-            user = build_user_message(step, config, file_index, template)
-            # claude CLI agent 会话（cwd=工作区，CLAUDE.md 承载指令）
-            copied = prepare_cli_workspace(ws, config, file_index,
-                                           step_list=step_list,
-                                           current=step, template=template)
-            if copied:
-                _push(wid, {"type": "log", "step": step["key"],
-                            "msg": f"模板注入 ws/_templates/: {'，'.join(copied)}"})
-            out_text, cli_meta = run_step_via_cli(
-                ws, user, system_text=system or "", provider=provider,
-                api_base=api_base, api_key=api_key, model=model,
-                wid=wid, step_key=step["key"])
-            used_rounds = int(cli_meta.get("num_turns") or 1)
-            cost = cli_meta.get("cost")
-            extra = f" · {cli_meta.get('tool_calls', 0)} 次工具调用"
-            if cost is not None:
-                extra += f" · ${cost:.3f}"
-            _push(wid, {"type": "log", "step": step["key"],
-                        "msg": f"CLI 会话完成：{used_rounds} 轮{extra}"})
-            _push(wid, {"type": "log", "step": step["key"],
-                        "msg": f"步骤完成：{step['label']}（{(out_text or '')[:80]}...）"})
-            # 落盘产出文件
-            ws = ws_path(wid)
-            out_file = ws / step["out"]
-            if step["out"].endswith((".tex", ".md", ".txt")):
-                out_file.parent.mkdir(parents=True, exist_ok=True)
-                out_file.write_text(out_text or "", encoding="utf-8")
-            # 自检
-            ok, detail = run_check(ws, wid, step["key"], step)
-            # 复核语义（COMP_REVIEW_VERDICT 披露式 vs 阻断式）：
-            #   disclose（默认）：comp-review 产出 VERDICT 后仅播报分级，不阻断；
-            #   block：rc=1 保持原有 warn/failed 阻断语义。
-            if step["key"] == "review":
-                policy = ((config.get("review_policy") or "").strip().lower()
-                          or (db.get_setting("review_policy", "") or "").strip().lower()
-                          or "disclose")
-                if policy not in ("disclose", "block"):
-                    policy = "disclose"
-                if ok and policy == "disclose":
-                    verd = ws / "COMP_REVIEW_VERDICT.json"
-                    fatal = major = minor = -1
-                    if verd.is_file():
-                        try:
-                            vd = json.loads(verd.read_text(encoding="utf-8"))
-                            fatal = int(vd.get("fatal", vd.get("fatal_count", -1)))
-                            major = int(vd.get("major", vd.get("major_count", -1)))
-                            minor = int(vd.get("minor", vd.get("minor_count", -1)))
-                        except Exception:
-                            pass
-                    if fatal == 0 and major >= 0:
-                        _push(wid, {"type": "log", "step": "review",
-                                    "msg": f"复核披露：fatal={fatal} major={major} minor={minor} → 按披露模式放行，后续步骤须在论文中如实降级披露这些问题"})
-                        detail = (detail or "") + f" | 复核披露: fatal={fatal} major={major} minor={minor}（disclose 放行）"
-                    else:
-                        _push(wid, {"type": "log", "step": "review",
-                                    "msg": "复核披露模式：未解析到 COMP_REVIEW_VERDICT.json 或含 fatal，按普通完成继续（详见 COMP_REVIEW.md）"})
-            # PDF 编译：CLI 会话记忆里 skill 已自行编译，此处仅做兜底补一次
-            if step["key"] in ("compile", "improve"):
-                tex_cand = ws / "paper" / "main.tex"
-                if not tex_cand.is_file():
-                    tex_cand = ws / "main.tex"
-                pdf_cand = tex_cand.parent / "main.pdf"
-                if tex_cand.is_file() and (not pdf_cand.exists()
-                                           or pdf_cand.stat().st_size == 0):
-                    # 兜底：skill 会话没编出 PDF（可能卡在权限/环境），本地补一次
-                    ok_c, detail_c = compile_pdf(ws)
-                    _push(wid, {"type": "log", "step": step["key"],
-                                "msg": f"本地兜底编译：{'成功' if ok_c else '失败'} —— {detail_c[:160]}"})
-                    if not ok_c:
-                        ok = False
-                    if detail in ("", "无自检脚本"):
-                        detail = detail_c
-                    else:
-                        detail = f"{detail_c} | 自检: {detail}"
-                else:
-                    ok_cli = pdf_cand.is_file() and pdf_cand.stat().st_size > 1000
-                    if not ok_cli and not tex_cand.is_file():
-                        ok_cli = True       # 非论文类流水线无 tex，不算失败
-                    if not ok_cli:
-                        ok = False
-                    detail = detail or ("PDF 编译由 CLI 会话完成" if ok_cli else "CLI 未产出 main.pdf")
-                # compile 步骤的 LLM 说明文本（原 out=main.pdf 无处落盘）落盘为 compile_note.md
-                if step["key"] == "compile" and out_text:
-                    try:
-                        (ws / "compile_note.md").write_text(out_text, encoding="utf-8")
-                    except OSError:
-                        pass
-            dur = int(time.time() - step_start)
-            steps[step["key"]] = {"status": "done" if ok else "warn",
-                                  "label": step["label"], "skill": step["skill"],
-                                  "checkpoint": step.get("checkpoint", False),
-                                  "model": model, "executor": "cli",
-                                  "duration": dur,
-                                  "msg": (detail or "")[:200], "out": step["out"]}
-            db.update_workflow(wid, steps=steps,
-                               progress=int((idx + 1) / total * 100))
-            _push(wid, {"type": "step", "step": step["key"],
-                        "status": "done" if ok else "warn",
-                        "label": step["label"], "duration": dur,
-                        "progress": int((idx + 1) / total * 100)})
-            # 人工检查点（P2 接线）：开启 manual_checkpoint 且本步为 checkpoint 步时，
-            # 步骤完成后自动暂停，等待用户在运行页查看产物后点 resume 继续。
-            if (config.get("manual_checkpoint") and step.get("checkpoint")
-                    and idx + 1 < total):
-                _pause_event(wid).clear()
-                steps[step["key"]]["msg"] = ((steps[step["key"]].get("msg") or "") + "｜人工检查点：已暂停，预览产物后点继续")[:200]
-                db.update_workflow(wid, steps=steps, status="paused")
-                _push(wid, {"type": "step", "step": step["key"], "status": "paused",
-                            "label": step["label"],
-                            "msg": "人工检查点：预览产出后在运行页点「继续」恢复流水线"})
-                _push(wid, {"type": "status", "status": "paused",
-                            "msg": f"人工检查点（{step['label']}）：预览产物后点继续"})
-                _pause_event(wid).wait()   # 阻塞直到用户 resume
-                db.update_workflow(wid, status="running")
-                _push(wid, {"type": "status", "status": "running", "msg": "已过检查点，继续流水线"})
-        except Exception as e:
-            dur = int(time.time() - step_start)
-            steps[step["key"]] = {"status": "failed", "label": step["label"],
-                                  "skill": step["skill"], "model": model,
-                                  "duration": dur, "msg": str(e)[:200]}
+        # 第 4 步「图表生成」(figure) 与第 5 步「流程与架构图」(arch) 互不依赖 → 并行执行
+        nxt = step_list[idx + 1] if idx + 1 < len(step_list) else None
+        if nxt is not None and step["key"] == "figure" and nxt["key"] == "arch":
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as _ex:
+                _f1 = _ex.submit(_run_one_step, wid, config, ws, step, step_list,
+                                 template, file_index, steps, idx, total)
+                _f2 = _ex.submit(_run_one_step, wid, config, ws, nxt, step_list,
+                                 template, file_index, steps, idx + 1, total)
+                _r1, _r2 = _f1.result(), _f2.result()
+            if not (_r1[0] and _r2[0]):
+                db.update_workflow(wid, steps=steps, status="failed")
+                _push(wid, {"type": "status", "status": "failed"})
+                _clear_pause(wid)
+                return
+            idx += 2
+            continue
+        _r = _run_one_step(wid, config, ws, step, step_list, template,
+                           file_index, steps, idx, total)
+        if not _r[0]:
             db.update_workflow(wid, steps=steps, status="failed")
-            _push(wid, {"type": "step", "step": step["key"], "status": "failed",
-                        "label": step["label"], "msg": str(e)[:120]})
             _push(wid, {"type": "status", "status": "failed"})
             _clear_pause(wid)
             return
+        idx += 1
     db.update_workflow(wid, steps=steps, status="completed", progress=100)
     _push(wid, {"type": "step", "status": "completed", "progress": 100})
     _push(wid, {"type": "status", "status": "completed"})

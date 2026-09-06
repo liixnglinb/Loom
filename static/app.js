@@ -249,9 +249,12 @@ const DD = (()=>{
     sync();
     sel.tabIndex = -1;
     sel.classList.add('dd-sel-hidden');
+    /* ⚠️ 顺序必须：先用 wrap 原位替换 sel（此时 sel 仍是原父节点的子节点，
+     * replaceChild 合法），再把 trig/sel 移进 wrap。原先先 append 再 replaceChild，
+     * 会让 wrap 变成 sel 的父节点后触发 HierarchyRequestError，select 被移出文档。 */
+    sel.parentNode.replaceChild(wrap, sel);
     wrap.appendChild(trig);
     wrap.appendChild(sel);
-    sel.parentNode.replaceChild(wrap, sel);
     /* flex 布局（如逐步骤下拉）保留弹性填充；否则按原宽固定 */
     if(isFlex) wrap.style.minWidth = '120px';
     else wrap.style.width = Math.max(w, 120) + 'px';
@@ -416,7 +419,6 @@ async function renderList(){
     <div class="page-head">
       <div><h1>工作流</h1><div class="sub">管理你的科研与竞赛流水线</div></div>
       <div style="display:flex;gap:10px">
-        <button class="btn btn-ghost btn-sm" onclick="nav.go('tools')"><span class="tools-list-ico">🧰</span> 科研工具</button>
         ${run>0?'<button class="btn btn-ghost btn-sm" onclick="location.href=\'/\'">刷新</button>':''}
       </div>
     </div>
@@ -582,19 +584,12 @@ const EN_CONTESTS = [
   {id:'美赛(MCM/ICM)',emoji:'🌍',stars:5,month:'2月'},{id:'数维杯国际赛',emoji:'🔢',stars:3,month:'11月'},
   {id:'亚太(APMCM)',emoji:'🌏',stars:3,month:'11月'},{id:'小美赛(认证杯国际)',emoji:'📝',stars:3,month:'12月'},
 ];
-const PALETTES = ['随机（推荐）','自定义',
-  /* ▍首选热门（GitHub 公认好用 · 明亮醒目） */
+const PALETTES = ['随机（推荐）',
+  /* ▍最热门（GitHub 公认 · 论文常用） */
   '现代明亮（Urban）','科研经典（SCI）','Kelly 对比','材质亮色',
-  /* ▍经典明亮（区分度好 · 人手一份） */
-  'Okabe-Ito 经典','Tol 柔和','Tol 明快','优雅 Elegant',
-  /* ▍期刊 / 顶刊（SCI 投稿首选） */
-  'Nature 顶刊','期刊顶刊（SCI）','NEJM 医学','Science 学术','Tableau 专业','NPG 自然','色盲友好（Wong）',
-  /* ▍特色风格（高级感气质） */
-  '日暮渐变','海洋青蓝','珊瑚','明快春日','薄荷薰衣草','大地森林','孔雀青','钴蓝珊瑚','星空紫金',
-  /* ▍个性亮色 */
-  '火烈鸟','复古霓虹','荷兰田野','红酒','青橙'];
+  'Nature 顶刊','优雅 Elegant','Okabe-Ito 经典','色盲友好（Wong）'];
 const LAYOUTS = ['随机（推荐）','清爽开放','柔和网格','框线期刊','极简无框','粗描边','清晰深轴',
-  'SCI 期刊框线','柔和细网格','加粗面板','通透留白','点状网格','紧凑期刊'];
+  'SCI 期刊框线','通透留白','点状网格'];
 
 async function loadAcademic(){
   try{ const r = await api('/api/pipelines'); ACADEMIC=(r.pipelines||[]).filter(p=>p.g!=='comp'); }catch(e){ ACADEMIC=[]; }
@@ -620,10 +615,10 @@ async function renderNew(){
         <span class="tpl-national-hero-open">直接进入 ›</span>
       </div>
 
-      <!-- ① 竞赛工作流 -->
+      <!-- ① 竞赛工作流（除国赛外，其余数模赛项正在开发中） -->
       <div class="nw-cat">
-        <div class="nw-cat-head"><span class="nw-cat-ico">🏆</span><span class="nw-cat-name">竞赛工作流</span></div>
-        <p class="nw-cat-desc">除国赛外的其他数学建模竞赛赛项，点击进入对应工作流</p>
+        <div class="nw-cat-head"><span class="nw-cat-ico">🏆</span><span class="nw-cat-name">竞赛工作流</span><span class="nw-dev-tag">开发中</span></div>
+        <p class="nw-cat-desc">除国赛外的其他数学建模竞赛赛项正在开发中，敬请期待</p>
         <div class="contest-grid-wrap">
           <div class="contest-group-h">🇨🇳 中文赛项 <em>${CN_CONTESTS.length-1} 项</em></div>
           <div class="contest-card-grid" id="cnContestGrid"></div>
@@ -631,45 +626,8 @@ async function renderNew(){
           <div class="contest-card-grid" id="enContestGrid"></div>
         </div>
       </div>
-
-      <!-- ② 科研工作 -->
-      <div class="nw-cat">
-        <div class="nw-cat-head"><span class="nw-cat-ico">🔬</span><span class="nw-cat-name">科研工作</span><span class="nw-dev-tag">开发中</span></div>
-        <p class="nw-cat-desc">文献调研、数据可视化、方案复现等科研日常任务</p>
-        <div class="nw-item-grid" id="nwCatResearch"></div>
-      </div>
-
-      <!-- ③ 学术写作 -->
-      <div class="nw-cat">
-        <div class="nw-cat-head"><span class="nw-cat-ico">📝</span><span class="nw-cat-name">学术写作</span></div>
-        <p class="nw-cat-desc">期刊 / 会议论文、综述、毕设等学术写作流水线</p>
-        <div class="nw-item-grid" id="nwTplGrid"></div>
-      </div>
-
-      <!-- ④ 已有资料写论文 -->
-      <div class="nw-cat">
-        <div class="nw-cat-head"><span class="nw-cat-ico">📚</span><span class="nw-cat-name">已有资料写论文</span><span class="nw-dev-tag">开发中</span></div>
-        <p class="nw-cat-desc">把已有数据、图表、代码组装成完整论文</p>
-        <div class="nw-item-grid" id="nwCatPaper"></div>
-      </div>
-
-      <!-- ⑤ 一句话生成项目 -->
-      <div class="nw-cat">
-        <div class="nw-cat-head"><span class="nw-cat-ico">💡</span><span class="nw-cat-name">一句话生成项目</span><span class="nw-dev-tag">开发中</span></div>
-        <p class="nw-cat-desc">用一句话描述需求，自动生成完整项目</p>
-        <div class="nw-item-grid" id="nwCatPrompt"></div>
-      </div>
-
-      <!-- ⑥ 软著专利 -->
-      <div class="nw-cat">
-        <div class="nw-cat-head"><span class="nw-cat-ico">📜</span><span class="nw-cat-name">软著专利</span><span class="nw-dev-tag">开发中</span></div>
-        <p class="nw-cat-desc">软件著作权、发明专利申请材料撰写</p>
-        <div class="nw-item-grid" id="nwCatPatent"></div>
-      </div>
     </div>`;
   renderContestGrid();
-  renderAcadGrid();
-  renderExtCats();
 }
 /* 竞赛赛项卡片墙（点击直达表单并预选该赛项；国赛由顶部大卡单独承载） */
 function renderContestGrid(){
@@ -679,8 +637,9 @@ function renderContestGrid(){
 function contestCard(c){
   const stars='★'.repeat(c.stars)+'☆'.repeat(5-c.stars);
   const hot=c.id.includes('国赛')||c.id.includes('美赛')||c.id.includes('华为杯')||c.stars>=5;
-  return `<div class="contest-card ${hot?'hot':''}" data-contest="${esc(c.id)}" onclick="nwPickContest('${esc(c.id)}')">
+  return `<div class="contest-card ${hot?'hot':''}" data-contest="${esc(c.id)}" onclick="nwDevToast('${esc(c.id)}')">
     ${hot?'<span class="contest-card-hot">★ 热门</span>':''}
+    ${'<span class="nw-dev-mini contest-dev">开发中</span>'}
     <span class="contest-card-emoji">${c.emoji}</span>
     <div class="contest-card-main"><b>${esc(c.id)}</b><span>${stars}</span><em>${c.month}</em></div>
   </div>`;
@@ -690,50 +649,6 @@ window.nwPickContest=function(id){
   renderCompForm(id, id==='国赛(CUMCM)');
 };
 
-/* 学术写作分类（统一卡片样式，点击仍走学术表单） */
-function renderAcadGrid(){
-  const grid=$('#nwTplGrid'); if(!grid) return;
-  const acadCards = ACADEMIC.map(p=>({g:'acad', tpl:p.template, emoji:p.emoji||'📄', name:p.name,
-    desc:p.desc+(p.time?' · '+p.time:''), steps:p.steps||[]}));
-  if(!acadCards.length){ grid.innerHTML='<div class="muted" style="padding:14px">暂无模板</div>'; return; }
-  grid.innerHTML = acadCards.map(t=>`
-    <div class="nw-item" data-go="acad" data-tpl="${t.tpl}" onclick="nwPick(this)">
-      <span class="nw-item-emoji">${t.emoji||'📄'}</span>
-      <div class="nw-item-main"><b class="name">${esc(t.name)}</b><em>${escd(t.desc)}</em></div>
-    </div>`).join('');
-}
-
-/* 其余分类（开发中展示卡，点击提示敬请期待） */
-const EXT_CATS = {
-  research: [
-    {name:'文献调研', emoji:'🔎', desc:'多自检索 + 摘要综述'},
-    {name:'数据可视化', emoji:'📊', desc:'配色 / 版式自动优化'},
-    {name:'方案复现', emoji:'🧪', desc:'按论文复现计算流程'},
-  ],
-  paper: [
-    {name:'从材料成稿', emoji:'🗂️', desc:'数据 + 图表 + 代码 → 论文'},
-    {name:'初稿精修', emoji:'✂️', desc:'结构 / 语法 / 审稿回复'},
-  ],
-  prompt: [
-    {name:'一句话建站', emoji:'🌐', desc:'描述需求 → 完整网页项目'},
-    {name:'一句话出报告', emoji:'📈', desc:'描述主题 → 数据报告'},
-  ],
-  patent: [
-    {name:'软著申请材料', emoji:'🪪', desc:'自程序 + 说明书自动整理'},
-    {name:'发明专利申请', emoji:'💎', desc:'权利要求书 + 说明书初稿'},
-  ],
-};
-function renderExtCats(){
-  const map={'nwCatResearch':'research','nwCatPaper':'paper','nwCatPrompt':'prompt','nwCatPatent':'patent'};
-  Object.entries(map).forEach(([elId,key])=>{
-    const el=document.getElementById(elId); if(!el) return;
-    el.innerHTML=EXT_CATS[key].map(o=>`
-      <div class="nw-item" onclick="nwDevToast('${esc(o.name)}')">
-        <span class="nw-item-emoji">${o.emoji}</span>
-        <div class="nw-item-main"><b>${esc(o.name)}</b><em>${esc(o.desc)}</em></div>
-      </div>`).join('');
-  });
-}
 window.nwDevToast=function(name){ toast('「'+name+'」正在开发中，敬请期待'); };
 const WIP_ITEMS=[
   {name:'竞赛 · 中文赛项', emoji:'🐼', desc:'天府杯 / 认证杯 / MathorCup / 华为杯 等'},
@@ -833,8 +748,7 @@ function renderCompForm(name, skipContest){
       <div class="field"><div class="radio-pills flow-fill" data-field="compFlow">
         <div class="pill active" data-val="native" onclick="nwPill(this)">⚡ 极速 自动流</div>
         <div class="pill" data-val="bzd" onclick="nwPill(this)">🏅 BZD 双审精制流</div>
-      </div>
-      <div class="hint" style="margin-top:4px">极速流：一键全自动 9 步直出 PDF（约 1-2 小时，适合试跑/时间紧）；BZD 流：BZD 2026 模板库 + 两轮独立审查（章节自查 + 综合评审）+ 评分质量门（约 2-3 天，正式比赛冲奖推荐）。</div></div>
+      </div></div>
 
       <div class="sect" id="cfContestSect" style="${hideContest?'display:none':''}">赛项选择</div>
       <div class="contest-wrap" id="cfContestWrap" style="${hideContest?'display:none':''}">
@@ -866,59 +780,50 @@ function renderCompForm(name, skipContest){
         <div class="st"><div class="st-t">🔍 逻辑对抗复核（费额度）</div><div class="st-d">编程后、写论文前，换独立视角挑"方向反 / 重复计量 / 外推过硬 / 漏变量 / 跨问矛盾 / 任务读歪"，发现致命逻辑错则回炉。建议重要赛事终稿开启。</div></div></div>
 
       <div class="sect">图形 / 配色设置</div>
-      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-        <button type="button" class="btn btn-ghost btn-sm" onclick="showStylePreview()">👁 查看全部 70 种图表 ›</button>
+      <div style="display:flex;justify-content:flex-end;margin:-14px 0 8px">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="showStylePreview()">👁 查看全部图表 ›</button>
       </div>
-      <div class="grid3">
-        <div class="field"><label class="f">图表风格</label>
-          <div class="radio-pills fill" data-field="chartStyle">
-            <div class="pill active" data-val="soft" onclick="nwPill(this)">默认（柔和学术）</div>
-            <div class="pill" data-val="nature" onclick="nwPill(this)">Nature</div>
-          </div></div>
-        <div class="field"><label class="f">图表配色</label>
-          <div class="radio-pills fill" data-field="colorScheme">
+      <div class="field"><label class="f">图表生成方案</label>
+        <div class="radio-pills fill" data-field="figMode">
+          <div class="pill active" data-val="builtin" onclick="nwPill(this)">📚 内置图表库（100+ 模板）</div>
+          <div class="pill" data-val="nature_ai" onclick="nwPill(this)">🌍 Nature 顶刊 AI 生成（联网）</div>
+        </div></div>
+      <div class="field"><label class="f">流程图配色</label>
+        <div style="display:flex;gap:10px;align-items:stretch">
+          <div class="radio-pills fill" data-field="colorScheme" style="flex:1">
             <div class="pill active" data-val="bw" onclick="nwPill(this)">纯黑白</div>
             <div class="pill" data-val="plain" onclick="nwPill(this)">朴素竞赛</div>
             <div class="pill" data-val="modern" onclick="nwPill(this)">现代精致</div>
-          </div></div>
-      </div>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" style="white-space:nowrap;height:auto" onclick="showFlowPalette()">👁 查看流程图配色 ›</button>
+        </div></div>
+      <div class="field"><label class="f">数据图配色</label>
+        <div class="pick-row"><span>🎨 低饱和 · 按题目气质手选</span>
+          <button type="button" class="btn btn-ghost btn-sm" id="cfPaletteBtn" onclick="nwModal('palette')">随机 ›</button></div></div>
+      <div class="field"><label class="f">图表版式</label>
+        <div class="pick-row"><span>📐 边框 / 网格 / 轴线风格</span>
+          <button type="button" class="btn btn-ghost btn-sm" id="cfLayoutBtn" onclick="nwModal('layout')">随机 ›</button></div></div>
 
       <details class="adv-fold">
         <summary>高级选项 <span class="muted">图片 / 表格 / 模型数量（默认自动）</span></summary>
         <div class="grid3">
           <div class="field"><label class="f">图片数量</label>
             <div class="ctl-row">
-              <div class="radio-pills ctl-pills">
-                <div class="pill active" data-val="auto" onclick="nwPill(this);ctlQty(this)">自动</div>
-                <div class="pill" data-val="custom" onclick="nwPill(this);ctlQty(this)">自定义</div>
-              </div>
-              <input type="number" id="cfImgCount" class="ctl-num" value="0" min="1" max="50" placeholder="张数" style="display:none">
+              <label class="ctl-switch"><input type="checkbox" id="cfImgAuto" class="ctl-chk" checked onchange="nwCtlAuto('cfImgCount',this)"><span class="sw"></span><span class="sw-t">自动</span></label>
+              <input type="number" id="cfImgCount" class="ctl-num" value="0" min="1" max="50" placeholder="自定义" disabled>
             </div></div>
           <div class="field"><label class="f">表格数量</label>
             <div class="ctl-row">
-              <div class="radio-pills ctl-pills">
-                <div class="pill active" data-val="auto" onclick="nwPill(this);ctlQty(this)">自动</div>
-                <div class="pill" data-val="custom" onclick="nwPill(this);ctlQty(this)">自定义</div>
-              </div>
-              <input type="number" id="cfTblCount" class="ctl-num" value="0" min="1" max="50" placeholder="张数" style="display:none">
+              <label class="ctl-switch"><input type="checkbox" id="cfTblAuto" class="ctl-chk" checked onchange="nwCtlAuto('cfTblCount',this)"><span class="sw"></span><span class="sw-t">自动</span></label>
+              <input type="number" id="cfTblCount" class="ctl-num" value="0" min="1" max="50" placeholder="自定义" disabled>
             </div></div>
           <div class="field"><label class="f">模型数量</label>
             <div class="ctl-row">
-              <div class="radio-pills ctl-pills">
-                <div class="pill active" data-val="auto" onclick="nwPill(this);ctlQty(this)">自动</div>
-                <div class="pill" data-val="custom" onclick="nwPill(this);ctlQty(this)">自定义</div>
-              </div>
-              <input type="number" id="cfModelCount" class="ctl-num" value="0" min="1" max="50" placeholder="个数" style="display:none">
+              <label class="ctl-switch"><input type="checkbox" id="cfModelAuto" class="ctl-chk" checked onchange="nwCtlAuto('cfModelCount',this)"><span class="sw"></span><span class="sw-t">自动</span></label>
+              <input type="number" id="cfModelCount" class="ctl-num" value="0" min="1" max="50" placeholder="自定义" disabled>
             </div></div>
         </div>
       </details>
-
-      <div class="field"><label class="f">数据图配色</label>
-        <div class="pick-row"><span>🎨 选配色方案（低饱和 · 按题目气质手选）</span>
-          <button type="button" class="btn btn-ghost btn-sm" onclick="nwModal('palette')">随机（每篇不同） ›</button></div></div>
-      <div class="field"><label class="f">图表版式</label>
-        <div class="pick-row"><span>📐 选版式方案（边框 / 网格 / 轴线风格）</span>
-          <button type="button" class="btn btn-ghost btn-sm" onclick="nwModal('layout')">随机（每篇不同） ›</button></div></div>
 
       <div class="sect">选填 / 上传</div>
       <div class="field"><label for="cfOutline" class="f">解题思路 / 大纲文档 <small>(可选)</small></label>
@@ -1080,6 +985,7 @@ window.nwSelContest = function(el){
 
 /* ---- 配色/版式弹窗 ---- */
 let NW_PICK = {palette:'随机（推荐）', layout:'随机（推荐）'};
+let NW_SNAP = {palette: null, layout: null};
 
 /* 配色方案色板（与 _utils_py/plot_utils.py 的 PALETTES 对齐，改动需三处同步：
    app.js PALETTES/PALETTE_HEX ↔ jobs.py _DATA_PALETTE ↔ plot_utils.py PALETTES） */
@@ -1094,7 +1000,6 @@ const PALETTE_HEX = {
   '珊瑚':               ['#FF6B6B','#4ECDC4','#45B7D1','#F7A072','#A06CD5','#F79256'],
   '明快春日':           ['#219EBC','#FB8500','#6A994E','#8ECAE6','#BC4749','#FFB703'],
   '随机（推荐）':       ['#7AAEC8','#E8945A','#7BC8A4','#9B8EC4','#E0A0A0','#F0C05A'],
-  '自定义':             ['#a48830','#8a8f98','#5B9BD5','#ED7D7D','#7BC8A4','#9B8EC4'],
   /* —— 期刊 / 顶刊风 —— */
   '期刊顶刊（SCI）':    ['#4A90B8','#E8927C','#7BC8A4','#B8B8B8','#F7D097','#9B8EC4','#8DBFA3','#D4A0A0'],
   'Nature 顶刊':        ['#0F4D92','#3775BA','#8BCF8B','#B64342','#767676','#42949E','#9A4D8E','#FFD700'],
@@ -1129,67 +1034,81 @@ const PALETTE_HEX = {
 
 /* 版式渲染参数：边框 / 网格 / 轴色轴粗 / 线宽 / 不透明度（差异显著，便于一眼区分） */
 const LAYOUT_STYLE = {
-  '清爽开放':   {frame:'1px solid #ececec', grid:false, axis:'#9aa0aa', aw:.9,  lw:1.3, op:.92, dots:2.6},
-  '柔和网格':   {frame:'1px solid #e5e7eb', grid:true,  axis:'#6a6f78', aw:1.0, lw:1.6, op:.92, dots:3.1},
+  '随机（推荐）':{frame:'1px solid #e5e7eb', grid:true,  axis:'#555', aw:1.0, lw:1.6, op:.92, dots:3.1,
+                 desc:'每篇运行随机应用一种版式并自动统一'},
+  '清爽开放':   {frame:'1px solid #ececec', grid:false, axis:'#9aa0aa', aw:.9,  lw:1.3, op:.92, dots:2.6,
+                 desc:'浅灰细边 · 无网格 · 细轴'},
+  '柔和网格':   {frame:'1px solid #e5e7eb', grid:true,  axis:'#6a6f78', aw:1.0, lw:1.6, op:.92, dots:3.1,
+                 desc:'柔和灰网格 · 中度线条'},
   '框线期刊':   {frame:'1.5px solid #3f3f46', grid:false, axis:'#333', aw:1.1, lw:1.8, op:1,    dots:3.3,
-                 inner:'inset 0 0 0 3px #fff, inset 0 0 0 4px #d8d8de'},
-  '极简无框':   {frame:'none', grid:false, axis:'#c7cbd1', aw:.7,  lw:1.1, op:.85, dots:2.6},
-  '粗描边':     {frame:'3px solid #18181b', grid:false, axis:'#000', aw:1.7, lw:2.5, op:1,    dots:4.2},
-  '清晰深轴':   {frame:'1px solid #e2e2e6', grid:true,  axis:'#000', aw:2.0, lw:1.8, op:.95, dots:3.2},
-  '随机（推荐）':{frame:'1px solid #e5e7eb', grid:true,  axis:'#555', aw:1.0, lw:1.6, op:.92, dots:3.1},
+                 inner:'inset 0 0 0 3px #fff, inset 0 0 0 4px #d8d8de',
+                 desc:'期刊框线 + 内衬 · 深轴'},
+  '极简无框':   {frame:'none', grid:false, axis:'#c7cbd1', aw:.7,  lw:1.1, op:.85, dots:2.6,
+                 desc:'无边框 · 极细轴 · 低饱和'},
+  '粗描边':     {frame:'3px solid #18181b', grid:false, axis:'#000', aw:1.7, lw:2.5, op:1,    dots:4.2,
+                 desc:'粗黑描边 · 重轴 · 醒目'},
+  '清晰深轴':   {frame:'1px solid #e2e2e6', grid:true,  axis:'#000', aw:2.0, lw:1.8, op:.95, dots:3.2,
+                 desc:'浅边 + 深色粗轴 · 网格'},
+  'SCI 期刊框线':{frame:'1.5px solid #27272a', grid:false, axis:'#111', aw:1.3, lw:1.9, op:1,    dots:3.4,
+                 inner:'inset 0 0 0 2px #f4f4f5, inset 0 0 0 3px #18181b',
+                 desc:'SCI 双线框 · 深色精细'},
+  '通透留白':   {frame:'1px solid #f1f2f4', grid:false, axis:'#b4bac1', aw:.6,  lw:1.0, op:.82, dots:2.2,
+                 pad:'12px',
+                 desc:'轻淡无边 · 少装饰 · 大量留白'},
+  '点状网格':   {frame:'1px solid #e7e9ee', grid:'dots', axis:'#63666b', aw:.9, lw:1.5, op:.95, dots:3.0,
+                 desc:'点状网格 · 中等轴'},
 };
 
 /* 论文真实出图素材（matplotlib 论文级渲染，非 AI 生成）。
-   每种类型按主题预渲染：static/img/paper-{key}__{theme}.png（theme 见 FIG_THEMES）。 */
-const FIG_THEMES = [
-  {k:'vivid',   name:'现代明亮', swatch:['#1696D2','#FDBF11','#55B748','#DB2B27','#EC008B']},
-  {k:'journal', name:'科研经典', swatch:['#0C5DA5','#00B945','#FF9500','#FF2C00','#845B97']},
-  {k:'kelly',   name:'Kelly 对比', swatch:['#F3C300','#875692','#F38400','#BE0032','#008856']},
-  {k:'nature',  name:'Nature',   swatch:['#0F4D92','#3775BA','#8BCF8B','#B64342','#767676']},
-  {k:'elegant', name:'优雅',     swatch:['#7AAEC8','#E8945A','#7BC8A4','#E0A0A0','#F0C05A']},
-  {k:'soft',    name:'经典柔和', swatch:['#5B9BD5','#ED7D7D','#7BC8A4','#B0B0B0','#9B8EC4']},
-];
-let FIG_THEME = 'vivid';   // 当前预览主题（默认现代明亮，右上角切换）
+   图墙统一用 vivid 主题：static/img/paper-{key}__vivid.png；
+   配色弹窗另备 8 张代表图 × 5 配色主题（paper-{key}__{theme}.png，key 见 _realPrev）。 */
 
-/* 图表类型清单（覆盖配方库全部 70 种，按类目分组；key 对应 paper-{key}__{theme}.png） */
+/* 图表类型清单（覆盖配方库全部 70 种，按类目分组；key 对应 paper-{key}__vivid.png） */
 const PAPER_GROUPS = [
   {g:'比较类', items:[
     {k:'bar', t:'分组柱状图'}, {k:'stacked', t:'堆叠柱状图'}, {k:'divbar', t:'发散条形图'},
     {k:'hbar', t:'水平条形图'}, {k:'lollipop', t:'棒棒糖图'}, {k:'dumbbell', t:'哑铃图'},
     {k:'back2back', t:'背靠背图'}, {k:'dotci', t:'点误差图'}, {k:'paired', t:'配对点图'},
-    {k:'sigbar', t:'显著性柱状图'}, {k:'forest', t:'森林图'}]},
+    {k:'sigbar', t:'显著性柱状图'}, {k:'forest', t:'森林图'},
+    {k:'bubble', t:'气泡图'}]},
   {g:'趋势类', items:[
     {k:'line', t:'折线图 · 置信带'}, {k:'area', t:'面积图'}, {k:'dual', t:'双轴图'},
     {k:'slope', t:'斜率图'}, {k:'waterfall', t:'瀑布图'}, {k:'pareto', t:'帕累托图'},
-    {k:'fan', t:'扇形预测图'}, {k:'bump', t:'排名轨迹图'}, {k:'stream', t:'流图'},
-    {k:'cusum', t:'CUSUM 累积和'}, {k:'qband', t:'分位数趋势带'}]},
+    {k:'fan', t:'扇形预测图'}, {k:'bump', t:'排名轨迹图'},
+    {k:'cusum', t:'CUSUM 累积和'}, {k:'qband', t:'分位数趋势带'},
+    {k:'convergence', t:'收敛曲线'}, {k:'step', t:'阶梯图'}, {k:'timeline', t:'事件时间线'},
+    {k:'learning', t:'学习曲线'}, {k:'grey', t:'灰色预测 GM(1,1)'}, {k:'montecarlo', t:'蒙特卡洛模拟带'}]},
   {g:'分布类', items:[
     {k:'box', t:'箱线图'}, {k:'violin', t:'小提琴图'}, {k:'gviolin', t:'分组小提琴图'},
     {k:'hist', t:'直方图'}, {k:'kde', t:'密度曲线'}, {k:'ridge', t:'山脊图'},
-    {k:'rain', t:'雨云图'}, {k:'posterior', t:'后验轨迹图'},
-    {k:'qq', t:'Q-Q 图'}, {k:'ecdf', t:'ECDF 累积分布'}, {k:'joint', t:'联合分布图'}]},
+    {k:'rain', t:'雨云图'},
+    {k:'qq', t:'Q-Q 图'}, {k:'ecdf', t:'ECDF 累积分布'}, {k:'joint', t:'联合分布图'},
+    {k:'hexbin', t:'六角密度图'}, {k:'strip', t:'条带散点图'},
+    {k:'dendrogram', t:'聚类谱系图'}, {k:'violin_split', t:'分裂小提琴图'}]},
   {g:'相关 / 回归', items:[
     {k:'scatter', t:'散点图 · 回归'}, {k:'pair', t:'散点矩阵'}, {k:'bivar', t:'二维密度图'},
-    {k:'ba', t:'Bland-Altman'}, {k:'cali', t:'校准图'}, {k:'heatmap', t:'热力图 · 相关矩阵'},
+    {k:'ba', t:'Bland-Altman'}, {k:'heatmap', t:'热力图 · 相关矩阵'},
     {k:'cheat', t:'聚类热力图'}, {k:'network', t:'网络图'},
-    {k:'resid', t:'残差诊断四联'}, {k:'sigheat', t:'相关显著性热力图'}]},
+    {k:'resid', t:'残差诊断四联'}, {k:'sigheat', t:'相关显著性热力图'}, {k:'predobs', t:'预测-观测 1:1'}]},
   {g:'组成 / 多维', items:[
     {k:'donut', t:'环形饼图'}, {k:'radar', t:'雷达图'}, {k:'parallel', t:'平行坐标'},
     {k:'contour', t:'等高线图'}, {k:'3d', t:'三维曲面图'}, {k:'sankey', t:'桑基图'},
-    {k:'taylor', t:'泰勒图'}, {k:'pca', t:'PCA 双标图'}]},
+    {k:'pca', t:'PCA 双标图'}, {k:'treemap', t:'矩形树状图'}, {k:'scatter3d', t:'三维散点'},
+    {k:'bar3d', t:'三维柱状图'}, {k:'3d_contour', t:'三维等高线'}]},
   {g:'专业 / 高级', items:[
-    {k:'kaplan', t:'生存曲线'}, {k:'funnel', t:'漏斗图'}, {k:'calendarp', t:'日历热力图'},
-    {k:'perf', t:'性能剖面图'}, {k:'volcano', t:'火山图'}, {k:'hovmoller', t:'Hovmöller 图'},
-    {k:'ice', t:'ICE/PDP 图'}, {k:'subplots', t:'组合子图'},
-    {k:'tornado', t:'Tornado 灵敏度'}, {k:'gantt', t:'甘特图'}, {k:'phase', t:'相平面图'},
-    {k:'paramgrid', t:'参数扫描热力图'}, {k:'traj', t:'轨迹 / OD 流向图'}]},
+    {k:'subplots', t:'组合子图'}, {k:'tornado', t:'Tornado 灵敏度'}, {k:'gantt', t:'甘特图'},
+    {k:'phase', t:'相平面图'}, {k:'paramgrid', t:'参数扫描热力图'},
+    {k:'gradbar', t:'渐变柱状图'}, {k:'roc', t:'ROC 曲线 + AUC'}, {k:'confusion', t:'混淆矩阵'},
+    {k:'importance', t:'特征重要性'},
+    {k:'neural_net', t:'神经网络结构'}, {k:'decision_tree', t:'决策树'}, {k:'fuzzy', t:'模糊隶属函数'},
+    {k:'ahp', t:'AHP 判断矩阵'}]},
   {g:'流程 / 架构图', items:[
     {k:'chartflow', t:'图表总览流程'},
     {k:'flow-html', t:'流程图（HTML）', engine:'html'},
     {k:'seq', t:'时序图', engine:'html'}, {k:'state', t:'状态机图', engine:'html'},
     {k:'swimlane', t:'泳道图', engine:'html'}, {k:'indextree', t:'指标体系树', engine:'html'}]},
 ];
-const _figSrc = (key, theme)=>`/static/img/paper-${key}__${theme||FIG_THEME}.png`;
+const _figSrc = (key, theme)=>`/static/img/paper-${key}__${theme||'vivid'}.png`;
 
 /* 分类图墙：按当前主题渲染一组图表（engine 项用于流程图引擎筛选） */
 function _groupWall(items, theme){
@@ -1227,8 +1146,72 @@ const _paletteTheme = (name)=>{
 function _paletteBars(hex, label){
   return _realPrev(label, '低饱和 · 按题目气质应用', _paletteTheme(label));
 }
-function _layoutPrev(style, label){
-  return _realPrev(label, '边框 / 网格 / 轴线风格随生成环境应用', 'journal');
+/* 版式弹窗预览：4 张小图实时按当前版式参数重绘（边框/网格/轴色/线宽/透明度差异可见） */
+function _layoutRealDiff(label){
+  const st = LAYOUT_STYLE[label] || {};
+  const frame = st.frame === 'none' ? 'none' : (st.frame || '1px solid #e5e7eb');
+  const axisC = st.axis || '#555', aw = st.aw || 1, op = st.op || 0.9, lw = st.lw || 1.5;
+  const gridMode = st.grid || false;
+  const h1 = 66;
+
+  const axes = (w, h) => `<line x1="8" y1="${h-10}" x2="${w-6}" y2="${h-10}" stroke="${axisC}" stroke-width="${aw}"/>` +
+    `<line x1="8" y1="8" x2="8" y2="${h-10}" stroke="${axisC}" stroke-width="${aw}"/>`;
+
+  const gridHtml = (w, h) => {
+    if (gridMode === 'dots') return Array.from({length: 18}, (_,i)=>
+      `<circle cx="${12+(i%6)*((w-26)/5)}" cy="${12+((i/6)|0)*((h-30)/3)}" r="1.1" fill="${axisC}" opacity=".35"/>`).join('');
+    if (gridMode) return Array.from({length: 3}, (_,i)=>
+      `<line x1="8" y1="${14+i*((h-34)/3)}" x2="${w-6}" y2="${14+i*((h-34)/3)}" stroke="${axisC}" stroke-width=".6" opacity=".3"/>`).join('');
+    return '';
+  };
+
+  const mini = (inner, h) => {
+    const w = 118;
+    return `<div style="border:${frame};border-radius:8px;background:#fff;padding:6px">
+      <svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block">${gridHtml(w,h)}${inner}${axes(w,h)}</svg></div>`;
+  };
+
+  /* 柱状图 */
+  const bars = [30,46,38,54,42].map((v,i)=>{
+    const bh = Math.round(v/58*(h1-26));
+    const x = 12 + i*20;
+    return `<rect x="${x}" y="${h1-10-bh}" width="11" height="${bh}" rx="1.5" fill="rgba(21,101,192,${op})" stroke="#123a6b" stroke-width="${Math.max(lw*.3,.7).toFixed(2)}"/>` +
+      `<line x1="${x+5.5}" y1="${h1-10-bh-2}" x2="${x+5.5}" y2="${h1-10-bh-6}" stroke="${axisC}" stroke-width="1"/>`;
+  }).join('');
+  const barChart = `<svg viewBox="0 0 118 ${h1}" width="100%" style="display:block">${gridHtml(118,h1)}${bars}${axes(118,h1)}</svg>`;
+
+  /* 折线图（置信带） */
+  const pts = [[10,40],[42,30],[74,38],[106,22]];
+  const band = [35,36,33,30,28,25,24,19,17,16].map((y,i)=>`${10+i*10.6},${y}`).join(' ');
+  const line = pts.map((p,i)=>`${p[0]},${p[1]}`).join(' ');
+  const lineChart = `<svg viewBox="0 0 118 ${h1}" width="100%" style="display:block">${gridHtml(118,h1)}
+    <polygon points="10,42 ${line.replace(/ /g,',')} 106,44 10,44" fill="rgba(21,101,192,${op*.35})"/>
+    <polyline points="${line}" fill="none" stroke="#1565C0" stroke-width="${lw}" stroke-linejoin="round" stroke-linecap="round"/>
+    <line x1="10" y1="42" x2="106" y2="42" stroke="${axisC}" stroke-width=".7" stroke-dasharray="3 3" opacity=".5"/>${axes(118,h1)}</svg>`;
+
+  /* 散点图（回归线） */
+  const sc = [[18,52],[30,46],[42,48],[54,38],[66,34],[78,28],[90,24],[100,20]];
+  const dots = sc.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="rgba(21,101,192,${op})" stroke="#123a6b" stroke-width="${Math.max(lw*.25,.6).toFixed(2)}"/>`).join('');
+  const scChart = `<svg viewBox="0 0 118 ${h1}" width="100%" style="display:block">${gridHtml(118,h1)}${dots}
+    <line x1="14" y1="56" x2="104" y2="16" stroke="#1565C0" stroke-width="${Math.max(lw*.8,1).toFixed(1)}" stroke-dasharray="4 3"/>${axes(118,h1)}</svg>`;
+
+  /* 热力矩阵 3×3 */
+  const hm = [0.15,0.5,0.85,0.4,0.7,0.35,0.8,0.25,0.6].map((a,i)=>
+    `<rect x="${12+(i%3)*30}" y="${10+((i/3)|0)*17}" width="26" height="13" rx="2" fill="rgba(21,101,192,${(op*a).toFixed(2)})" stroke="#123a6b" stroke-width="${Math.max(lw*.3,.6).toFixed(2)}"/>`).join('');
+  const hmChart = `<svg viewBox="0 0 118 ${h1}" width="100%" style="display:block">${gridHtml(118,h1)}${hm}${axes(118,h1)}</svg>`;
+
+  const cell = (t, body) => `<div style="min-width:0">
+    ${body}
+    <div style="font-size:11px;font-weight:600;color:#555;margin-top:4px;text-align:center">${t}</div></div>`;
+
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      ${cell('柱状图 · 误差棒', mini(bars, h1))}
+      ${cell('折线图 · 置信带', lineChart)}
+      ${cell('散点图 · 回归', scChart)}
+      ${cell('热力矩阵', hmChart)}
+    </div>
+    <div style="margin-top:8px;font-size:12px;font-weight:600;color:#444">${esc(label)}</div>
+    <div style="font-size:11px;color:#999;margin-top:2px">${esc(st.desc||'')}</div>`;
 }
 function nwRenderPrev(type){
   const el=document.getElementById('nwPrev'); if(!el) return;
@@ -1236,33 +1219,103 @@ function nwRenderPrev(type){
   if(type==='palette'){
     el.innerHTML=_paletteBars(PALETTE_HEX[cur]||PALETTE_HEX['随机（推荐）'], cur);
   }else{
-    el.innerHTML=_layoutPrev(LAYOUT_STYLE[cur]||LAYOUT_STYLE['随机（推荐）'], cur);
+    el.innerHTML=_layoutRealDiff(cur||'随机（推荐）');
   }
 }
 function nwModal(type){
+  NW_SNAP[type] = NW_PICK[type];
   const items = type==='palette'?PALETTES:LAYOUTS;
   const overlay=document.createElement('div');
   overlay.className='modal open'; overlay.id='nwModal';
   overlay.innerHTML=`<div class="modal-box modal-wide">
     <div class="modal-top"><h3>${type==='palette'?'数据图配色':'图表版式'}</h3>
-      <button class="modal-x" aria-label="关闭" onclick="document.getElementById('nwModal').remove()">✕</button></div>
+      <button class="modal-x" aria-label="关闭" onclick="nwModalClose(true,'${type}')">✕</button></div>
     <div class="picker-cols">
       <div class="pick-list">
         ${items.map((it,i)=>`<div class="pick-item ${it===NW_PICK[type]?'sel':''}" data-idx="${i}" data-item="${esc(it)}" onclick="nwPickItem(this,'${type}')">${esc(it)} ${it===NW_PICK[type]?'✓':''}</div>`).join('')}
       </div>
       <div class="pick-prev" id="nwPrev"></div>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="document.getElementById('nwModal').remove()">取消</button>
-      <button class="btn btn-primary" onclick="document.getElementById('nwModal').remove()">确定</button></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="nwModalClose(true,'${type}')">取消</button>
+      <button class="btn btn-primary" onclick="nwModalClose(false,'${type}')">确定</button></div>
   </div>`;
   document.body.appendChild(overlay);
   nwRenderPrev(type);
 }
+window.nwModalClose = function(cancel, type){
+  if (cancel) NW_PICK[type] = NW_SNAP[type];
+  const m = document.getElementById('nwModal'); if (m) m.remove();
+  nwPickBtn(type);
+};
+/* 流程图配色预览：3 种配色（纯黑白/朴素竞赛/现代精致）各渲染一张精致流程图，点击即选定 */
+const FP_META = [
+  {v:'bw',     t:'纯黑白',   node:'#ffffff', border:'#111111', text:'#111111', arr:'#3a3a3a', sub:'#777777', bg:'#ffffff'},
+  {v:'plain',  t:'朴素竞赛', node:'#f2f6fc', border:'#3b5b92', text:'#23466f', arr:'#4a7ab5', sub:'#7a90ad', bg:'#ffffff'},
+  {v:'modern', t:'现代精致', node:'#2563eb', border:'#1d4ed8', text:'#ffffff', arr:'#2563eb', sub:'#93c5fd', bg:'#eef4ff'},
+];
+/* 六步流程链（两列三行） */
+function _flowPreviewSvg(m){
+  const node = (x, y, t, sub) => `<rect x="${x}" y="${y}" width="96" height="32" rx="9" fill="${m.node}" stroke="${m.border}" stroke-width="1.3"/>
+    <text x="${x+48}" y="${y+14}" text-anchor="middle" font-size="11" font-weight="600" fill="${m.text}">${t}</text>
+    <text x="${x+48}" y="${y+25}" text-anchor="middle" font-size="7" fill="${m.sub}">${sub}</text>`;
+  const arrow = (x1,y1,x2,y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${m.arr}" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M${x2-5} ${y2-3} L${x2} ${y2} L${x2-5} ${y2+3}" fill="none" stroke="${m.arr}" stroke-width="1.4"/>`;
+  const h = 164;
+  return `<svg viewBox="0 0 264 ${h}" width="100%" style="display:block;background:${m.bg}">
+    ${node(14, 18, '赛题输入', 'PROBLEM')}${node(154, 18, '数据预处理', 'DATA CLEAN')}
+    ${node(14, 74, '建模求解', 'MODELING')}${node(154, 74, '编程实现', 'SOLVING')}
+    ${node(14, 130, '结果验证', 'VALIDATION')}${node(154, 130, '论文输出', 'REPORT')}
+    ${arrow(110, 34, 150, 34)}${arrow(110, 90, 150, 90)}${arrow(110, 146, 150, 146)}
+    ${arrow(202, 50, 202, 70)}${arrow(62, 50, 62, 70)}${arrow(202, 106, 202, 126)}${arrow(62, 106, 62, 126)}
+  </svg>`;
+}
+window.showFlowPalette = function(){
+  const cur = (document.querySelector('[data-field="colorScheme"] .pill.active')||{}).dataset?.val || 'bw';
+  let overlay = document.getElementById('fpModal'); if(overlay) overlay.remove();
+  _mfLockScroll();
+  overlay = document.createElement('div');
+  overlay.className='modal open'; overlay.id='fpModal';
+  overlay.innerHTML=`<div class="modal-box modal-wide">
+    <div class="modal-top"><h3>流程图配色预览</h3>
+      <button class="modal-x" aria-label="关闭" onclick="fpClose()">✕</button></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;padding:2px 2px 12px">
+      ${FP_META.map(m=>`
+      <div class="fp-card ${m.v===cur?'sel':''}" data-v="${m.v}" onclick="fpPick('${m.v}')">
+        ${_flowPreviewSvg(m)}
+        <div class="fp-name">${m.t} ${m.v===cur?'✓':''}</div>
+      </div>`).join('')}
+    </div>
+    <div class="modal-foot"><button class="btn btn-primary" onclick="fpClose()">完成</button></div>
+  </div>`;
+  document.body.appendChild(overlay);
+};
+window.fpPick = function(v){
+  const pill = document.querySelector(`[data-field="colorScheme"] .pill[data-val="${v}"]`);
+  if(pill) nwPill(pill);
+  document.querySelectorAll('#fpModal .fp-card').forEach(c=>{
+    const on = c.dataset.v === v;
+    c.classList.toggle('sel', on);
+    const nm = c.querySelector('.fp-name');
+    if(nm) nm.innerHTML = c.dataset.v===v ? (nm.textContent.replace(' ✓','') + ' ✓') : nm.textContent.replace(' ✓','');
+  });
+  fpClose();
+};
+window.fpClose = function(){
+  const m = document.getElementById('fpModal'); if(m) m.remove();
+  _mfUnlockScroll();
+};
+window.nwPickBtn = function(type){
+  const id = type==='palette' ? 'cfPaletteBtn' : 'cfLayoutBtn';
+  const el = document.getElementById(id); if (!el) return;
+  const v = NW_PICK[type] || '';
+  el.textContent = (v === '随机（推荐）' || !v) ? '随机 ›' : v + ' ✓';
+};
 window.nwPickItem = function(el, type){
   document.querySelectorAll('#nwModal .pick-item').forEach(p=>{p.classList.remove('sel');p.textContent=p.textContent.replace(' ✓','');});
   el.classList.add('sel'); el.textContent=el.textContent+' ✓';
   NW_PICK[type]=el.dataset.item;
   nwRenderPrev(type);
+  nwPickBtn(type);
 };
 window.nwRenderPrev = nwRenderPrev;
 window.nwModal = nwModal;
@@ -1507,17 +1560,42 @@ document.addEventListener('pointerdown', (e)=>{
 }, true);
 document.addEventListener('keydown', (e)=>{ if(e.key === 'Escape') ftPopClose(); });
 
+/* ---- 弹窗滚动锁（统一实现） ----
+   用 body{position:fixed} 把背景钉在当前滚动位置，弹窗期间页面不移动；
+   解锁后移除 fixed 并滚动回原位。坑：不能对 documentElement 设 overflow:hidden，
+   那会禁用视口滚动并把 window.scrollY 归零，导致开/关弹窗页面"跳回顶部"。 */
+let _MF_LOCK_Y = 0;
+function _mfLockScroll(){
+  _MF_LOCK_Y = window.scrollY;
+  const sbw = window.innerWidth - document.documentElement.clientWidth;
+  document.body.style.position='fixed';
+  document.body.style.top = (-_MF_LOCK_Y)+'px';
+  document.body.style.left='0';
+  document.body.style.right='0';
+  document.body.style.overflowY='scroll';       // 保留纵向滚动条，防止视口宽度抖动
+  if(sbw>0) document.body.style.paddingRight = sbw+'px';
+}
+function _mfUnlockScroll(){
+  const y = _MF_LOCK_Y;
+  document.body.style.position='';
+  document.body.style.top='';
+  document.body.style.left='';
+  document.body.style.right='';
+  document.body.style.overflowY='';
+  if(document.body.style.paddingRight) document.body.style.paddingRight='';
+  // 等 fixed 移除后（双 rAF）再恢复滚动位置
+  requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ window.scrollTo(0, y); }); });
+}
+
 /* 弹窗打开时锁定背景滚动：只要存在显示中的 .modal（含流程全景 fcModal/图表示例 spModal/
    配色版式 nwModal 等）就锁住 body，全部关闭后恢复。修复"弹框内部滚动时背后页面跟着滚"。 */
 (()=>{
   let _locked = false;
   const _syncModalScrollLock = ()=>{
     const anyOpen = document.querySelector('.modal.open') !== null;
-    const want = anyOpen;
-    if(want === _locked) return;
-    _locked = want;
-    document.body.style.overflow = want ? 'hidden' : '';
-    document.documentElement.style.overflow = want ? 'hidden' : '';
+    if(anyOpen === _locked) return;
+    _locked = anyOpen;
+    if(anyOpen) _mfLockScroll(); else _mfUnlockScroll();
   };
   const _obs = new MutationObserver(_syncModalScrollLock);
   _obs.observe(document.body, {childList:true, subtree:true});
@@ -1525,21 +1603,18 @@ document.addEventListener('keydown', (e)=>{ if(e.key === 'Escape') ftPopClose();
   _syncModalScrollLock();
 })();
 
-/* 高级选项数量：自动/自定义切换（自动=隐藏输入且置 0；自定义=显示输入） */
-window.ctlQty = function(el){
-  const field = el.closest('.field');
-  if(!field) return;
-  const inp = field.querySelector('input[type=number]');
-  const active = field.querySelector('.pill.active');
-  const custom = active && active.dataset.val === 'custom';
+/* 高级选项数量：自动开关（开=自动，输入禁灰；关=手填，输入可编辑） */
+window.nwCtlAuto = function(inputId, chk){
+  const inp = document.getElementById(inputId);
   if(!inp) return;
-  if(custom){
-    if(!inp.value) inp.value = '10';
-    inp.style.display = '';
-    inp.focus && inp.focus();
-  }else{
+  if(chk.checked){
     inp.value = '0';
-    inp.style.display = 'none';
+    inp.disabled = true;
+    inp.placeholder = '自动';
+  }else{
+    inp.disabled = false;
+    inp.placeholder = '自定义';
+    inp.focus && inp.focus();
   }
 };
 
@@ -1571,8 +1646,9 @@ window.createComp = async function(){
     out_format: pv.outFormat||'pdf', review_mode: pv.reviewMode||'strict',
     page_limit:$('#cfPage').value, img_count:_imgCount, tbl_count:_tblCount, model_count:_modelCount,
     rich_mode:chk('cfRich'), logic_review:chk('cfLogicReview'),
-    flow_engine: pv.flowEngine||'html', color_scheme: pv.colorScheme||'bw', chart_style: pv.chartStyle||'soft',
+    flow_engine: pv.flowEngine||'html', color_scheme: pv.colorScheme||'bw',
     data_palette:NW_PICK.palette, data_layout:NW_PICK.layout,
+    fig_mode: pv.figMode||'builtin',
     data_fig_check:chk('cfDataFig'), per_flow:chk('cfPerFlow'), flow_fig_check:chk('cfFlowFig'),
     ai_declare:chk('cfAI'), improve_loop:chk('cfLoop'), manual_checkpoint:chk('cfCheckpoint'),
     executor:'cli',
@@ -2331,12 +2407,8 @@ function renderTplChips(){ /* 模板已移入新增弹窗（CC Switch 式），�
 function openPresetModal(t, editId){
   closePresetModal();
   window.PV_EDIT_ID=editId||null;
-  // 锁定页面滚动。关键：同步补偿滚动条宽度（Windows 滚动条占 ~8px），
-  // 否则关弹窗时滚动条恢复、视口收窄，设置页会整体"往左抖一下"。
-  const sbw = window.innerWidth - document.documentElement.clientWidth;
-  document.body.style.overflow='hidden';
-  document.documentElement.style.overflow='hidden';
-  if(sbw>0) document.body.style.paddingRight = sbw + 'px';
+  // 锁定页面滚动（统一实现：自动做滚动条宽度补偿；关闭后恢复原滚动位置）
+  _mfLockScroll();
   const root=document.createElement('div');
   root.id='presetModalRoot';
   root._pf = document.activeElement;   // 记录打开前焦点，供关闭后归还
@@ -2595,9 +2667,7 @@ function closePresetModal(){
   }
   setTimeout(()=>{
     if(!document.getElementById('presetModalRoot')){
-      document.body.style.overflow='';
-      document.documentElement.style.overflow='';
-      document.body.style.paddingRight='';        // 同时移除滚动条宽度补偿，页面位置复位
+      _mfUnlockScroll();
       if(old && old._pf && old._pf.focus){ try{ old._pf.focus(); }catch(e){} }   // 焦点归还
     }
   }, 140);
@@ -3003,7 +3073,7 @@ window.imgEditOpen=function(id){
   const p=IMG_PRESETS.find(x=>x.id===id); if(!p) return;
   IMG_EDIT_ID=id;
   const old=document.getElementById('imgEditRoot'); if(old) old.remove();
-  document.body.style.overflow='hidden';
+  _mfLockScroll();
   const extra=p.extra||{};
   const root=document.createElement('div');
   root.id='imgEditRoot';
@@ -3064,7 +3134,7 @@ window.imgEditOpen=function(id){
 window.imgEditClose=function(){
   const old=document.getElementById('imgEditRoot'); if(old) old.remove();
   if(old && old._pf && old._pf.focus){ try{ old._pf.focus(); }catch(e){} }   // 焦点归还
-  document.body.style.overflow='';
+  _mfUnlockScroll();
 };
 window.imgEditSave=async function(){
   const name=document.getElementById('ieName').value.trim();
@@ -3102,7 +3172,7 @@ window.imgDel=async function(id){
 /* 新增图像预设弹窗（与模型预设同构：无供应商目录，其余一致） */
 window.imgOpenModal=function(){
   const old=document.getElementById('imgModalRoot'); if(old) old.remove();
-  document.body.style.overflow='hidden';
+  _mfLockScroll();
   const root=document.createElement('div');
   root.id='imgModalRoot';
   root._pf = document.activeElement;   // 记录打开前焦点，供关闭后归还
@@ -3168,7 +3238,7 @@ window.imgCloseModal=function(){
   const old=document.getElementById('imgModalRoot');
   if(old) old.remove();
   if(old && old._pf && old._pf.focus){ try{ old._pf.focus(); }catch(e){} }
-  document.body.style.overflow='';
+  _mfUnlockScroll();
 };
 /* 图片预设配置 JSON 实时预览（与模型预设弹窗一致） */
 function imgNfUpdateJson(force){

@@ -60,14 +60,14 @@ echo "视觉自检 VISION=${VISION:-（不可用，将跳过视觉自检）}"
 # ===== TikZ 依赖（仅当规划有精密几何图才用；公式本身走 HTML+KaTeX，几何示意才靠 xelatex 编译 TikZ）=====
 # 规则文档（物理尺寸/字号/scale 匹配规则）
 TIKZ_RULES=""
-for f in _utils/tikz_rules.md skills/shared-scripts/tikz_rules.md; do
+for f in _utils/tikz_rules.md; do
   [ -f "$f" ] && { TIKZ_RULES="$f"; break; }
 done
 echo "TikZ 规则 TIKZ_RULES=${TIKZ_RULES:-（无，将用内置规则）}"
 
 # tikz_check.sh 结构自检脚本
 TIKZ_CHECK=""
-for f in _utils/tikz_check.sh skills/shared-scripts/tikz_check.sh; do
+for f in _utils/tikz_check.sh; do
   [ -f "$f" ] && { TIKZ_CHECK="$f"; break; }
 done
 echo "TikZ 自检 TIKZ_CHECK=${TIKZ_CHECK:-（不可用，将跳过结构自检）}"
@@ -292,9 +292,9 @@ echo "🎨 风格种子 SEED=$SEED  STYLE_FAMILY=$STYLE_FAMILY（$_FAM_NAME）  
 
 ⛔ 记下 `STYLE_FAMILY`/`H0`/`TONE`/`RADIUS`/`ARROW`/`NODEACC`/`SECT`/`LAYOUT`，Step 2 每张图都按同一组值设计——**禁止逐图换、禁止随机数/时间戳**。组合空间 **3(风格族)** ×12(H0色带)×3(TONE)×4×4×3×3(造型皮肤)×2(拓扑朝向) ≈ 三万种长相；关键是 STYLE_FAMILY 先分三大类观感、LAYOUT 再扰动**宏观骨架**（都比皮肤更抢眼），撞脸概率极低；但同篇内始终统一。
 
-### Step 2: 逐张自主设计并生成 HTML（读设计规范 → 按逻辑与种子设计 → 直接 Write）
+### Step 2: 逐张设计并生成 3 个候选 HTML（读设计规范 → 按逻辑与种子设计 → 写候选）
 
-⛔ **一次只画一张 → 转 PDF → 质检 → 过了再画下一张**（和 html 版"逐张画逐张检"一致，避免批量出错难定位）。
+⛔ **一次只处理一张图的候选 → 择优定稿 → 过了再画下一张**（和 html 版"逐张画逐张检"一致，避免批量出错难定位）。
 
 ⛔ **不再"选模板填字"。** 每张图**由你按下方《AI 自主生成 HTML 流程图设计规范》从零设计** HTML/CSS：结构服从该图的真实逻辑，配色/造型由 Step 1 的 `H0`/`TONE` 推导。这样同篇视觉统一、异篇风格各异、同篇内每张图因逻辑不同而结构不同。
 
@@ -310,21 +310,67 @@ echo "🎨 风格种子 SEED=$SEED  STYLE_FAMILY=$STYLE_FAMILY（$_FAM_NAME）  
 
 **对清单里每一张图，按顺序：**
 
-1. **先读规范再动手**：通读本 SKILL 末尾《AI 自主生成 HTML 流程图设计规范》A–E 节。用一句话说清这张图的**逻辑流向**（如"q1 是线性四步预处理"、"q3 是带收敛判断的迭代循环"、"q5 是三模块并行汇合"），再按 A 节的「逻辑类型→等价范式」表定骨架：**先锁定逻辑贴合的那一类，若该类列了多个等价范式就按 `LAYOUT % 候选数` 确定性选一个**（同类题不同用户骨架也不同）——**不同子问题逻辑不同，就该长得不同**。⛔ 同时守 **A.1**：节点填这道题**特有的**方法/模型/判据实体（不写"数据预处理/建立模型"这类通用空词），并把方法**真实存在**的非平凡结构（校验回调/假设分支/收敛回环/多方法比选）挖出来画上——这是"有内核 vs 通用空壳"的分水岭。⛔ 复杂范式（分层架构/放射中心/贯穿侧栏/多分区）照 **A.2 骨架库**搭 flex/grid，别退化成一根线；出图前对照 **D.1 高级感五条**（字重层次/语义连线/副标题密度/唯一焦点/低饱和）逐条过。
+1. **先读规范再动手**：通读本 SKILL 末尾《AI 自主生成 HTML 流程图设计规范》A–H 节。用一句话说清这张图的**逻辑流向**（如"q1 是线性四步预处理"、"q3 是带收敛判断的迭代循环"、"q5 是三模块并行汇合"），再按 A 节的「逻辑类型→等价范式」表定骨架：**先锁定逻辑贴合的那一类，若该类列了多个等价范式就按 `LAYOUT % 候选数` 确定性选一个**（同类题不同用户骨架也不同）——**不同子问题逻辑不同，就该长得不同**。⛔ 同时守 **A.1**：节点填这道题**特有的**方法/模型/判据实体（不写"数据预处理/建立模型"这类通用空词），并把方法**真实存在**的非平凡结构（校验回调/假设分支/收敛回环/多方法比选）挖出来画上——这是"有内核 vs 通用空壳"的分水岭。⛔ 复杂范式（分层架构/放射中心/贯穿侧栏/多分区）照 **A.2 骨架库**搭 flex/grid，别退化成一根线；出图前对照 **D.1 高级感五条**（字重层次/语义连线/副标题密度/唯一焦点/低饱和）逐条过。
 
 2. **先定风格族，再推导配色/造型**：⛔ **第一步先读文末《G 风格族》，按 `STYLE_FAMILY` 落定基线**——字体族、节点底色、圆角上限、阴影、副标题、分组框（直接照抄 G.1 或 G.2 的 `:root`+节点骨架）。**然后**按 B 节从 `H0` 用 HSL 推导 `--ac`/`--acbg` 强调色代入，按 D 节 `TONE` 在族允许范围内定层次。⛔ 族与旋钮冲突时**以族为准**（如 A 族封顶直角，`RADIUS` 档再大也按 2px）。**全篇所有图共用同一 `STYLE_FAMILY`/`H0`/`TONE`。**
 
-3. **直接 Write 出 `figures/fig_xxx.html`**（自包含单文件），务必满足：
+3. **⛔ 本轮先不定稿**：为这张图写 **3 个候选**到 `_tmp/cand_<name>_1.html` / `_2.html` / `_3.html`（自包含单文件，结构各异的 3 版见 Step 2.5），务必满足：
    - ⛔ **满足规范 0 节全部硬约束**（根容器+html+body 全 `width:fit-content`；flex/grid 自动布局禁 absolute；单文件禁外链；图内无标题；单页、宽高比 ≤8:1；公式用 `\(...\)`/`\[...\]` 写进节点、出图加 `--render-math` 渲染，只有精密几何图才走 TikZ）。
    - ⛔ **逻辑完美嵌入**：填规划文档里的**真实**方法名/步骤/模块/子问题，不留占位文字（"核心模型""方法A"要换成论文实际模型名、算法名）。
    - ⛔ **图内文字语言 = `$FIG_LANG`**（中文论文全中文，英文论文全英文）。
 
 4. **模板仅作极端兜底参考**：`$TPL_DIR` 下 5 个 `.html` **不是必抄骨架**。仅当连续多轮自检失败、实在设计不出结构时，才 `cat "$TPL_DIR/tpl_flow.html"` 瞄一眼找灵感——正常流程**不读模板、不复制模板**。
 
-5. **每张生成后立即验证文件存在**：
+5. **每张生成后立即验证 3 个候选存在**（定稿在 Step 2.5）：
 ```bash
-[ -f figures/fig_roadmap.html ] && echo "✅ fig_roadmap.html created" || echo "❌ MISSING"
+[ -f _tmp/cand_roadmap_1.html ] && [ -f _tmp/cand_roadmap_2.html ] && [ -f _tmp/cand_roadmap_3.html ] \
+  && echo "✅ 3 个候选均已生成" || echo "❌ MISSING —— 回 Step 2 补齐候选"
 ```
+
+### Step 2.5 候选择优：每张图先出 3 个候选 → 精细对比 → 选 1（⛔ 流程/架构图必走，FAST_MODE 也走）
+
+**为什么**：单方案一锤定音容易"能用但平庸"。先给 3 个**结构不同**的候选，逼你把"这道题最贴的结构"挖出来，再用统一量化维度打分择优——选出来的图明显更准更精致。筛选过程只作 AI 决策留痕，**绝不进论文**。
+
+**对 Step 1 清单里的每一张 HTML 图（fig_roadmap/fig_flow_*/fig_arch/fig_pipeline/fig_framework）执行：**
+
+1. **3 个候选（同一 SEED，禁随机数）**：用 A 节"逻辑等价范式/骨架"派生 3 个结构不同的版本——
+   - 三版都必须是**同一个真实流程的忠实画法**，只是骨架/造型侧重不同：如纵向主干 vs 横向流水线 vs 双栏对照；或同一骨架下的节点分组/分区/焦点位置不同。
+   - ⛔ 禁止为凑 3 个给线性题硬造分支/循环（守 A 节铁律）；逻辑只有唯一贴合范式时，3 版改为"同一骨架下 3 种节点分层/分区/强调方式"。
+   - 三版**共用**同篇的 `STYLE_FAMILY`/`H0`/`TONE`/`RADIUS`/`ARROW` 等种子，只动结构不动配色造型；节点文字仍填本题真实实体（A.1）。
+   - 命名到临时目录：`_tmp/cand_<name>_1.html` / `_2.html` / `_3.html`。
+
+2. **3 版各转 PDF + 几何自检（不跑 vision）**：
+   ```bash
+   mkdir -p _tmp
+   # 3 版各自：无公式不带 --render-math，有公式必须带
+   $PYTHON "$CAPTURE" --file _tmp/cand_<name>_1.html --out _tmp/cand_<name>_1.pdf --format pdf [--render-math] 2>&1 | tail -6
+   $PYTHON "$HTMLCHECK" _tmp/cand_<name>_1.pdf >/dev/null 2>&1 || echo "⚠ 候选1 html_pdf_check 结果：$?"
+   $PYTHON "$CAPTURE" --geom-check _tmp/cand_<name>_1.html [--render-math] 2>&1 | tail -4
+   # 对 _2 / _3 同样处理。退出码 1（FAIL）的候选标记为"翻车"，进入第 6 条兜底。
+   ```
+
+3. **精细个性化对比（⛔ 绑定本题，不泛泛比好看）**：打开 `PROBLEM_ANALYSIS.md`/规划文档里该图条目，逐候选核四维，**权重固定，每维 0-5 分**：
+
+   | 维度 | 权重 | 看什么 |
+   |---|---|---|
+   | 逻辑忠实度 | **40%** | 把本题真实的方法链/分支/回环/并行比选画全画准；节点无一"通用空词"（A.1）；该画回环的没画成线 |
+   | 信息密度 | 20% | 节点承载实体（方法名/模型名/判据/关键约束），副标题有细节 |
+   | 对齐与美观 | 20% | D.1 ④"像尺子摆过"：等大等距、行列成线、箭头接中轴、无交叉、单边 ≤2 弯（H.3） |
+   | 论文融合 | 20% | 黑白基调 & 彩色 ≤15%、画布透明、单页比例不瘦高撑页 |
+
+   加权求和得总分，并把三版得分与一句理由写下来（如"候选2 把 q3 的收敛回环画出来了，横向双栏最疏朗，总分最高"）。
+
+4. **选最高分 → 正式转正，落败候选清理**：
+   ```bash
+   # 选中最高分候选 → 复制为正名进 figures/
+   cp _tmp/cand_<name>_K.html figures/fig_<name>.html
+   rm -f _tmp/cand_<name>_1.* _tmp/cand_<name>_2.* _tmp/cand_<name>_3.*   # 落败候选绝不进 figures/
+   ```
+   转正版本走 Step 3 转最终 PDF → Step 4/4.5 通过 → **仅此版跑 Step 5 vision 自检** → Step 6 写 latex_includes。
+
+5. **打分留痕（⛔ 绝不进论文）**：把三版得分与选择理由**追加**到 `_tmp/fig_choice_notes.md`（只存工作区 `_tmp`，论文编译不包含它），格式 `## fig_<name>：候选K 总分 X.X — 理由`。⛔ 该文件不上正文、不上附录、不写进任何 .tex。
+
+6. **兜底**：3 版全部几何 FAIL → 取第一个能正常出 PDF 的候选直接转正（不再迭代）；全部出不了 PDF → 走"大幅精简重画"路径后重来一轮。
 
 ### Step 3: 转 PDF（Electron printToPDF，矢量单页无白边）
 
@@ -532,7 +578,7 @@ if [ -z "$XELATEX" ]; then
   echo "❌❌ 本块无 xelatex，无法编译 TikZ。请装 LaTeX(MiKTeX) 后重跑；严禁用 matplotlib/HTML 顶替。"
 fi
 # 结构自检脚本也可能跨块丢，就地重定位（空则跳过自检，不致命）
-[ -z "$TIKZ_CHECK" ] && for f in _utils/tikz_check.sh skills/shared-scripts/tikz_check.sh; do [ -f "$f" ] && { TIKZ_CHECK="$f"; break; }; done
+[ -z "$TIKZ_CHECK" ] && for f in _utils/tikz_check.sh; do [ -f "$f" ] && { TIKZ_CHECK="$f"; break; }; done
 for tname in $TIKZ_NAMES; do
   tex="figures/${tname}.tex"
   if [ ! -f "$tex" ]; then
@@ -905,7 +951,7 @@ ALL COMPLETE — paper-figure-html step finished successfully
 - ⛔ **图内不写标题**，标题交给 LaTeX `\caption{}`。
 - ⛔ 图内文字语言与论文一致。
 - ⛔ 配色由 Step 1 风格种子 `H0` 按《设计规范 B 节》HSL 推导，全篇共用同一 `H0`/`TONE`；别自造高饱和色、别逐图换色、别用随机数。
-- ⛔ 逐张画 → 转 PDF → html_pdf_check（FAIL 必修）→ **几何自检 `--geom-check`（有问题必修，最多3轮）**→ vision 自检（不阻塞）→ 过了再画下一张。
+- ⛔ 逐张处理：Step 2 写 **3 个结构不同候选**（`_tmp/cand_<name>_1/2/3.html`，同 SEED 禁随机）→ Step 2.5 各转 PDF+几何自检 → 固定权重打分（逻辑忠实40%/信息20%/对齐20%/融合20%）选 1 转正进 `figures/`，落败候选清理、打分留痕 `_tmp/fig_choice_notes.md`（⛔ 不进论文）→ 转正版再走 html_pdf_check（FAIL 必修）→ **几何自检 `--geom-check`（有问题必修，最多3轮）**→ vision 自检（仅转正版，不阻塞）→ 过了再画下一张。
 - ⛔ **元素级几何自检**：`$CAPTURE --geom-check figures/fig_x.html`（含公式加 `--render-math`）精确抓「文字溢出被裁 / 越出画布 / 文字块重叠」。退出码 1 必修——读 HTML 改 CSS（多为误用 absolute→改回 flex/grid）后重出重检。这是"截图识别→发现问题→自修复"闭环，任何模式都跑（比 vision 快且必修）。
 - ⛔ 每张 PDF（含 TikZ）都要在 latex_includes.tex 有一个 `\includegraphics` 块。
 - html_pdf_check 退出码：0=通过 / 1=FAIL 必修 / 2=无法检查跳过。多页 PDF 是最常见 FAIL（LaTeX 只显示第一页）。
@@ -948,7 +994,7 @@ ALL COMPLETE — paper-figure-html step finished successfully
 6. **单页 + 宽高比 ≤ 8:1**：内容多时优先增高不增宽（或分区换行），别撑成超宽单行。
 7. **公式写 `\(...\)`/`\[...\]`**：节点里的数学公式用 KaTeX 定界符包裹，出图加 `--render-math` 渲染；只有精密几何示意图（按坐标画点线角度）才走 TikZ（Step 5.5）。
 8. **禁 emoji、禁装饰性图标字体**。
-9. **⛔ 节点文字禁出现 LaTeX 排版命令**：这是 HTML 不是 LaTeX。节点/副标题/标签里**严禁**写 `\scriptsize`、`\small`、`\footnotesize`、`\bfseries`、`\textbf`、`\centering`、`\node`、`\hline` 等任何 LaTeX 排版/绘图命令——它们不会被渲染，会原样显示成 "scriptsize" 之类的乱字（这是真实翻车过的 bug）。字号一律用 CSS `font-size`、字重用 `font-weight`、对齐用 `text-align`。**唯一例外**：`\(...\)`/`\[...\]` 里的数学内容（第 7 条），那是 KaTeX 公式，不是排版命令。若参考了 `shared-scripts` 下的 TikZ 示范（`.tex`），只借鉴其"画什么内容"，⛔ 绝不照抄任何以反斜杠开头的记号进 HTML。
+9. **⛔ 节点文字禁出现 LaTeX 排版命令**：这是 HTML 不是 LaTeX。节点/副标题/标签里**严禁**写 `\scriptsize`、`\small`、`\footnotesize`、`\bfseries`、`\textbf`、`\centering`、`\node`、`\hline` 等任何 LaTeX 排版/绘图命令——它们不会被渲染，会原样显示成 "scriptsize" 之类的乱字（这是真实翻车过的 bug）。字号一律用 CSS `font-size`、字重用 `font-weight`、对齐用 `text-align`。**唯一例外**：`\(...\)`/`\[...\]` 里的数学内容（第 7 条），那是 KaTeX 公式，不是排版命令。参考 TikZ 示范（`.tex`）时只借鉴其"画什么内容"，⛔ 绝不照抄任何以反斜杠开头的记号进 HTML。
 
 ### A 结构忠实于逻辑（⛔ 废除"强制三件套"）
 
@@ -1324,6 +1370,50 @@ html,body{margin:0;padding:0;width:fit-content;height:fit-content;background:tra
 ```
 
 ⛔ **G 节收尾自检**：出图前确认——① 字体族对不对（A/C 衬线 / B 无衬线）② A 族有没有混进灰底/圆角>2px/副标题/阴影 ③ B 族有没有残留柔和阴影或满屏副标题 ④ **C 族有没有残留任何彩色**（`hsl(...)`/`--ac`/`--acbg` 都不该出现，焦点靠黑边+字重而非彩底；判定/分支/回边全黑）⑤ A/B 族的 `--ac`/`--acbg` 都由本篇 `H0` 代入、没写死示例色。有一条不符 = 风格族没落实，改。
+
+## H 构图质量契约（ISO 5807 符号语义 + 语义连线 + 数值化构图门槛）
+
+> 借鉴开源高阶图生成器（fireworks-tech-graph 构图契约 / ISO 5807:1985 流程框图符号标准）收敛出的**可执行构图门槛**。G 节管"长什么样"（风格族），本节管"结构对不对、画得乱不乱"。出图前逐条核，任一不满足先修再出。
+
+### H.1 形状语义（满足一个语义，就只用它的标准形状，别随手换）
+
+| 语义 | 形状 | 写法（HTML/CSS，沿用 G 节骨架） |
+|---|---|---|
+| 起止 / Terminal | **胶囊**（圆角 999px，不旋转） | `.n { border-radius:999px }` 单独起止节点 |
+| 处理 / Process | **矩形**（最常用） | 默认 `.n`（G.1–G.4 提到的基础节点） |
+| 判定 / Decision | **圆角矩形 + 稍粗边**（⛔ 禁旋转菱形，见 A.2 骨架 3） | `.n.dec { border:1.6px solid var(--ac) }`（C 族用 `#1a1a1a`） |
+| 数据输入 / Data | **平行四边形**（示意用左斜切角） | `clip-path` 仅可做**内部装饰**；⛔ 别用它包住整个节点去旋转 |
+| 文档 / Document | **圆角矩形 + 底边内弧**（下弧折角页） | `border-radius:4px` + `border-bottom:1px solid var(--line)` + 右下角小的对角线伪元素 |
+| 存储 / Stored data | **圆柱**（宽椭圆封顶，ISO 数据库符号） | 容器 `overflow:hidden` + 顶部一个椭圆伪元素（`:before` 圆角 50%） |
+| 连接符号 / Connector | **圆**（跨页/跨区跳转用小圆标签） | 小圆 `span.conn{ border-radius:50%; padding:2px 7px }` |
+
+⛔ **形状语义只在与 G 节冲突时让位于 G**：A/C 族封顶直角/无色时，上述装饰性形状（文档下弧、圆柱椭圆顶）仍可保留（它们属"形状语义"不是"颜色"）；但判定一律圆角矩形、起止一律胶囊、不加 emoji/图标。
+
+### H.2 语义连线（连线是信息不是装饰）
+
+用 **线型 + 颜色** 编码消息语义，读者一眼读懂"这条线在做什么"：
+
+| 线型 | 语义 | 用法 |
+|---|---|---|
+| 实线 + `--line` | 主流程（顺序推进） | 默认箭头 |
+| 实线 + `--ac`（A/B 族） | 关键路径 / 焦点连接 | 篇内唯一焦点的入/出边 |
+| **虚线** + `--line` | 数据依赖 / 异步 / 弱关联 | 数据源→处理、异步回调 |
+| **虚线 + `--no`**（A/B 族） | 回流 / 反馈 / 失败重试 | 迭代回边、重算环、校验失败 |
+| 双线（两条平行线） | 双向 / 并发通道 | 并行任务之间的握手通道 |
+
+- 每次只表达**一类**语义用虚线+彩，别把虚线既当"异步"又当"回流"；同篇线型语义字典保持一致（一篇里虚线含义固定）。
+- 分支的"是/否"标签必须**贴着箭头**（`.lbl` 在 `.path` 内、箭头旁），不悬空。
+
+### H.3 数值化构图门槛（出 PDF 前逐条核，对照 D.1 ④ 执行）
+
+1. **零交叉**：flex/grid 自动布局 + 数据流单向排布，任何两条连线不得交叉。（flex/grid 天然保证，手动 absolute 必交叉——禁。）
+2. **单边 ≤2 弯 / 全图 ≤8 弯**：路线尽量直连；确需拐弯（回边、跨区）最多两折，且用虚线包边示意（`loopwrap` G.3 已是此写法）。
+3. **间距契约**：节点间距 `gap` ≥ 14px（宽图 ≥ 18px）；分区内边距 ≥ 12px；**标签（是/否、副标题、边文字）与任何节点/线条留 ≥ 4px**，绝不叠压。
+4. **不超框**：任何节点/标签不得越出 `.fig` 可视区（`--geom-check` 会抓，必修）。
+5. **同层字号/字重一致**：同一层级节点字号、字重、圆角、padding 完全一致（D.1 ④ 的"像尺子摆过"）。
+6. **阅读顺序明确**：多分支图按"主路径在上/左"排，次要路径靠下/右；读者视线不折返。
+
+> 一句话：**形状对语义、连线讲语义、间距有下限、路线不交叉不超 2 折**——这是"像专业论文配图"和"像随手画的 PPT 图"的分水岭。
 
 ## Additional Parameters
 - skip_improvement_loop: False
