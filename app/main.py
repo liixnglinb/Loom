@@ -457,6 +457,8 @@ def update_apply():
 PIPELINE_CATALOG = {
     "competition_bzd": {"g": "comp", "emoji": "🏅", "name": "国赛 · BZD 双审精制流",
         "desc": "BZD 2026 双审精制：题面解析→策略→执行→稳健→写作→摘要→两轮独立审查（章节自查+综合评审）→合规出库，含 26 项 AI 合规清单。正式比赛冲奖推荐（时间约 2-3 天）", "time": "~2-3 天"},
+    "competition_mathmodel": {"g": "comp", "emoji": "🧭", "name": "国赛 · 个人自制流",
+        "desc": "mathmodel-skill 适配：选题→解析→选型→基础→子问题循环→稳健→评价→写作→合规终审 9 步。问答式决策自动采用推荐项，决策日志全程落盘、断点可恢复，五维 rubric 自评 + 跨阶段回检 + 多视角终审；图表走内置 paper-figure / diagram-design。个人独立作战、想掌控每步决策依据推荐", "time": "~3 天"},
 }
 
 @app.get("/api/pipelines")

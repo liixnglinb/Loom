@@ -307,6 +307,7 @@ const ST = {
 const TEMPLATE_META = {
   competition:['竞赛极速流','competition','🏆'],
   competition_bzd:['BZD 双审精制流','competition','🏅'],
+  competition_mathmodel:['个人自制流','competition','🧭'],
 };
 const STATUS_TXT = {completed:['已完成','st-completed'], running:['运行中','st-running'],
   failed:['失败','st-failed'], pending:['待运行','st-pending'], paused:['已暂停','st-pending']};
@@ -741,13 +742,14 @@ function renderCompForm(name, skipContest){
       <div class="field"><label for="cfTitle" class="f">工作流标题</label>
         <input type="text" id="cfTitle" value="${esc(name)} - 新建"></div>
 
-      <div class="sect">流程方案</div>
-      <div style="display:flex;justify-content:flex-end;margin:-14px 0 8px">
+      <div class="sect-row">
+        <div class="sect">流程方案</div>
         <button type="button" class="btn btn-ghost btn-sm" onclick="showFlowCompare()">🗺 查看流程对比 ›</button>
       </div>
       <div class="field"><div class="radio-pills flow-fill" data-field="compFlow">
-        <div class="pill active" data-val="native" onclick="nwPill(this)">⚡ 极速 自动流</div>
-        <div class="pill" data-val="bzd" onclick="nwPill(this)">🏅 BZD 双审精制流</div>
+        <div class="pill active" data-val="native" onclick="nwPill(this);nwFlowChanged()">⚡ 极速 自动流</div>
+        <div class="pill" data-val="bzd" onclick="nwPill(this);nwFlowChanged()">🏅 BZD 双审精制流</div>
+        <div class="pill" data-val="mms" onclick="nwPill(this);nwFlowChanged()">🧭 个人自制流</div>
       </div></div>
 
       <div class="sect" id="cfContestSect" style="${hideContest?'display:none':''}">赛项选择</div>
@@ -776,8 +778,8 @@ function renderCompForm(name, skipContest){
       </div>
       <div class="switch-row"><label class="switch"><input type="checkbox" id="cfRich"><span class="slider"></span></label>
         <div class="st"><div class="st-t">📚 丰满模式（华为杯标准）</div><div class="st-d">正文 40-60 页 · 30+ 张图表 · 候选方法对比 · 过程式叙述 · 自动 12 类章节扩展</div></div></div>
-      <div class="switch-row"><label class="switch"><input type="checkbox" id="cfLogicReview"><span class="slider"></span></label>
-        <div class="st"><div class="st-t">🔍 逻辑对抗复核（费额度）</div><div class="st-d">编程后、写论文前，换独立视角挑"方向反 / 重复计量 / 外推过硬 / 漏变量 / 跨问矛盾 / 任务读歪"，发现致命逻辑错则回炉。建议重要赛事终稿开启。</div></div></div>
+      <div class="switch-row"><label class="switch"><input type="checkbox" id="cfLogicReview" checked disabled><span class="slider"></span></label>
+        <div class="st"><div class="st-t">🔍 逻辑对抗复核（费额度）</div><div class="st-d">编程后、写论文前，换独立视角挑"方向反 / 重复计量 / 外推过硬 / 漏变量 / 跨问矛盾 / 任务读歪"，发现致命逻辑错则回炉。默认开启，不可关闭。</div></div></div>
 
       <div class="sect">图形 / 配色设置</div>
       <div style="display:flex;justify-content:flex-end;margin:-14px 0 8px">
@@ -853,8 +855,8 @@ function renderCompForm(name, skipContest){
         <div class="st"><div class="st-t">📝 AI 工具使用声明</div><div class="st-d">按竞赛规范在参考文献前加「AI 工具使用声明」章节。</div></div></div>
       <div class="switch-row"><label class="switch"><input type="checkbox" id="cfCheckpoint"><span class="slider"></span></label>
         <div class="st"><div class="st-t">👤 人工检查点</div><div class="st-d">关键步骤完成后暂停，可预览产出并提交修改意见</div></div></div>
-      <div class="switch-row"><label class="switch"><input type="checkbox" id="cfLoop"><span class="slider"></span></label>
-        <div class="st"><div class="st-t">🔁 论文改进循环</div><div class="st-d">编译后自动审稿→修改→重编译（2轮，约30分钟）</div></div></div>
+      <div class="switch-row"><label class="switch"><input type="checkbox" id="cfLoop" checked disabled><span class="slider"></span></label>
+        <div class="st"><div class="st-t">🔁 论文改进循环</div><div class="st-d">编译后自动审稿→修改→重编译（2轮，约30分钟）。默认开启，不可关闭。</div></div></div>
 
       <div class="sect">模型分配</div>
       <div class="field"><label class="f">选择模型跑。不选=跟随设置页默认预设。</label>
@@ -1336,7 +1338,7 @@ window.showStylePreview = function(){
   document.body.appendChild(overlay);
 };
 
-/* ---- 流程对比：极速快跑流 vs 双审冲奖流（树状图：主环节 → 子步骤，点击看详情） ---- */
+/* ---- 流程对比：极速快跑流 vs 双审冲奖流 vs 个人自制流（树状图：主环节 → 子步骤，点击看详情） ---- */
 const FLOW_DATA = [
   {key:'native', ico:'⚡', name:'极速快跑流', accent:'#2E5EA8', steps:[
     {t:'赛题分析', d:'解析题意 · 提取数据与参数', more:'第一步先把题目"吃透"：通读题面抓目标与约束，把附件里的数据表提取成干净清单，再锁定该用什么方法方向。方向定了后面才不容易白跑。\n\n【内置 skill】comp-prob-analysis（赛题分析）\n【配套软件资产】\n- 附件/数据读取：pandas + data_profile.py 自动做字段画像与缺失分析\n- LLM 通读题面 → 复述目标/约束/评价指标\n- numpy/pandas 把表格整理成干净 csv 供后面建模直接引用\n【产出】题意复述 + 数据清单 + 拟用方法方向（写入工作区 RESULTS.md）', ch:[
@@ -1403,6 +1405,36 @@ const FLOW_DATA = [
       {t:'终稿装配', d:'合并各章节为装配终稿', more:'把通过审查的各章节合并成终稿：统一章节编号、公式编号、交叉引用、目录与页码，检查边距与页眉页脚等排版细节。装配完成后通读一遍全文，保证卷面整体一致、无拼接痕迹。'},
       {t:'AI 合规', d:'过 26 项 AI 使用合规清单', more:'逐项核对 26 项 AI 使用合规清单：AI 用到了哪一步、生成内容如何标注、有没有按规则声明 AI 工具参与；把 AI 使用说明补进承诺书/说明页。确保合规不出问题，避免被取消成绩。'},
       {t:'出库提交', d:'导出 PDF/自码/数据包', more:'导出最终提交物：论文 PDF、全部自码、数据文件包，检查文件齐全性与命名规范，按竞赛要求打包成参赛提交件（zip 或指定格式）。提交前最后核对一遍赛题号与材料清单，确认无误即可出库。'}]}]},
+  {key:'mms', ico:'🧭', name:'个人自制流', accent:'#1F7A5C', steps:[
+    {t:'选题决策', d:'多题对比 · 证据驱动定一题', more:'个人自制流的第一步：对 A-E 各题做可行性与得分潜力对比，把选题从"拍脑袋"变成有依据的决策。\n\n【内置 skill】mathmodel-skill（Stage 1）\n【配套软件资产】\n- _mms/competitions/mathmodel/ 获奖规律库（winning_patterns / topic_specs）\n- 决策与理由写入 state/decision_log.json，出现新证据可审计地重开决策\n【产出】TOPIC_DECISION.md（定题结论 + 逐题对比依据）', ch:[
+      {t:'多题对比', d:'数据可得性/建模难度/发挥空间逐题评估', more:'把每个候选题放到同一张桌上比：数据好不好拿、建模难度是否匹配自己水平、有没有发挥空间拿亮点分。逐题列出证据与直觉冲突的地方，避免"第一眼看顺眼就定题"。'},
+      {t:'定题决策', d:'题号与任务类型写入决策日志', more:'定下题目后把题号、task_type 和选题理由写进 state/decision_log.json。这不是仪式感——后面每一步都从决策日志取上下文，中途换题也有据可查，评委问起选题依据时论文里也写得出。'}]},
+    {t:'问题深度解析与分解', d:'题意拆解 · 分离子问题 Q1..Qn', more:'把选定的题"吃透"：解析目标/约束/数据，把大问题递归拆成可独立求解的子问题清单。\n\n【内置 skill】mathmodel-skill（Stage 2）\n【配套软件资产】\n- 子问题数与权重写入 decision_log，供 Stage 5 逐问循环直接引用\n- 上传的赛题附件已落盘工作区，数据画像与清洗可直接做\n【产出】PROBLEM_DECOMPOSITION.md（题意解析 + 子问题清单）', ch:[
+      {t:'题意解析', d:'目标/约束/评价指标/数据口径逐项明确', more:'通读题面圈出目标、约束、评价指标和数据口径，把"题目要我回答什么"复述成一句话写进文档开头；对每个术语做释义校验，防止默认理解跑偏。'},
+      {t:'子问题分解', d:'递归拆成 Q1..Qn 并标注依赖关系', more:'把大问题拆成可独立求解的子问题：每个 Qi 的输入、输出、与其他子问题的依赖标注清楚。拆得好坏直接决定 Stage 5 循环的质量——这一步值得多花半小时。'}]},
+    {t:'模型选型（候选对比）', d:'证据驱动比较 · 反事实校验 · 定案', more:'把候选模型摆在一起做证据驱动对比（精度/复杂度/可解释性/数据适配），再用反事实校验压一遍，最后定案记录。\n\n【内置 skill】mathmodel-skill（Stage 3）\n【配套软件资产】\n- _mms/config/dim_weights.json 多维评分权重\n- 选型结论与"为什么选它"写入 decision_log\n【产出】MODEL_SELECTION.md（对比表 + 定案依据）', ch:[
+      {t:'候选对比', d:'多维度证据驱动比较候选模型', more:'精度、复杂度、可解释性、与数据形态的适配度放在一起比，评分维度权重按 _mms/config/dim_weights.json。对比记录直接成为论文"方法选择"小节的素材。'},
+      {t:'反事实校验', d:'换个问法验证选型结论是否稳健', more:'对选型结论做反事实提问：如果数据量减半/评价指标变了，这个模型还是最优吗？经不起反事实的选型趁早换，比解出来再推倒重来省得多。'}]},
+    {t:'基础框架', d:'假设 · 符号 · 术语三统一', more:'动笔建模前把全篇的"语言"统一定义好：模型假设、符号表、术语表，后面的公式和论文全部沿用。\n\n【内置 skill】mathmodel-skill（Stage 4）\n【产出】FOUNDATION.md（假设清单 + 符号表 + 术语表）', ch:[
+      {t:'模型假设', d:'列出假设并写明依据与影响范围', more:'每条假设写清"为什么可以这么假设、影响哪些结论"——假设是严谨性的体现不是借口，评委主要看这部分。'},
+      {t:'符号表', d:'全篇统一变量符号与量纲', more:'变量、参数、下标统一登记成符号表，量纲标注齐全。后面所有公式、代码、图表沿用同一套符号，避免"同一变量两张脸"。'}]},
+    {t:'递归子问题求解循环', d:'Q1..Qn 逐问建模求解 · rubric 质量闸门', more:'流水线的主体环节：按子问题清单逐问建模求解，每问出结果图，五维 rubric 自评达标才放行进入下一问。\n\n【内置 skill】mathmodel-skill（Stage 5）+ paper-figure（论文级数据图）\n【配套软件资产】\n- chart_library 图表模板库 + plot_utils 论文风格基线出图\n- 数据图视觉质检（坐标轴/标签硬伤自动修）\n- 结果落盘 results/ + figures/，摘要写入 decision_log\n【产出】SOLVING_SUMMARY.md + 各问数值结果与图表', ch:[
+      {t:'逐问求解', d:'每个 Qi 独立建模求解并交叉验证', more:'按分解清单逐问求解：建模、写代码、跑出数值结果，与相邻子问题交叉验证自洽。每问产出经过 rubric 自评（原始分≥7 且加权均分≥8 才放行），不达标自动精修。'},
+      {t:'结果出图', d:'论文级数据图 + 视觉质检', more:'每问结果按图表模板库出论文级数据图，AI 视觉质检坐标轴截断/标签重叠等硬伤，不合格自动修图；"什么论证动作配什么图"参照 _mms/competitions/mathmodel/plotting_placement.md 获奖论文基线。'}]},
+    {t:'全局灵敏度与稳健性', d:'参数扰动 · 噪声压测 · 检验证据入文', more:'参数系统扰动看灵敏度，加噪/极端数据看鲁棒性，检验证据整理成论文小节——这是冲奖说服力的关键。\n\n【内置 skill】mathmodel-skill（Stage 6）+ paper-figure（灵敏度图）\n【配套软件资产】\n- 灵敏度/稳健性图表模板（扰动曲线/区间对比）\n- L2 跨阶段回检：与子问题循环结论对表\n【产出】ROBUSTNESS_REPORT.md（检验结论 + 图表）', ch:[
+      {t:'灵敏度分析', d:'关键参数 ±5%/10%/20% 扰动曲线', more:'对关键参数做系统扰动看结果变化曲线，识别"必须精确"与"可以放宽"的参数，论文里据此给出参数取值建议。'},
+      {t:'稳健性检验', d:'噪声/极端数据下验证模型不过拟合', more:'加噪、删改极端样本、换数据口径做压力测试，随机性算法多次运行看方差。证明方法不是"针对该数据过拟合出来的"。'}]},
+    {t:'模型评价与推广', d:'优缺点 · 推广性 · 改进方向', more:'客观评价模型优缺点，讨论推广到同类问题的路径与改进方向——论文"模型评价"章节的素材全在这里。\n\n【内置 skill】mathmodel-skill（Stage 7）\n【产出】MODEL_EVALUATION.md（评价 + 推广 + 改进）', ch:[
+      {t:'客观评价', d:'优点不吹嘘、缺点不回避', more:'优点结合稳健性证据说，缺点给出改进方向——敢自曝有边界的模型反而显得可信，评委对"完美模型"天然警惕。'},
+      {t:'模型推广', d:'同类问题的迁移路径', more:'讨论这套模型还能用在什么场景、换数据/换目标函数要改哪里。推广性体现建模功力，是加分项。'}]},
+    {t:'论文写作与合规装配', d:'官方规则优先 · AI 披露 · LaTeX 装配', more:'把 Stage 0-7 的产出装配成论文：先读当届官方规则再动笔，AI 使用如实披露，按 LaTeX 模板装配编译。\n\n【内置 skill】mathmodel-skill（Stage 8）+ diagram-design（技术路线图）\n【配套软件资产】\n- _mms/templates/latex/mathmodel/main.tex 国赛规范版式\n- 摘要类型与措辞参照 abstract_template / phrase_bank\n- 技术路线图按图表路由用 diagram-design 补绘\n【产出】paper_workspace/main.tex（+ 编译 PDF）', ch:[
+      {t:'分章写作', d:'按论文骨架装配既有产出，不造新结果', more:'写作阶段的原则是"装配不发明"：只把已验证的 Stage 0-7 产出组织成文，发现矛盾记录并触发定向回滚，不在写作时顺手改结论。'},
+      {t:'AI 披露', d:'AI 参与环节如实声明', more:'按当届官方规则如实声明 AI 工具参与情况，披露链路贯穿全文；合规是底线，披露不清直接危及成绩。'},
+      {t:'LaTeX 装配', d:'国赛模板装配并编译 PDF', more:'用 _mms 内置国赛 LaTeX 模板装配：摘要、目录、正文、附录、承诺书逐一入位，XeLaTeX 编译通过零报错。'}]},
+    {t:'提交合规与多视角终审', d:'合规闸门 · L3 Panel · 回退闭环', more:'最后一道闸：先对照当届官方规则查合规（页数/匿名/披露），再由多视角 Panel 终审内容质量，不合规触发定向回退重改。\n\n【内置 skill】mathmodel-skill（Stage 9）\n【配套软件资产】\n- 26 项 AI 自查清单 + anti-patterns 反模式清单终审\n- _mms/scripts/score_artifact.py 评分脚本、doctor.py 环境自检\n【产出】SUBMISSION_REVIEW.md + 可提交参赛包', ch:[
+      {t:'合规闸门', d:'页数/匿名/披露对照当届官方规则', more:'重新打开当届官方规则逐条对照：页数上限、匿名要求、AI 披露格式。合规优先于内容——再好的论文违反规则也不是"可提交"状态。'},
+      {t:'多视角终审', d:'L3 Panel 多角色独立评审', more:'多个独立视角（评委/审稿人/技术审查）分别通读终稿，按反模式清单挑问题，问题按归属定向回退到对应阶段修复，改完只重跑受影响的检查。'},
+      {t:'出库确认', d:'submission_ready 后打包参赛件', more:'所有合规检查与终审通过、submission_ready=true 后，导出论文 PDF、代码与数据包，按官方要求打包成参赛提交件。'}]}]},
 ];
 
 function _flowTree(d){
@@ -1639,7 +1671,7 @@ window.createComp = async function(){
   const modelAlloc=pv.modelAlloc||'global';
   const step_models={};
   if(modelAlloc==='perstep'){
-    COMP_STEPS.forEach(s=>{ const el=document.getElementById('cfsm_'+s.key); if(el&&el.value) step_models[s.key]=el.value; });
+    (COMP_FLOW_STEPS[pv.compFlow]||COMP_STEPS).forEach(s=>{ const el=document.getElementById('cfsm_'+s.key); if(el&&el.value) step_models[s.key]=el.value; });
   }
   const config = {
     contest, qiHao:($('#cfQiHao').value||'').trim(), question:supplement, supplement,
@@ -1657,9 +1689,11 @@ window.createComp = async function(){
     files,
   };
   if(!config.question && !files.some(f=>f.cat==='cfProblem')){ toast('请上传赛题文件或填写赛题内容'); return; }
-  // 流程方案：极速 自动流(native) / BZD 双审精制流(bzd)
-  const flowKind = pv.compFlow==='bzd' ? 'competition_bzd' : 'competition';
-  const firstStep = flowKind==='competition_bzd' ? 'stage01_kickoff' : 'analysis';
+  // 流程方案：极速 自动流(native) / BZD 双审精制流(bzd) / 个人自制流(mms)
+  const flowKind = pv.compFlow==='bzd' ? 'competition_bzd'
+                 : pv.compFlow==='mms' ? 'competition_mathmodel' : 'competition';
+  const firstStep = flowKind==='competition_bzd' ? 'stage01_kickoff'
+                  : flowKind==='competition_mathmodel' ? 'mms01_topic' : 'analysis';
   const r=await post('/api/workflows',{title, template:flowKind, step:firstStep, config});
   location.hash='#/run/'+r.id;
 };
@@ -1690,6 +1724,47 @@ const COMP_STEPS = [
   {key:'compile',label:'编译与合规检查',skill:'comp-compile-zh'},
   {key:'improve',label:'论文改进循环',skill:'auto-paper-improvement-loop'},
 ];
+/* 三套国赛流程的步骤清单（新建表单「按步骤指定模型」随所选流程方案渲染） */
+const COMP_FLOW_STEPS = {
+  native: COMP_STEPS,
+  bzd: [
+    {key:'stage01_kickoff',label:'启动与题面解析'},
+    {key:'stage02_strategy',label:'建模策略与模型选型'},
+    {key:'stage03_solving',label:'建模执行'},
+    {key:'stage04_robust',label:'稳健性总检验'},
+    {key:'stage05_writing',label:'章节写作'},
+    {key:'stage06_abstract',label:'摘要与首页'},
+    {key:'stage07_review1',label:'全面审查 I：章节自查'},
+    {key:'stage08_review2',label:'全面审查 II：综合评审'},
+    {key:'stage09_release',label:'终稿装配与合规出库'},
+  ],
+  mms: [
+    {key:'mms01_topic',label:'选题决策'},
+    {key:'mms02_analysis',label:'问题深度解析与分解'},
+    {key:'mms03_model',label:'模型选型（候选对比）'},
+    {key:'mms04_foundation',label:'基础框架（假设·符号·术语）'},
+    {key:'mms05_solving',label:'递归子问题求解循环'},
+    {key:'mms06_robust',label:'全局灵敏度与稳健性'},
+    {key:'mms07_eval',label:'模型评价与推广'},
+    {key:'mms08_writing',label:'论文写作与合规装配'},
+    {key:'mms09_review',label:'提交合规与多视角终审'},
+  ],
+};
+function nwCurFlow(){
+  const g=document.querySelector('.radio-pills[data-field="compFlow"] .pill.active');
+  return g ? g.dataset.val : 'native';
+}
+/* 切换流程方案后重渲染「按步骤指定模型」行（保留已选值） */
+window.nwFlowChanged = function(){
+  const box=document.getElementById('cfStepModels'); if(!box) return;
+  const inner=box.querySelector('div'); if(!inner) return;
+  const old={}; inner.querySelectorAll('select').forEach(s=>{ old[s.id]=s.value; });
+  const steps=COMP_FLOW_STEPS[nwCurFlow()]||COMP_STEPS;
+  inner.innerHTML=steps.map((s,i)=>`
+    <div class="step-model-row"><span class="sm-name">${i+1}. ${esc(s.label)}</span>
+      <select id="cfsm_${s.key}" style="flex:1">${modelOptions()}</select></div>`).join('');
+  inner.querySelectorAll('select').forEach(s=>{ if(old[s.id]) s.value=old[s.id]; });
+};
 let RUN_STEPS=[], RUN_WF=null, RUN_GROUPS={}, RUN_TIMER=null, RUN_WS=null;
 
 

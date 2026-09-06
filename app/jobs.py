@@ -148,14 +148,43 @@ COMPETITION_STEPS_BZD = [
     {"key": "stage09_release", "label": "终稿装配与合规出库", "skill": "bzd-2026-stage-09 diagram-design",
      "out": "SUBMISSION.md", "checkpoint": False, "role": "executor", "check": ""},
 ]
-# 全部流水线：仅两套国赛工作流（极速流 competition + BZD 双审精制流 competition_bzd）
+# 全部流水线：仅三套国赛工作流（极速流 competition + BZD 双审精制流 competition_bzd + 个人自制流 competition_mathmodel）
 PIPELINES = {"competition": COMPETITION_STEPS}
 PIPELINES["competition_bzd"] = COMPETITION_STEPS_BZD
+
+# ---------------- 第三套国赛流程：个人自制流（mathmodel-skill 适配） ----------------
+# mathmodel-skill（github.com/liixnglinb/mathmodel-skill）端到端国赛工作流的无人值守适配版：
+# 10 阶段中的 Stage 0（团队启动+资料预扫）并入新建表单已知字段（赛项/题号/页数/模型/上传赛题），
+# Stage 1-9 逐一映射为 9 个流水线步骤。决策状态持久化在工作区 state/decision_log.json，
+# 跨步骤保留、可断点恢复；每阶段五维 rubric 自评 + 跨阶段回检。图表全部走软件内置 skill：
+# 统计/数据图 = paper-figure（chart_library + plot_utils + 视觉质检），技术路线/流程图 = diagram-design。
+COMPETITION_STEPS_MMS = [
+    {"key": "mms01_topic", "label": "选题决策", "skill": "mathmodel-skill",
+     "out": "TOPIC_DECISION.md", "checkpoint": False, "role": "executor", "check": ""},
+    {"key": "mms02_analysis", "label": "问题深度解析与分解", "skill": "mathmodel-skill",
+     "out": "PROBLEM_DECOMPOSITION.md", "checkpoint": False, "role": "executor", "check": ""},
+    {"key": "mms03_model", "label": "模型选型（候选对比）", "skill": "mathmodel-skill",
+     "out": "MODEL_SELECTION.md", "checkpoint": False, "role": "executor", "check": ""},
+    {"key": "mms04_foundation", "label": "基础框架（假设·符号·术语）", "skill": "mathmodel-skill",
+     "out": "FOUNDATION.md", "checkpoint": False, "role": "executor", "check": ""},
+    {"key": "mms05_solving", "label": "递归子问题求解循环", "skill": "mathmodel-skill paper-figure",
+     "out": "SOLVING_SUMMARY.md", "checkpoint": True, "role": "executor", "check": ""},
+    {"key": "mms06_robust", "label": "全局灵敏度与稳健性", "skill": "mathmodel-skill paper-figure",
+     "out": "ROBUSTNESS_REPORT.md", "checkpoint": False, "role": "executor", "check": ""},
+    {"key": "mms07_eval", "label": "模型评价与推广", "skill": "mathmodel-skill",
+     "out": "MODEL_EVALUATION.md", "checkpoint": False, "role": "executor", "check": ""},
+    {"key": "mms08_writing", "label": "论文写作与合规装配", "skill": "mathmodel-skill diagram-design",
+     "out": "paper_workspace/main.tex", "checkpoint": True, "role": "editor", "check": ""},
+    {"key": "mms09_review", "label": "提交合规与多视角终审", "skill": "mathmodel-skill",
+     "out": "SUBMISSION_REVIEW.md", "checkpoint": False, "role": "reviewer", "check": ""},
+]
+PIPELINES["competition_mathmodel"] = COMPETITION_STEPS_MMS
 
 # 是否为竞赛类
 def is_competition_template(template):
     t = template or ""
-    return t == "competition" or t.startswith("comp_") or t == "competition_bzd"
+    return t == "competition" or t.startswith("comp_") or t == "competition_bzd" \
+        or t == "competition_mathmodel"
 
 # 步骤索引映射（供 data_fig 等配置读取，以竞赛为基准）
 STEP_INDEX = {s["key"]: i for i, s in enumerate(COMPETITION_STEPS)}
@@ -688,10 +717,6 @@ def resolve_model(role, config=None):
     优先级：
       0. config['step_models'][role] 若命中「预设名」→ 用该预设（按步骤覆盖）；
          config['step_models'][role] 为非空非预设名 → 视为真实 model id，套默认连接；
-      0.5) 角色专用模型（设置页三下拉接线）：
-         role=review 命中 reviewer_model → 套默认预设连接换该 model（跨模型复核）；
-         role=improve/paper 命中 editor_model → 同上（编辑改稿轻量模型）。
-         仅在 step_models 未覆盖该步时生效，比步骤级覆盖优先级低；
       1. config['model'] 若命中「预设名」→ 用该预设；
       2. config['model'] 是非空且非预设名 → 视为真实 model id，用默认预设的 base/key 覆盖 model；
       3. 否则直接用「全局默认预设」；若预设 extra 含 model_map 且命中当前角色，
@@ -724,24 +749,6 @@ def resolve_model(role, config=None):
     step_models = (config or {}).get("step_models") or {}
     if isinstance(step_models, dict) and (step_models.get(role) or "").strip():
         return via_model(step_models.get(role), None)
-
-    # 0.5) 角色专用模型（设置页「审稿者 / 编辑器 AI」下拉接线）
-    #      值语义：存预设名或裸 model id；连接走默认预设（跨模型复核用别家 key 时
-    #      请直接建预设并把 step_models 指向它，角色字段只切模型不切连接）。
-    if not isinstance(step_models, dict) or not (step_models.get(role) or "").strip():
-        role_setting = ""
-        if role == "review":
-            role_setting = db.get_setting("reviewer_model", "") or ""
-        elif role in ("improve", "paper"):
-            role_setting = db.get_setting("editor_model", "") or ""
-        role_setting = (role_setting or "").strip()
-        if role_setting and not preset_map.get(role_setting):
-            # 非预设名：套默认连接换模型；默认连接不存在则忽略角色字段
-            if default:
-                return (default.get("provider") or "openai", default.get("api_base") or "",
-                        default.get("api_key") or "", role_setting)
-        elif role_setting:
-            return pick(preset_map[role_setting])
 
     uni = ((config or {}).get("model") or "").strip()
     if uni:
@@ -1165,17 +1172,22 @@ def _env_anchor(step, ws):
     _bzd = ws / "_bzd"
     if (_bzd / "scripts").is_dir():
         lines.append(f"- BZD 资源目录：`${{MH_BZD_DIR}}` = `{_bzd.resolve()}`（评分脚本 `${{MH_BZD_DIR}}/scripts/score_artifact.py`、环境自检 `doctor.py`、数模字典 `query_model_dict.py`；状态模板 `${{MH_BZD_DIR}}/templates/shared/decision_log.json`；规则与成稿模板 `${{MH_BZD_DIR}}/references/...`）")
+    # 个人自制流（mathmodel-skill）：_mms 资产目录锚点（阶段手册/国赛规则/绘图路由/LaTeX 模板/评分脚本）
+    _mms = ws / "_mms"
+    if (_mms / "references").is_dir():
+        lines.append(f"- mathmodel-skill 资源目录：`_mms/`（阶段手册 `_mms/references/stage_NN_*.md`、国赛规则与图表路由 `_mms/competitions/mathmodel/`（含 plotting_placement/plotting_routing）、LaTeX 模板 `_mms/templates/latex/mathmodel/main.tex`、脚本 `_mms/scripts/`（doctor.py / score_artifact.py / render_paper.py）、维度权重 `_mms/config/dim_weights.json`；决策状态 `state/decision_log.json` 在工作区 cwd，每阶段开头必读、结尾必写）")
     # 涉及数据读写/画图/论文的步 → 核心库
-    if key in ("analysis", "modeling", "code", "figure", "arch", "paper"):
+    if key in ("analysis", "modeling", "code", "figure", "arch", "paper") \
+            or key in ("mms05_solving", "mms06_robust"):
         lines.append("- matplotlib/numpy/pandas/scipy 已装于此 Python，直接 import 即可（画数据图/读写数据）")
     # 视觉质检步 → vision API 入口（未配置时脚本自动跳过，不阻塞）
-    if key in ("figure", "arch"):
+    if key in ("figure", "arch") or key in ("mms05_solving", "mms06_robust"):
         lines.append("- 视觉质检脚本读环境变量 EDITOR_AI_API_KEY/EDITOR_AI_BASE_URL（或 OPENAI_API_KEY/OPENAI_BASE_URL）；未配置时脚本自动降级跳过，不阻塞")
     # 流程/架构图步 → 出图内核
-    if key == "arch":
+    if key == "arch" or key == "mms08_writing":
         lines.append("- HTML→PDF 出图用 `_utils/screenshot_capture.py --file … --out … --format pdf`；无 Electron 时自动降级，不阻塞")
     # 编译/改进步 → LaTeX
-    if key in ("compile", "improve"):
+    if key in ("compile", "improve") or key in ("mms08_writing", "mms09_review"):
         lines.append("- LaTeX 编译用 xelatex/latexmk（未安装 `winget install MiKTeX.MiKTeX`）")
     return "\n".join(lines)
 
@@ -1244,6 +1256,22 @@ def prepare_cli_workspace(ws, config, file_index, step_list=None, current=None, 
                     copied_dirs.append(f"_bzd(cumcm-bzd-2026)")
                 except OSError:
                     pass
+    # 1.7) 个人自制流资产注入：把 mathmodel-skill（references/competitions/templates/scripts/config）
+    #      整体拷入 ws/_mms，使 skill 的 <skill>/ 路径协议在 cwd=workspace 下按 _mms/ 真实可达
+    #      （阶段手册、plotting_placement/plotting_routing 绘图路由、LaTeX 模板、doctor/score 脚本），
+    #      决策状态 state/decision_log.json 落在工作区 cwd 跨步骤持久——否则会被文本模拟替代。
+    if (is_competition_template(template) and template == "competition_mathmodel") or \
+            (current and (current.get("skill") or "").startswith("mathmodel-skill")):
+        mms_src = SKILLS_DIR / "mathmodel-skill"
+        if mms_src.is_dir():
+            mms_dest = ws / "_mms"
+            if not mms_dest.exists():
+                try:
+                    shutil.copytree(mms_src, mms_dest,
+                                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "tests", "*.git*"))
+                    copied_dirs.append(f"_mms(mathmodel-skill)")
+                except OSError:
+                    pass
     # 2) CLAUDE.md：流水线概览 + 规则 + 上传文件清单 + 当前步骤的 SKILL 全文
     labels = " > ".join(s["label"] for s in (step_list or COMPETITION_STEPS))
     cur_block = ""
@@ -1299,6 +1327,32 @@ def prepare_cli_workspace(ws, config, file_index, step_list=None, current=None, 
             rules.append("- 按竞赛规范在参考文献前生成「AI 工具使用声明」章节")
         if (config or {}).get("only_total") and not (config or {}).get("per_flow"):
             rules.append("- 只画一张总体技术路线图，不要为每个子问题单独画求解流程图")
+        if template == "competition_mathmodel":
+            # 个人自制流（mathmodel-skill 适配）专属条款：无人值守 + 步骤↔Stage 映射 + 表单开关落法
+            rules.append("- 本流水线为 mathmodel-skill「个人自制流」适配，每步只执行当前步骤对应的 Stage："
+                         "选题决策=Stage 1、问题解析=Stage 2、模型选型=Stage 3、基础框架=Stage 4、"
+                         "子问题循环=Stage 5、稳健性=Stage 6、评价推广=Stage 7、论文写作=Stage 8、"
+                         "合规终审=Stage 9（当前步骤见下方「当前步骤指令」），其余 Stage 一律跳过")
+            rules.append("- 无人值守模式：SKILL 内所有问答式决策点（含『让我决定（推荐 X）』兜底项）"
+                         "直接采用推荐项，把决策与理由写入 state/decision_log.json 后继续，"
+                         "不等待用户回复；表单已知字段（赛项/题号/页数限制/模型等，见【本工作流表单配置】）视为已回答，不得重复询问")
+            rules.append("- mathmodel-skill 安装目录已拷贝到工作区 _mms/：SKILL 与 references/stage_NN_*.md、"
+                         "competitions/mathmodel/（含 plotting_placement 图表放置基线与 plotting_routing 绘图路由）、"
+                         "templates/latex/mathmodel/main.tex、scripts/、config/ 的 <skill>/ 路径一律按 _mms/ 解析；"
+                         "每阶段开头必读、结尾必写 state/decision_log.json")
+            if (config or {}).get("out_format") == "word":
+                rules.append("- 输出格式 = Word：终稿 PDF 编译完成后用 pandoc 额外导出一份 .docx 副本（paper_workspace/main.docx）")
+            if ((config or {}).get("review_mode") or "").strip().lower() == "fast":
+                rules.append("- 审查模式 = 快速（MH_FAST_MODE=1）：反馈层只保 L1 逐阶段自评，跳过 L2 跨阶段回检与 Stage 9 多视角 Panel 的昂贵环节")
+            else:
+                rules.append("- 审查模式 = 严格：反馈层 L1+L2 全开（跨阶段回检 + 定向回滚），Stage 9 保留 L3 多视角 Panel 终审")
+            if (config or {}).get("rich_mode"):
+                rules.append("- 丰满模式开启（MH_RICH_MODE=1）：正文目标 40-60 页、图表 30+ 张、每问给候选方法对比与过程式叙述（数值硬目标以 .env_skill 为准）")
+            if (config or {}).get("logic_review"):
+                rules.append("- 逻辑对抗复核开启：进入 Stage 8 写作前，先换独立视角通查全流程"
+                             "（方向反 / 重复计量 / 外推过硬 / 漏变量 / 跨问矛盾），发现致命逻辑错先回炉 Stage 3/5 修复再写作")
+            if (config or {}).get("improve_loop"):
+                rules.append("- 论文改进循环开启：Stage 9 终审发现质量问题时按审稿意见改稿并重编译，最多两轮收敛后再确认出库")
     else:
         rules.append("- 使用中文撰写论文（除非是 LaTeX 代码）")
     # 图表配置标记（skill 按 MH_* 关键字 grep 本文件读取，勿删；无选择时默认黑白/随机）

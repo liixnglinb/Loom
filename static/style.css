@@ -313,6 +313,8 @@ textarea{resize:vertical;min-height:90px;line-height:1.6}
   transition:transform var(--slide);box-shadow:0 1px 3px rgba(0,0,0,.2)}
 input:checked+.slider{background:var(--accent)}
 input:checked+.slider:before{transform:translateX(16px)}
+/* 锁定开启的开关（默认开启不可关闭项）：弱化滑块并禁用指针 */
+.switch input:disabled+.slider{opacity:.55;cursor:not-allowed}
 .switch-row{display:flex;align-items:flex-start;gap:12px;padding:13px 14px;border-radius:var(--r-1);
   border:1px solid transparent;transition:background var(--slide),color var(--slide),border-color var(--slide),box-shadow var(--slide),transform .18s ease}
 .switch-row:hover{background:var(--bg-3);border-color:var(--line-soft)}
@@ -1226,12 +1228,13 @@ select{padding-top:10px;padding-bottom:10px}
 .modal-full .modal-foot{flex-shrink:0}
 .modal-full .modal-top,.modal-full .sp-meta{flex-shrink:0}
 /* 流程方案：标题行（左标题右按钮，按钮强制推到最右） */
-.sect-row{display:flex;align-items:center;justify-content:flex-start;gap:10px}
+.sect-row{display:flex;align-items:center;justify-content:flex-start;gap:10px;margin:30px 0 16px}
+.sect-row .sect{flex:1;margin:0}
 .sect-row .btn{margin-left:auto;flex-shrink:0}
 /* 流程对比弹窗 */
-/* 流程全景弹窗：标题 + 两个流程卡按钮 + 宽幅树状图 */
+/* 流程全景弹窗：标题 + 三个流程卡按钮 + 宽幅树状图 */
 .modal-flow{width:1240px;max-width:96vw;max-height:92vh;overflow-y:auto;padding-bottom:10px}
-.ft-flowbar{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:2px 0 14px}
+.ft-flowbar{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:2px 0 14px}
 .ft-flow{display:flex;align-items:center;gap:10px;padding:13px 16px;border-radius:12px;
   border:1.5px solid var(--line);background:#fff;cursor:pointer;text-align:left;font:inherit;
   transition:border-color .15s,background .15s,box-shadow .15s}
