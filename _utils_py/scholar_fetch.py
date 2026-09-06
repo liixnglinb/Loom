@@ -145,15 +145,41 @@ def _log(msg: str):
 #   全军覆没。改为直连 AMiner 官方 datacenter.aminer.cn。
 # - URL 路径从 /aminer/gateway/... 改为 /gateway/...
 # - Authorization 头不再加 "Bearer " 前缀, 直接传 token (官方约定)
-# - 旧 token 已失效返回 40308; token 读取顺序: 环境变量 AMINER_API_KEY → 打包注入的
-#   app/_secret_build.py (2026-09-06 移出源码; 原硬编码 token 仍留在私有仓库历史中, 用户决定暂不轮换)
-_AMINER_API_KEY = os.environ.get("AMINER_API_KEY", "")
-if not _AMINER_API_KEY:
+# - 旧 token 已失效返回 40308; token 读取顺序: 环境变量 → 打包注入的 app/_secret_build.py
+#   (2026-09-06 移出源码; 原硬编码 token 仍留在私有仓库历史中, 用户决定暂不轮换)
+def _load_build_secrets() -> dict:
+    """读取打包/开发注入的密钥文件 app/_secret_build.py（gitignore，勿提交）。
+
+    包导入失败（如以脚本方式运行 CLI）时回退为直接读文件。
+    """
+    keys = {}
     try:
-        from app._secret_build import AMINER_API_KEY as _AMINER_BUILD_KEY
-        _AMINER_API_KEY = _AMINER_BUILD_KEY or ""
+        from app import _secret_build as _sb
+        for _k in ("SECRET", "AMINER_API_KEY", "SCIVERSE_API_KEY"):
+            _v = getattr(_sb, _k, "")
+            if _v:
+                keys[_k] = _v
+        return keys
     except Exception:
         pass
+    try:
+        _p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          "app", "_secret_build.py")
+        if os.path.exists(_p):
+            with open(_p, "r", encoding="utf-8") as _f:
+                _txt = _f.read()
+            for _k in ("SECRET", "AMINER_API_KEY", "SCIVERSE_API_KEY"):
+                _m = re.search(_k + r"\s*=\s*['\"]([^'\"]*)['\"]", _txt)
+                if _m and _m.group(1):
+                    keys[_k] = _m.group(1)
+    except Exception:
+        pass
+    return keys
+
+
+_BUILD_SECRETS = _load_build_secrets()
+_AMINER_API_KEY = os.environ.get("AMINER_API_KEY", "") or _BUILD_SECRETS.get("AMINER_API_KEY", "")
+_SCIVERSE_API_KEY = os.environ.get("SCIVERSE_API_KEY", "") or _BUILD_SECRETS.get("SCIVERSE_API_KEY", "")
 _AMINER_BASE_URL = os.environ.get("AMINER_BASE_URL", "https://datacenter.aminer.cn")
 
 
@@ -491,6 +517,48 @@ def _aminer_paper_detail(paper_id: str) -> Optional[dict]:
 # ============================================================
 # Semantic Scholar API
 # ============================================================
+
+def sciverse_search(query: str, max_results: int = 10) -> list[dict]:
+    """Sciverse 元数据检索（宣称 4.66 亿学术元数据，中英文均可）。
+
+    API: POST https://api.sciverse.space/meta-search（Bearer 鉴权）。
+    返回与 aminer_search 同构的字段（title/authors/year/doi/venue/citation_count），
+    便于上层统一消费。未配置 token、限流或任何异常时返回 []（静默降级，不影响主链路）。
+    """
+    if not _SCIVERSE_API_KEY:
+        return []
+    body = {"query": (query or "")[:512], "page_size": max(1, min(int(max_results), 100))}
+    headers = {"Authorization": "Bearer " + _SCIVERSE_API_KEY}
+    txt = _http_post("https://api.sciverse.space/meta-search", body,
+                     headers=headers, timeout=30)
+    if not txt:
+        return []
+    try:
+        results = (json.loads(txt) or {}).get("results") or []
+    except Exception as e:
+        _log(f"Sciverse meta-search 解析失败: {e}")
+        return []
+    papers = []
+    for item in results[:max_results]:
+        year = item.get("publication_published_year")
+        try:
+            year = int(year) if year not in (None, "") else None
+        except (TypeError, ValueError):
+            year = None
+        papers.append({
+            "title": item.get("title") or "",
+            "authors": item.get("authors") or [],
+            "year": year,
+            "doi": item.get("doi") or "",
+            "dblp_id": "",
+            "arxiv_id": "",
+            "venue": item.get("publication_venue_name_unified") or "",
+            "citation_count": item.get("citation_count") or 0,
+            "abstract": item.get("abstract") or "",
+            "source": "sciverse",
+        })
+    return papers
+
 
 def semantic_scholar_search(query: str, max_results: int = 5) -> list[dict]:
     """搜索 Semantic Scholar，返回论文列表。
@@ -1120,6 +1188,21 @@ def fetch_bibtex(query: str, max_results: int = 10) -> list[dict]:
                     continue
                 papers.append(ap)
     
+    # Sciverse 补充（4.66 亿学术元数据；主源数量不足时按 DOI/标题去重补足）
+    if _SCIVERSE_API_KEY and len(papers) < max_results:
+        _log(f"[补充] Searching Sciverse: {query}")
+        sv_papers = sciverse_search(query, max_results=max_results - len(papers))
+        existing_dois = {p.get("doi", "").lower() for p in papers if p.get("doi")}
+        existing_titles = {p.get("title", "").lower()[:30] for p in papers if p.get("title")}
+        for sv in sv_papers:
+            sv_doi = (sv.get("doi") or "").lower()
+            sv_title = (sv.get("title") or "").lower()[:30]
+            if sv_doi and sv_doi in existing_dois:
+                continue
+            if sv_title and sv_title in existing_titles:
+                continue
+            papers.append(sv)
+
     # 如果两个都没结果，尝试 DBLP
     if not papers:
         _log("No results from primary sources, trying DBLP...")
@@ -1329,6 +1412,9 @@ def main(argv: list[str] | None = None) -> int:
     
     if args.command == "search":
         results = semantic_scholar_search(args.query, max_results=args.max)
+        if not results:
+            # Sciverse 补充（4.66 亿元数据，中英文均可）
+            results = sciverse_search(args.query, max_results=args.max)
         if not results:
             # fallback to DBLP
             results = dblp_search(args.query, max_results=args.max)

@@ -20,13 +20,14 @@ out = Path(__file__).resolve().parent.parent / "app" / "_secret_build.py"
 existing = {}
 if out.exists():
     txt = out.read_text(encoding="utf-8")
-    for name in ("SECRET", "AMINER_API_KEY"):
+    for name in ("SECRET", "AMINER_API_KEY", "SCIVERSE_API_KEY"):
         m = re.search(name + r"\s*=\s*['\"]([^'\"]*)['\"]", txt)
         if m:
             existing[name] = m.group(1)
 
 secret = os.environ.get("MODELFLOW_LICENSE_SECRET", "") or existing.get("SECRET", "")
 aminer = os.environ.get("AMINER_API_KEY", "") or existing.get("AMINER_API_KEY", "")
+sciverse = os.environ.get("SCIVERSE_API_KEY", "") or existing.get("SCIVERSE_API_KEY", "")
 
 if not secret:
     sys.exit("错误：请先设置环境变量 MODELFLOW_LICENSE_SECRET（或已存在含 SECRET 的 _secret_build.py）")
@@ -35,5 +36,7 @@ if not secret:
 content = "SECRET" + " = " + repr(secret) + "\n"
 if aminer:
     content = content + "AMINER_API_KEY" + " = " + repr(aminer) + "\n"
+if sciverse:
+    content = content + "SCIVERSE_API_KEY" + " = " + repr(sciverse) + "\n"
 out.write_text(content, encoding="utf-8")
 print("已生成:", out)
