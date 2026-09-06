@@ -145,9 +145,15 @@ def _log(msg: str):
 #   全军覆没。改为直连 AMiner 官方 datacenter.aminer.cn。
 # - URL 路径从 /aminer/gateway/... 改为 /gateway/...
 # - Authorization 头不再加 "Bearer " 前缀, 直接传 token (官方约定)
-# - 旧 token 已失效返回 40308; 现行 token 只从环境变量 AMINER_API_KEY 读取, 不再内置
-#   (代码里曾硬编码过一个长期 token, 2026-09-06 已从源码移除, 请到 AMiner 后台轮换并配置环境变量)
+# - 旧 token 已失效返回 40308; token 读取顺序: 环境变量 AMINER_API_KEY → 打包注入的
+#   app/_secret_build.py (2026-09-06 移出源码; 原硬编码 token 仍留在私有仓库历史中, 用户决定暂不轮换)
 _AMINER_API_KEY = os.environ.get("AMINER_API_KEY", "")
+if not _AMINER_API_KEY:
+    try:
+        from app._secret_build import AMINER_API_KEY as _AMINER_BUILD_KEY
+        _AMINER_API_KEY = _AMINER_BUILD_KEY or ""
+    except Exception:
+        pass
 _AMINER_BASE_URL = os.environ.get("AMINER_BASE_URL", "https://datacenter.aminer.cn")
 
 
