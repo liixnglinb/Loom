@@ -2,7 +2,7 @@
 """ModelFlow 科研工具集。
 
 提供 REST API 封装 _utils_py/ 下 7 个工具：
-  - scholar_fetch          学术文献搜索 + BibTeX（AMiner/S2/CrossRef/DBLP/OpenAlex 四级 fallback）
+  - scholar_fetch          学术文献搜索 + BibTeX（AMiner/Sciverse/S2/CrossRef/DBLP/OpenAlex 多级 fallback）
   - gpt_image              AI 图片生成（OpenAI 兼容 GPT-Image，PNG→PDF）
   - reviewer_client        外部 LLM 论文评审（OpenAI 兼容，多轮 thread）
   - paper_data_check       论文数据真实性检查（docx/pdf/table 三模式）
