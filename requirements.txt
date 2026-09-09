@@ -1,0 +1,8 @@
+# ModelFlow 智模流水线 依赖
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+openai>=1.30
+requests>=2.31
+pydantic>=2.6
+pywebview>=5.0
