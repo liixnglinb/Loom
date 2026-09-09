@@ -334,6 +334,7 @@ function statCard(cls,ico,num,lbl){
 const NAV = [
   {id:'list', label:'工作流', ico:ICON.list},
   {id:'new',  label:'新建', ico:ICON.plus},
+  {id:'pipelines', label:'编排', ico:ICON.list},
   {id:'run-placeholder', label:'运行', ico:ICON.run, hidden:true},
 ];
 function renderNav(active){
@@ -396,6 +397,8 @@ const nav = {
       else if(view==='new'){ await renderNew(); renderNav('new'); }
       else if(view==='tools'){ renderTools(); renderNav('tools'); }
       else if(view==='settings'){ await renderSettings(); renderNav('settings'); }
+      else if(view==='pipelines'){ await window.renderPipelines(); renderNav('pipelines'); }
+      else if(view==='pipeline-edit'){ await window.renderPipelineEdit(extra); renderNav('pipelines'); }
       else { await renderList(); renderNav('list'); }
       if(seq===NAV_SEQ) viewTransitionIn();
     });
@@ -1794,13 +1797,19 @@ async function renderRun(extra){
       <div class="file-groups-vert"><div class="muted" style="padding:12px">加载中…</div></div></div></div></div>`;
   RUN_WF = await api('/api/workflows/'+wid);
   if(!RUN_WF || RUN_WF.detail){ $('#view').innerHTML='<div class="empty"><div class="em">⚠</div><div>工作流不存在或已被删除</div><button class="btn btn-primary" onclick="location.hash=\'#/list\'">返回列表</button></div>'; return; }
-  // 加载步骤
-  RUN_STEPS=[...COMP_STEPS];
-  if(RUN_WF.template && RUN_WF.template!=='competition'){
-    const p=(ST.pipelines.length?ST.pipelines:await api('/api/pipelines').then(r=>r.pipelines||[]).catch(()=>[]));
-    ST.pipelines=p;
-    const tmpl=p.find(x=>x.template===RUN_WF.template);
-    if(tmpl&&tmpl.steps&&tmpl.steps.length) RUN_STEPS=tmpl.steps.map(s=>({key:s.key,label:s.label,skill:s.skill}));
+  // 加载步骤：优先实例创建时的步骤快照（配置驱动核心语义），
+  // 快照为空（旧数据）才回退：模板当前定义 → 内置 COMP_STEPS
+  let snap = Array.isArray(RUN_WF.steps_snapshot) ? RUN_WF.steps_snapshot : [];
+  if(snap.length){
+    RUN_STEPS = snap.map(s=>({key:s.key,label:s.label,skill:s.skill}));
+  }else{
+    RUN_STEPS=[...COMP_STEPS];
+    if(RUN_WF.template && RUN_WF.template!=='competition'){
+      const p=(ST.pipelines.length?ST.pipelines:await api('/api/pipelines').then(r=>r.pipelines||[]).catch(()=>[]));
+      ST.pipelines=p;
+      const tmpl=p.find(x=>x.template===RUN_WF.template);
+      if(tmpl&&tmpl.steps&&tmpl.steps.length) RUN_STEPS=tmpl.steps.map(s=>({key:s.key,label:s.label,skill:s.skill}));
+    }
   }
   runDraw();
   RUN_LAST_STATUS=RUN_WF.status;                            // 增量刷新基线

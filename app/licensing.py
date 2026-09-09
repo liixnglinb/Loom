@@ -139,8 +139,13 @@ def status() -> dict:
     流程：本地预检 → 在线权威校验（1小时间隔）→ 离线宽限（7天）。
     在线校验判定无效（吊销/不匹配/码不存在）立即清除本地授权。
     """
-    d = load()
     mid = machine_id()
+    # 开发旁路：仅源码模式（非 frozen）+ 显式设置 FLOWFORGE_DEV_UNLOCK=1 时解锁，
+    # 打包发布版完全不受影响，授权校验逻辑不变。
+    if not paths.FROZEN and os.environ.get("FLOWFORGE_DEV_UNLOCK", "") == "1":
+        return {"activated": True, "admin": True, "code": "DEV-UNLOCK",
+                "mid": mid, "offline": True}
+    d = load()
     if not d:
         return {"activated": False, "admin": False, "code": "", "mid": mid, "offline": False}
 

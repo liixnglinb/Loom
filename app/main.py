@@ -93,6 +93,12 @@ def run_page(wid: int): return FileResponse(_SPA)
 def settings(): return FileResponse(_SPA)
 @app.get("/tools")
 def tools_page(): return FileResponse(_SPA)
+@app.get("/pipelines")
+def pipelines_page(): return FileResponse(_SPA)
+@app.get("/pipeline-edit")
+def pipeline_edit_page(): return FileResponse(_SPA)
+@app.get("/pipeline-edit/{name}")
+def pipeline_edit_name(name: str): return FileResponse(_SPA)
 
 # ---------- 工作流 API ----------
 class WorkflowIn(BaseModel):
