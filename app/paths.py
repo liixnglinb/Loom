@@ -80,3 +80,33 @@ USER_SKILLS_DIR = DB_DIR / "skills"
 
 for _p in (WS_ROOT, UPLOAD_DIR, EXPORT_DIR, USER_SKILLS_DIR):
     _p.mkdir(parents=True, exist_ok=True)
+
+
+def seed_user_skills() -> int:
+    """把随包 skills_modex/ 下的技能复制到自建技能区（幂等：已存在同名则跳过）。
+
+    用于出厂预置技能（如 Modex 原版国赛技能）。复制到 USER_SKILLS_DIR 后即成为
+    「自建技能」，用户可在技能页编辑/删除；删除后下次启动**不会**复活（以标记文件为准）。
+    返回本次实际复制的技能数。
+    """
+    src_root = BASE / "skills_modex"
+    if not src_root.is_dir():
+        return 0
+    import shutil
+    n = 0
+    for src in sorted(src_root.iterdir()):
+        skill_md = src / "SKILL.md"
+        if not src.is_dir() or not skill_md.is_file():
+            continue
+        dst = USER_SKILLS_DIR / src.name
+        tomb = USER_SKILLS_DIR / f".deleted-{src.name}"
+        if tomb.exists():
+            continue  # 用户删过，不复活
+        if dst.is_dir():
+            continue  # 已存在（可能已被用户编辑），不覆盖
+        try:
+            shutil.copytree(src, dst)
+            n += 1
+        except Exception:
+            pass
+    return n

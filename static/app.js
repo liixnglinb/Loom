@@ -308,6 +308,7 @@ const TEMPLATE_META = {
   competition:['竞赛极速流','competition','🏆'],
   competition_bzd:['BZD 双审精制流','competition','🏅'],
   competition_mathmodel:['个人自制流','competition','🧭'],
+  competition_modex:['Modex 原版流','competition','🎯'],
 };
 const STATUS_TXT = {completed:['已完成','st-completed'], running:['运行中','st-running'],
   failed:['失败','st-failed'], pending:['待运行','st-pending'], paused:['已暂停','st-pending']};
@@ -756,6 +757,7 @@ function renderCompForm(name, skipContest){
         <div class="pill active" data-val="native" onclick="nwPill(this);nwFlowChanged()">⚡ 极速 自动流</div>
         <div class="pill" data-val="bzd" onclick="nwPill(this);nwFlowChanged()">🏅 BZD 双审精制流</div>
         <div class="pill" data-val="mms" onclick="nwPill(this);nwFlowChanged()">🧭 个人自制流</div>
+        <div class="pill" data-val="modex" onclick="nwPill(this);nwFlowChanged()">🎯 Modex 原版流</div>
       </div></div>
 
       <div class="sect" id="cfContestSect" style="${hideContest?'display:none':''}">赛项选择</div>
@@ -1697,7 +1699,8 @@ window.createComp = async function(){
   if(!config.question && !files.some(f=>f.cat==='cfProblem')){ toast('请上传赛题文件或填写赛题内容'); return; }
   // 流程方案：极速 自动流(native) / BZD 双审精制流(bzd) / 个人自制流(mms)
   const flowKind = pv.compFlow==='bzd' ? 'competition_bzd'
-                 : pv.compFlow==='mms' ? 'competition_mathmodel' : 'competition';
+                 : pv.compFlow==='mms' ? 'competition_mathmodel'
+                 : pv.compFlow==='modex' ? 'competition_modex' : 'competition';
   const firstStep = flowKind==='competition_bzd' ? 'stage01_kickoff'
                   : flowKind==='competition_mathmodel' ? 'mms01_topic' : 'analysis';
   const r=await post('/api/workflows',{title, template:flowKind, step:firstStep, config});

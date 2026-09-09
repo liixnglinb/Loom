@@ -12,9 +12,15 @@ import time, threading, json
 app = FastAPI(title="配置驱动数模流水线")
 db.init_db()
 
-# 启动时 seed 内置模板（competition / competition_bzd / competition_mathmodel）
+# 启动时 seed 内置模板（competition / competition_bzd / competition_mathmodel / competition_modex）
 try:
     pipelines.seed_builtin()
+except Exception:
+    pass
+
+# 启动时 seed 出厂预置自建技能（skills_modex/ → 自建技能区，幂等不覆盖用户编辑）
+try:
+    paths.seed_user_skills()
 except Exception:
     pass
 
@@ -695,6 +701,10 @@ def delete_skill(name: str):
         return JSONResponse({"detail": "自建 skill 不存在"}, 404)
     import shutil
     shutil.rmtree(d, ignore_errors=True)
+    try:  # 出厂预置技能删除后写墓碑，防止下次启动复活
+        (paths.USER_SKILLS_DIR / f".deleted-{name}").touch()
+    except Exception:
+        pass
     return {"ok": True}
 
 # ---------- 提示词定制（查看原版 / 追加 / 替换 / 恢复） ----------
