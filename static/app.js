@@ -335,6 +335,7 @@ const NAV = [
   {id:'list', label:'工作流', ico:ICON.list},
   {id:'new',  label:'新建', ico:ICON.plus},
   {id:'pipelines', label:'编排', ico:ICON.list},
+  {id:'skills', label:'技能', ico:ICON.list},
   {id:'run-placeholder', label:'运行', ico:ICON.run, hidden:true},
 ];
 function renderNav(active){
@@ -399,6 +400,8 @@ const nav = {
       else if(view==='settings'){ await renderSettings(); renderNav('settings'); }
       else if(view==='pipelines'){ await window.renderPipelines(); renderNav('pipelines'); }
       else if(view==='pipeline-edit'){ await window.renderPipelineEdit(extra); renderNav('pipelines'); }
+      else if(view==='skills'){ await window.renderSkills(); renderNav('skills'); }
+      else if(view==='skill-edit'){ await window.renderSkillEdit(extra); renderNav('skills'); }
       else { await renderList(); renderNav('list'); }
       if(seq===NAV_SEQ) viewTransitionIn();
     });

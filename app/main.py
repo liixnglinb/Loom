@@ -99,6 +99,12 @@ def pipelines_page(): return FileResponse(_SPA)
 def pipeline_edit_page(): return FileResponse(_SPA)
 @app.get("/pipeline-edit/{name}")
 def pipeline_edit_name(name: str): return FileResponse(_SPA)
+@app.get("/skills")
+def skills_page(): return FileResponse(_SPA)
+@app.get("/skill-edit")
+def skill_edit_page(): return FileResponse(_SPA)
+@app.get("/skill-edit/{name}")
+def skill_edit_name(name: str): return FileResponse(_SPA)
 
 # ---------- 工作流 API ----------
 class WorkflowIn(BaseModel):
@@ -570,15 +576,126 @@ def duplicate_pipeline(name: str, p: PipelineIn):
 
 @app.get("/api/skills")
 def list_skills():
-    """枚举可绑定的 skill 目录（skills/ 下含 SKILL.md 的子目录名）。"""
-    out = []
-    for base in (paths.SKILLS_DIR, paths.BASE / "skills"):
+    """枚举可绑定的 skill（自建 + 外部覆盖 + 随包内置，同名时自建优先）。
+
+    每个 skill 返回：name、desc（取 SKILL.md 首个非空标题/首段，截断 120 字）、
+    source（user=软件内自建可编辑 / bundled=随包内置只读）、chars（正文长度）。
+    """
+    seen = {}
+    for base, source in ((paths.USER_SKILLS_DIR, "user"),
+                         (paths.SKILLS_DIR, "external"),
+                         (paths.BASE / "skills", "bundled")):
         if not base.is_dir():
             continue
         for d in sorted(base.iterdir()):
-            if d.is_dir() and (d / "SKILL.md").exists() and d.name not in [x["name"] for x in out]:
-                out.append({"name": d.name})
+            if not (d.is_dir() and (d / "SKILL.md").exists()):
+                continue
+            if d.name in seen:
+                continue
+            try:
+                text = (d / "SKILL.md").read_text(encoding="utf-8")
+            except Exception:
+                text = ""
+            desc = ""
+            for line in text.splitlines():
+                t = line.strip().lstrip("#").strip()
+                if t:
+                    desc = t[:120]
+                    break
+            seen[d.name] = {"name": d.name, "desc": desc, "source": source,
+                            "chars": len(text)}
+    out = list(seen.values())
+    out.sort(key=lambda x: (x["source"] != "user", x["name"]))
     return {"skills": out}
+
+
+@app.get("/api/skills/{name}")
+def get_skill(name: str):
+    """读取单个 skill 的 SKILL.md 全文（用于技能管理页查看/编辑）。"""
+    for base in (paths.USER_SKILLS_DIR, paths.SKILLS_DIR, paths.BASE / "skills"):
+        p = base / name / "SKILL.md"
+        if p.exists():
+            try:
+                text = p.read_text(encoding="utf-8")
+            except Exception:
+                return JSONResponse({"detail": "skill 文件读取失败"}, 500)
+            return {"name": name, "content": text,
+                    "editable": base == paths.USER_SKILLS_DIR}
+    return JSONResponse({"detail": "skill 不存在"}, 404)
+
+
+def _skill_dir_safe(name: str) -> Path | None:
+    """校验 skill 名（防目录穿越），合法返回自建目录路径。"""
+    import re as _re
+    if not name or not _re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", name):
+        return None
+    return paths.USER_SKILLS_DIR / name
+
+
+class SkillIn(BaseModel):
+    name: str
+    content: str = ""
+    desc: str = ""   # 仅用于新建时若无正文标题则补一行简介头
+
+@app.post("/api/skills")
+def create_skill(s: SkillIn):
+    """新建自建 skill：写入 modex-data/skills/<name>/SKILL.md（可写目录，升级不丢）。"""
+    d = _skill_dir_safe(s.name.strip())
+    if not d:
+        return JSONResponse({"detail": "skill 名只能含小写字母/数字/连字符/下划线"}, 400)
+    if d.exists():
+        return JSONResponse({"detail": f"skill「{s.name}」已存在"}, 400)
+    content = (s.content or "").strip()
+    if not content:
+        content = (s.desc or "").strip() or (s.name + " 技能说明")
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SKILL.md").write_text(content + "\n", encoding="utf-8")
+    return {"ok": True, "name": s.name}
+
+
+@app.put("/api/skills/{name}")
+def update_skill(name: str, s: SkillIn):
+    """更新自建 skill 内容（内置 skill 不可改，需另存副本）。"""
+    d = _skill_dir_safe(name)
+    if not d or not (d / "SKILL.md").exists():
+        return JSONResponse({"detail": "自建 skill 不存在（内置 skill 只读）"}, 404)
+    (d / "SKILL.md").write_text((s.content or "").rstrip() + "\n", encoding="utf-8")
+    return {"ok": True, "name": name}
+
+
+@app.post("/api/skills/{name}/duplicate")
+def duplicate_skill(name: str, s: SkillIn):
+    """把内置/现有 skill 另存为自建副本（副本可编辑）。"""
+    src_text = ""
+    found = False
+    for base in (paths.USER_SKILLS_DIR, paths.SKILLS_DIR, paths.BASE / "skills"):
+        p = base / name / "SKILL.md"
+        if p.exists():
+            src_text = p.read_text(encoding="utf-8")
+            found = True
+            break
+    if not found:
+        return JSONResponse({"detail": "skill 不存在"}, 404)
+    newname = (s.name or "").strip()
+    d = _skill_dir_safe(newname)
+    if not d:
+        return JSONResponse({"detail": "skill 名只能含小写字母/数字/连字符/下划线"}, 400)
+    if d.exists():
+        return JSONResponse({"detail": f"skill「{newname}」已存在"}, 400)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SKILL.md").write_text(src_text, encoding="utf-8")
+    return {"ok": True, "name": newname}
+
+
+@app.delete("/api/skills/{name}")
+def delete_skill(name: str):
+    """删除自建 skill（内置/外部 skill 只读不可删）。"""
+    d = _skill_dir_safe(name)
+    if not d or not (d / "SKILL.md").exists():
+        return JSONResponse({"detail": "自建 skill 不存在"}, 404)
+    import shutil
+    shutil.rmtree(d, ignore_errors=True)
+    return {"ok": True}
 
 # ---------- 提示词定制（查看原版 / 追加 / 替换 / 恢复） ----------
 class OverrideIn(BaseModel):

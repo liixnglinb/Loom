@@ -1391,7 +1391,41 @@ input:focus::placeholder,textarea:focus::placeholder{color:#c3c7cf}
 .ctl-num:disabled{opacity:.55;background:var(--bg-3);cursor:not-allowed}
 .picker-cols{padding:4px 4px}
 .pick-list{padding:4px 10px 6px 8px}
-/* ==================== 流水线编排器（editor.js） ==================== */
+
+/* ==================== Skill 管理器（editor.js） ==================== */
+.sk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.sk-sec-title{margin:18px 2px 10px;display:flex;align-items:center;gap:8px}
+.sk-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-4);
+  padding:14px 16px;cursor:pointer;transition:border-color var(--slide),box-shadow var(--slide),transform var(--slide);
+  display:flex;flex-direction:column;gap:9px;animation:mf-fade-up .28s var(--ease) both}
+.sk-card:hover{border-color:var(--line-hover);box-shadow:var(--shadow-sm);transform:translateY(-1px)}
+.sk-card-user{border-color:rgba(201,162,39,.4)}
+.sk-card-top{display:flex;align-items:center;gap:10px}
+.sk-ico{font-size:16px;width:30px;height:30px;border-radius:var(--r-2);background:var(--surface-3);
+  display:flex;align-items:center;justify-content:center;flex:none}
+.sk-card-user .sk-ico{background:var(--accent-soft)}
+.sk-card-main{min-width:0;flex:1}
+.sk-name{font-weight:700;font-size:13.5px;font-family:var(--font-mono);display:flex;align-items:center;gap:7px;min-width:0}
+.sk-badge{font-size:10px;font-weight:600;color:var(--text-3);background:var(--surface-3);
+  border:1px solid var(--line-soft);padding:1px 6px;border-radius:var(--radius-pill);flex:none}
+.sk-badge-user{color:var(--gold-ink);background:var(--accent-soft);border-color:rgba(201,162,39,.35)}
+.sk-chars{font-size:11px;color:var(--text-4);margin-top:1px}
+.sk-desc{font-size:12px;color:var(--text-2);margin:0;line-height:1.55;display:-webkit-box;
+  -webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:37px}
+.sk-view-modal{width:min(860px,92vw)}
+.sk-view-body{max-height:56vh;overflow:auto;border:1px solid var(--line-soft);border-radius:var(--r-3);
+  background:var(--surface-2);margin:4px 18px}
+.sk-pre{margin:0;padding:14px 16px;font-family:var(--font-mono);font-size:12px;line-height:1.6;
+  white-space:pre-wrap;word-break:break-word;color:var(--text)}
+.sk-view-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px 14px}
+.sk-edit-card{display:flex;flex-direction:column;gap:14px;padding:18px 20px}
+.sk-field{display:flex;flex-direction:column;gap:5px}
+.sk-grow{flex:1}
+.sk-content{min-height:52vh;resize:vertical;line-height:1.65;font-size:12.5px;white-space:pre;overflow:auto}
+.sk-hint{font-size:11.5px;color:var(--text-4)}
+.req{color:var(--bad);font-weight:700}
+
+/* ==================== 流水线编排器（editor.js · 重构版） ==================== */
 .pl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px}
 .pl-card{display:flex;flex-direction:column;gap:10px;padding:16px 18px}
 .pl-card-custom{border-color:var(--line-hover)}
@@ -1412,25 +1446,39 @@ input:focus::placeholder,textarea:focus::placeholder{color:#c3c7cf}
 .pl-danger{color:var(--bad)}
 .pl-danger:hover{background:var(--bad-soft)}
 
-/* 编辑器 */
-.pl-meta{margin-bottom:14px;display:flex;flex-direction:column;gap:10px}
+/* ---- 元信息卡 ---- */
+.pl-meta{margin-bottom:16px;padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.pl-meta-grid{display:grid;grid-template-columns:1.1fr 1.5fr auto 150px;gap:14px;align-items:start}
+.fld{display:flex;flex-direction:column;gap:5px;min-width:0}
+.fld-plain{opacity:.85}
+.fld-l{font-size:12px;font-weight:600;color:var(--text-2);display:flex;align-items:center;gap:8px}
+.fld-hint{font-size:11px;color:var(--text-4);line-height:1.4}
+.fld-link{font-size:11px;color:var(--gold-ink);cursor:pointer;text-decoration:none;margin-left:auto}
+.fld-link:hover{text-decoration:underline}
+.fld-err{border-color:var(--bad)!important;background:var(--bad-soft)}
+.fld-err-t{font-size:11px;color:var(--bad)}
+.fld-emoji{min-width:0}
+.emoji-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px}
+.emoji-cell{aspect-ratio:1;border:1px solid transparent;background:transparent;border-radius:var(--r-1);
+  font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all var(--slide)}
+.emoji-cell:hover{background:var(--surface-3)}
+.emoji-cell.on{background:var(--accent-soft);border-color:rgba(201,162,39,.45)}
 .pl-desc-in{resize:vertical;font-size:13px}
-.pl-row{display:flex;gap:8px;align-items:center;min-width:0}
-.pl-row+.pl-row{margin-top:6px}
-.pl-row .fi{min-width:0}
-.pl-row-sub{padding-top:2px}
-.pl-check{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-2);white-space:nowrap;cursor:pointer}
-.pl-check input{accent-color:var(--accent);cursor:pointer}
-.pl-skill-hint{font-size:11.5px;color:var(--text-4);white-space:nowrap}
-.pl-steps-head{display:flex;align-items:center;justify-content:space-between;margin:16px 2px 10px}
-.pl-step{display:flex;gap:12px;align-items:flex-start;background:var(--surface);
-  border:1px solid var(--line);border-radius:var(--r-4);padding:13px 14px;margin-bottom:9px;
-  transition:border-color var(--slide),box-shadow var(--slide)}
-.pl-step:hover{border-color:var(--line-hover);box-shadow:var(--shadow-xs)}
-.pl-step-no{flex:none;width:26px;height:26px;border-radius:50%;background:var(--on);color:#fff;
-  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;margin-top:3px}
-.pl-step-body{flex:1;min-width:0}
-.pl-step-ops{display:flex;flex-direction:column;gap:4px}
+
+/* ---- 步骤卡片 ---- */
+.pl-steps-head{display:flex;align-items:center;justify-content:space-between;margin:4px 2px 12px}
+.step-card{display:flex;gap:0;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-4);margin-bottom:0;transition:border-color var(--slide),box-shadow var(--slide);
+  animation:mf-fade-up .28s var(--ease) both}
+.step-card:hover{border-color:var(--line-hover);box-shadow:var(--shadow-xs)}
+.step-rail{flex:none;width:44px;display:flex;flex-direction:column;align-items:center;
+  padding:14px 0 4px;border-right:1px dashed var(--line-soft)}
+.step-no{width:26px;height:26px;border-radius:50%;background:var(--on);color:#fff;flex:none;
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.step-line{flex:1;width:2px;background:var(--line-soft);margin-top:8px;border-radius:2px}
+.step-body{flex:1;min-width:0;padding:14px 14px 12px;display:flex;flex-direction:column;gap:11px}
+.step-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:11px}
+.step-ops{flex:none;width:34px;display:flex;flex-direction:column;gap:4px;padding:12px 6px;align-items:center}
 .pl-op{width:24px;height:24px;border:1px solid var(--line);background:var(--surface-2);
   border-radius:var(--r-1);cursor:pointer;font-size:11px;color:var(--text-2);line-height:1;
   display:flex;align-items:center;justify-content:center;transition:all var(--slide)}
@@ -1438,5 +1486,46 @@ input:focus::placeholder,textarea:focus::placeholder{color:#c3c7cf}
 .pl-op:disabled{opacity:.35;cursor:not-allowed}
 .pl-op-del{color:var(--bad)}
 .pl-op-del:hover{background:var(--bad-soft);border-color:rgba(239,68,68,.3)}
-.pl-card,.pl-step{animation:mf-fade-up .28s var(--ease) both}
+
+/* 角色分段选择 */
+.seg{display:flex;background:var(--inset);border-radius:var(--r-2);padding:2px;gap:2px}
+.seg-btn{flex:1;border:0;background:transparent;border-radius:var(--r-1);padding:5px 0;font-size:12px;
+  color:var(--text-3);cursor:pointer;transition:all var(--slide);font-weight:500}
+.seg-btn:hover{color:var(--text)}
+.seg-btn.on{background:var(--surface);color:var(--text);font-weight:600;box-shadow:var(--shadow-xs)}
+
+/* 高级选项折叠 */
+.step-adv{border:1px solid var(--line-soft);border-radius:var(--r-3);overflow:hidden}
+.step-adv-toggle{width:100%;display:flex;align-items:center;gap:7px;border:0;background:var(--surface-2);
+  padding:8px 12px;font-size:12px;color:var(--text-3);cursor:pointer;transition:color var(--slide)}
+.step-adv-toggle:hover{color:var(--text)}
+.adv-arrow{display:inline-block;transition:transform .18s var(--ease);font-size:10px}
+.step-adv.open .adv-arrow{transform:rotate(90deg)}
+.adv-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);margin-left:2px}
+.step-adv-body{display:none;padding:12px;border-top:1px solid var(--line-soft);flex-direction:column;gap:11px}
+.step-adv.open .step-adv-body{display:flex}
+
+/* 叠加技能 chips */
+.extra-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.x-chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-family:var(--font-mono);
+  background:var(--accent-soft);border:1px solid rgba(201,162,39,.3);color:var(--gold-ink);
+  padding:3px 6px 3px 9px;border-radius:var(--radius-pill)}
+.x-chip b{cursor:pointer;font-weight:400;opacity:.6;padding:0 3px}
+.x-chip b:hover{opacity:1;color:var(--bad)}
+.fi-inline{width:auto;min-width:110px;font-size:12px;padding:4px 8px}
+.pl-check{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-2);white-space:nowrap;cursor:pointer}
+.pl-check input{accent-color:var(--accent);cursor:pointer}
+
+/* 动效 */
+.pl-card,.sk-card,.step-card{animation:mf-fade-up .28s var(--ease) both}
 @keyframes mf-fade-up{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* 窄屏 */
+@media (max-width:900px){
+  .pl-meta-grid{grid-template-columns:1fr 1fr}
+  .step-grid{grid-template-columns:1fr 1fr}
+}
+@media (max-width:640px){
+  .pl-meta-grid{grid-template-columns:1fr}
+  .step-grid{grid-template-columns:1fr}
+}

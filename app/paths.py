@@ -74,6 +74,9 @@ else:
 SKILLS_DIR = Path(os.environ.get("MODELFLOW_SKILLS_DIR") or (BASE / "skills"))
 TEMPLATES_DIR = Path(os.environ.get("MODELFLOW_TEMPLATES_DIR") or (BASE / "_templates"))
 UTILS_DIR = Path(BASE / "_utils_py")
+# 用户自建 skill 目录（可写数据目录下）：软件内新建的 skill 落在这里，
+# 打包安装版同样可写；读取时优先级最高（见 jobs.load_skill_prompt）。
+USER_SKILLS_DIR = DB_DIR / "skills"
 
-for _p in (WS_ROOT, UPLOAD_DIR, EXPORT_DIR):
+for _p in (WS_ROOT, UPLOAD_DIR, EXPORT_DIR, USER_SKILLS_DIR):
     _p.mkdir(parents=True, exist_ok=True)

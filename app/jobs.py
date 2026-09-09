@@ -172,14 +172,15 @@ def load_skill_prompt(skill):
 
     支持「skill_a skill_b」空格分隔的多技能叠加：按序读取并拼接，先注入的是执行主技能，
     后注入的是配套规范（如 paper-figure-html diagram-design）。
-    优先读外部覆盖目录（环境变量 MODELFLOW_SKILLS_DIR 或 settings.skills_dir，
-    存在才生效）；否则读随包内置 skills/（与 _utils_py 一并随包分发，机器无关）。
+    读取优先级：软件内自建 skill（paths.USER_SKILLS_DIR，可写、升级不丢）→
+    外部覆盖目录（环境变量 MODELFLOW_SKILLS_DIR 或 settings.skills_dir，存在才生效）→
+    随包内置 skills/（与 _utils_py 一并随包分发，机器无关）。
     均未命中返回空串，由上层兜底。
     """
     names = [n for n in str(skill or "").split() if n.strip()]
     parts = []
     for name in names:
-        for base in (SKILLS_DIR, BUNDLED_SKILLS_DIR):
+        for base in (paths.USER_SKILLS_DIR, SKILLS_DIR, BUNDLED_SKILLS_DIR):
             try:
                 p = base / name / "SKILL.md"
                 if p.exists():
