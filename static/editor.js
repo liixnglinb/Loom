@@ -67,14 +67,13 @@ async function plLoad(){
 window.renderSkills = async function(){
   $('#view').innerHTML = '<div class="loading-bar"></div>';
   await plLoad();
-  const user    = PL_SKILLS.filter(s=>s.source==='user');
-  const builtin = PL_SKILLS.filter(s=>s.source!=='user');
+  const all = PL_SKILLS;
   const card = s => `
-    <div class="sk-card ${s.source==='user'?'sk-card-user':''}" onclick="skView('${esc(s.name)}')">
+    <div class="sk-card sk-card-user" onclick="skView('${esc(s.name)}')">
       <div class="sk-card-top">
-        <span class="sk-ico">${s.source==='user'?'✦':'📦'}</span>
+        <span class="sk-ico">✦</span>
         <div class="sk-card-main">
-          <div class="sk-name">${esc(s.name)} ${s.source==='user'?'<span class="sk-badge sk-badge-user">自建</span>':'<span class="sk-badge">内置</span>'}</div>
+          <div class="sk-name">${esc(s.name)}</div>
           <div class="sk-chars">${s.chars>0?(s.chars/1000).toFixed(1)+'k 字':'空'}</div>
         </div>
       </div>
@@ -82,23 +81,48 @@ window.renderSkills = async function(){
     </div>`;
   $('#view').innerHTML = `
     <div class="page-head">
-      <div><h1>技能库</h1><div class="sub">skill 是每个步骤注入给 AI 的执行规范 —— 可查看内容、新建自建技能、或把内置技能另存副本修改</div></div>
-      <button class="btn btn-primary" onclick="nav.go('skill-edit/new')">＋ 新建技能</button>
+      <div><h1>技能库</h1><div class="sub">skill 是每个步骤注入给 AI 的执行规范 —— 新建、导入标准 skill 包、或随时编辑</div></div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-ghost" onclick="skImportModal()">⬆ 导入</button>
+        <button class="btn btn-primary" onclick="nav.go('skill-edit/new')">＋ 新建技能</button>
+      </div>
     </div>
-    ${user.length?`
-      <div class="sk-sec-title"><span class="panel-title">我的技能（${user.length}）</span></div>
-      <div class="sk-grid">${user.map(card).join('')}</div>`:''}
-    ${builtin.length?`
-      <div class="sk-sec-title"><span class="panel-title">内置技能（${builtin.length}）</span></div>
-      <div class="sk-grid">${builtin.map(card).join('')}</div>`:''}
-    ${(!user.length&&!builtin.length)?`
+    <input type="file" id="skImportFile" accept=".zip,.md" style="display:none" onchange="skImportDo(this)">
+    ${all.length?`
+      <div class="sk-sec-title"><span class="panel-title">我的技能（${all.length}）</span></div>
+      <div class="sk-grid">${all.map(card).join('')}</div>`
+    :`
       <div class="empty" style="padding:70px 0;text-align:center">
         <div style="font-size:40px;margin-bottom:14px">✦</div>
         <div style="font-size:15px;font-weight:600;margin-bottom:6px">还没有技能</div>
-        <div class="muted" style="margin-bottom:18px">技能是一份 Markdown 执行规范 —— 流程的每个步骤都可以绑定一个</div>
-        <button class="btn btn-primary" onclick="nav.go('skill-edit/new')">＋ 新建技能</button>
-      </div>`:''}
+        <div class="muted" style="margin-bottom:18px">新建一份 Markdown 执行规范，或导入标准 skill 包（zip / SKILL.md）</div>
+        <div style="display:flex;gap:10px;justify-content:center">
+          <button class="btn btn-ghost" onclick="skImportModal()">⬆ 导入</button>
+          <button class="btn btn-primary" onclick="nav.go('skill-edit/new')">＋ 新建技能</button>
+        </div>
+      </div>`}
   `;
+};
+
+/* ---------------- 导入技能 ---------------- */
+window.skImportModal = function(){
+  const el = document.getElementById('skImportFile');
+  if(el) el.click();
+};
+window.skImportDo = async function(input){
+  const f = input.files && input.files[0];
+  input.value = '';
+  if(!f) return;
+  toast('正在导入「'+f.name+'」…');
+  const fd = new FormData();
+  fd.append('file', f);
+  try{
+    const r = await fetch('/api/skills/import', {method:'POST', body: fd});
+    const d = await r.json().catch(()=>({detail:'HTTP '+r.status}));
+    if(d.detail){ toast(d.detail); return; }
+    toast('已导入「'+d.name+'」（'+d.files+' 个文件，'+(d.chars/1000).toFixed(1)+'k 字）', true);
+    renderSkills();
+  }catch(e){ toast('导入失败：'+e); }
 };
 
 /* ---------------- 技能详情（弹窗查看） ---------------- */

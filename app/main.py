@@ -3,12 +3,12 @@
 
 只保留两大能力：
   1. 创建流程：可视化编排流程模板（步骤清单，每步绑定 skill / 产物 / 检查点）
-  2. 创建 skill：技能库管理（新建 / 编辑 / 另存副本 / 删除）
+  2. 创建 skill：技能库管理（新建 / 编辑 / 另存副本 / 删除 / 导入标准 skill 包）
 
 外加设置页（API 预设 / 连通检测）。无工作流执行、无内置模板、无授权墙、无更新器。
 """
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
@@ -281,6 +281,165 @@ def delete_skill(name: str):
     import shutil
     shutil.rmtree(d, ignore_errors=True)
     return {"ok": True}
+
+
+# ---------- 导入标准 skill 包（zip / 单个 SKILL.md / SKILL.md+附属文件） ----------
+_SKILL_BANNED_PARTS = ("__pycache__", ".git", "node_modules", ".venv", "venv")
+_SKILL_MAX_FILES = 500          # 单包文件数上限（防 zip 炸弹）
+_SKILL_MAX_BYTES = 200 * 1024 * 1024  # 解压总量上限 200MB
+
+
+def _skill_name_from_md(md_text: str, fallback: str) -> tuple[str, str]:
+    """从 SKILL.md 的 YAML frontmatter 提取 name（有则用），返回 (name, meta_note)。"""
+    import re as _re
+    m = _re.match(r"^---\s*\n(.*?)\n---\s*\n", md_text, _re.S)
+    if not m:
+        return fallback, ""
+    name = ""
+    for line in m.group(1).splitlines():
+        lm = _re.match(r"^name\s*:\s*['\"]?([^'\"\n]+?)['\"]?\s*$", line.strip())
+        if lm:
+            name = lm.group(1).strip()
+            break
+    return name, ("frontmatter.name" if name else "")
+
+
+def _norm_skill_name(raw: str) -> str:
+    """技能名规范化：小写、空格→短横线、剥非法字符、去首尾连字符。"""
+    import re as _re
+    s = (raw or "").strip().lower().replace(" ", "-").replace("_", "-")
+    s = _re.sub(r"[^a-z0-9-]", "", s).strip("-")
+    return s[:64]
+
+
+def _extract_zip_safe(zf, dest: Path) -> int:
+    """安全解 zip 到 dest（防穿越/防炸弹）。返回解出的文件数。"""
+    import zipfile
+    total = 0
+    names = zf.namelist()
+    if len(names) > _SKILL_MAX_FILES:
+        raise ValueError(f"包内文件过多（{len(names)} > {_SKILL_MAX_FILES}）")
+    for info in names:
+        if info.endswith("/"):
+            continue
+        p = (dest / info).resolve()
+        if not p.is_relative_to(dest.resolve()):
+            raise ValueError(f"zip 内含非法路径：{info}")
+        total += 1
+    if total == 0:
+        raise ValueError("压缩包为空")
+    dest.mkdir(parents=True, exist_ok=True)
+    count = 0
+    for info in names:
+        if info.endswith("/"):
+            continue
+        p = (dest / info).resolve()
+        if not p.is_relative_to(dest.resolve()):
+            continue
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(info) as src, open(p, "wb") as out:
+            while True:
+                chunk = src.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+                total += len(chunk)
+                if total > _SKILL_MAX_BYTES:
+                    raise ValueError("解压总量超过 200MB 上限")
+        count += 1
+    return count
+
+
+def _find_skill_md(root: Path) -> Path | None:
+    """在目录里定位 SKILL.md：根目录优先，其次唯一一层子目录（标准 skill 包结构）。"""
+    direct = root / "SKILL.md"
+    if direct.is_file():
+        return direct
+    subs = [d for d in root.iterdir() if d.is_dir()] if root.is_dir() else []
+    hits = [d / "SKILL.md" for d in subs if (d / "SKILL.md").is_file()]
+    if len(hits) == 1:
+        return hits[0]
+    if len(hits) > 1:
+        # 多个同名结构：取与包名一致的子目录
+        for h in hits:
+            if h.parent.name.lower() == root.name.lower():
+                return h
+        return hits[0]
+    return None
+
+
+def _install_skill_dir(src: Path, name: str) -> dict:
+    """把含 SKILL.md 的目录装进技能库（移动整个目录，保留 references/scripts 等附属文件）。"""
+    import shutil
+    name = _norm_skill_name(name)
+    if not name:
+        raise ValueError("无法确定技能名（SKILL.md 缺少 frontmatter.name，且目录名不含合法字符）")
+    dest = paths.USER_SKILLS_DIR / name
+    if dest.exists():
+        raise ValueError(f"技能「{name}」已存在，请先删除或改名")
+    paths.USER_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(src), str(dest))
+    n_files = sum(1 for f in dest.rglob("*") if f.is_file())
+    chars = len((dest / "SKILL.md").read_text(encoding="utf-8", errors="replace"))
+    return {"name": name, "files": n_files, "chars": chars}
+
+
+@app.post("/api/skills/import")
+async def import_skill(file: UploadFile = File(...)):
+    """导入标准 skill 模式的技能包。
+
+    接受三种形态：
+      1. zip 压缩包：内含 SKILL.md（根目录或唯一子目录），附属文件随包进入
+      2. 单个 SKILL.md 文件（按 frontmatter.name 或文件所在名入库）
+    技能名优先取 SKILL.md frontmatter 的 name 字段，否则用 zip 内层目录名 / 文件名。
+    """
+    import zipfile, tempfile, shutil, io
+    raw = await file.read()
+    if len(raw) > _SKILL_MAX_BYTES:
+        return JSONResponse({"detail": "文件超过 200MB 上限"}, 413)
+    fname = (file.filename or "").strip()
+    lower = fname.lower()
+
+    tmp_root = Path(tempfile.mkdtemp(prefix="ff_import_"))
+    try:
+        if lower.endswith(".zip"):
+            try:
+                with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                    _extract_zip_safe(zf, tmp_root)
+            except zipfile.BadZipFile:
+                return JSONResponse({"detail": "不是有效的 zip 压缩包"}, 400)
+            except ValueError as e:
+                return JSONResponse({"detail": str(e)}, 400)
+            md = _find_skill_md(tmp_root)
+            if not md:
+                return JSONResponse({"detail": "压缩包内未找到 SKILL.md（标准 skill 包需含 SKILL.md）"}, 400)
+            pkg_name = md.parent.name if md.parent != tmp_root else (Path(fname).stem or "skill")
+            text = md.read_text(encoding="utf-8", errors="replace")
+            fm_name, _note = _skill_name_from_md(text, pkg_name)
+            try:
+                result = _install_skill_dir(md.parent, fm_name or pkg_name)
+            except ValueError as e:
+                return JSONResponse({"detail": str(e)}, 400)
+            return {"ok": True, **result}
+
+        if lower.endswith(".md") or fname == "SKILL.md":
+            text = raw.decode("utf-8", errors="replace")
+            stem = Path(fname).stem
+            fm_name, _note = _skill_name_from_md(text, stem)
+            name = _norm_skill_name(fm_name or stem)
+            if not name:
+                return JSONResponse({"detail": "无法确定技能名（文件名与 frontmatter.name 均无效）"}, 400)
+            dest = paths.USER_SKILLS_DIR / name
+            if dest.exists():
+                return JSONResponse({"detail": f"技能「{name}」已存在，请先删除或改名"}, 400)
+            dest.mkdir(parents=True, exist_ok=True)
+            (dest / "SKILL.md").write_text(text, encoding="utf-8")
+            return {"ok": True, "name": name, "files": 1, "chars": len(text)}
+
+        return JSONResponse(
+            {"detail": "仅支持 .zip（标准 skill 包）或 .md（SKILL.md）文件"}, 400)
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
 
 
 # ---------- 设置（API 预设 / 连通检测） ----------
