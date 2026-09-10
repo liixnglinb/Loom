@@ -7,22 +7,15 @@
 <link rel="icon" href="/static/favicon.svg">
 <title>FlowForge 智模流水线</title>
 <link rel="stylesheet" href="/static/fonts/fonts.css">
-<link rel="stylesheet" href="/static/style.css?v=20260905c">
-<link rel="stylesheet" href="/static/smooth.css?v=20260904f">
-<link rel="stylesheet" href="/static/motion.css?v=20260904f">
-<script src="/static/vendor/anime.min.js" defer></script>
-<script src="/static/anime-flow.js?v=20260904f" defer></script>
-<script src="/static/smooth.js?v=20260904f" defer></script>
-<script src="/static/ambient.js?v=20260904f" defer></script>
+<link rel="stylesheet" href="/static/style.css?v=1000001a">
+<link rel="stylesheet" href="/static/motion.css?v=1000001a">
 </head>
 <body>
-<!-- 环境微光粒子层（装饰，E1 克制版；aria-hidden 对读屏隐藏） -->
-<canvas id="ambientParticles" aria-hidden="true"></canvas>
 <div id="app" class="app">
-  <!-- 顶部导航（ModelFlow 品牌 · 左侧工作流/新建 · 右上角设置） -->
+  <!-- 顶部导航（FlowForge 品牌 · 流程/技能/设置） -->
   <header class="topnav">
     <div class="tn-inner">
-      <a class="tn-brand" onclick="nav.go('list')">
+      <a class="tn-brand" onclick="nav.go('home')">
         <img class="tn-logo" src="/static/logo.svg" alt="logo" onerror="this.style.display='none'">
         <span class="tn-name">Flow<span>Forge</span></span>
       </a>
@@ -37,8 +30,8 @@
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="/static/providers-catalog.js?v=20260904f"></script>
-<script src="/static/app.js?v=20260909c"></script>
-<script src="/static/editor.js?v=20260909c"></script>
+<script src="/static/providers-catalog.js?v=1000001a"></script>
+<script src="/static/app.js?v=1000001a"></script>
+<script src="/static/editor.js?v=1000001a"></script>
 </body>
 </html>

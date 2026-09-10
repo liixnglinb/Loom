@@ -1529,3 +1529,6 @@ input:focus::placeholder,textarea:focus::placeholder{color:#c3c7cf}
   .pl-meta-grid{grid-template-columns:1fr}
   .step-grid{grid-template-columns:1fr}
 }
+
+/* ---- 极简版补充 ---- */
+.step-grid .fld.fld-wide{grid-column:1 / -1}

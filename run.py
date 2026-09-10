@@ -1,13 +1,7 @@
 # -*- coding: utf-8 -*-
 """FlowForge 智模流水线 启动脚本（端口自愈 + 中文诊断）。
 
-用法: python run.py [--port 8000]
-
-增强：
-  1. 启动前 TCP 探测端口占用：若 8000 被占用，自动 netstat 定位 PID 并提示
-     可选择自动释放（--auto-kill）或换端口（--port）。
-  2. uvicorn 启动失败时，根据异常信息给出中文诊断（端口占用/模块缺失/权限不足）。
-  3. 默认端口泄露清理：若端口被旧进程占用且为 python/uvicorn，自动尝试释放。
+用法: python run.py [--port 8000] [--auto-kill]
 """
 import os
 import re
@@ -22,14 +16,12 @@ DEFAULT_PORT = 8000
 
 
 def is_port_busy(host: str, port: int) -> bool:
-    """TCP 探测端口是否被占用。"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(0.4)
         return s.connect_ex((host, port)) == 0
 
 
 def find_pid_by_port(port: int):
-    """netstat 查找占用端口的 PID（Windows）。返回 PID 列表。"""
     try:
         r = subprocess.run(
             ["netstat", "-ano"], capture_output=True, text=True, timeout=10,
@@ -46,7 +38,6 @@ def find_pid_by_port(port: int):
 
 
 def try_kill_pids(pids):
-    """尝试结束指定 PID 进程（Windows taskkill /F /PID）。"""
     killed = []
     for pid in pids:
         try:
@@ -59,7 +50,6 @@ def try_kill_pids(pids):
 
 
 def diagnose_start_error(err) -> str:
-    """把 uvicorn 启动异常翻译成中文可操作提示。"""
     s = str(err)
     if "10048" in s.lower() or "address already in use" in s.lower() or "bind" in s.lower():
         return ("端口被其他程序占用。可：① 运行 python run.py --auto-kill 自动释放；"
@@ -73,14 +63,15 @@ def diagnose_start_error(err) -> str:
     if "syntaxerror" in s.lower():
         return "后端代码存在语法错误，请检查 app/ 下各 .py 文件。"
     return f"启动失败：{s}"
+
+
 STALE_HINT = "检测到旧 FlowForge 进程仍占用端口，正在自动结束并重启…"
 
 
 def main():
     port = DEFAULT_PORT
     auto_kill = False
-    args = sys.argv[1:]
-    for a in args:
+    for a in sys.argv[1:]:
         if a == "--auto-kill":
             auto_kill = True
         elif a.startswith("--port"):
@@ -89,8 +80,7 @@ def main():
             except Exception:
                 pass
     import importlib.util
-    spec = importlib.util.find_spec("uvicorn")
-    if not spec:
+    if not importlib.util.find_spec("uvicorn"):
         print("ERROR: 未安装 uvicorn。请运行: pip install fastapi uvicorn python-multipart")
         sys.exit(1)
 
