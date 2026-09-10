@@ -23,11 +23,10 @@ app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
 @app.middleware("http")
 async def _static_cache_policy(request, call_next):
-    """静态资源 no-cache：版本升级后 WebView 拿最新代码，ETag 304 不重传。"""
+    """全站 no-cache：升级后 WebView 一律拿到最新代码（ETag 304 时不重传，开销可忽略）。"""
     resp = await call_next(request)
     try:
-        if request.url.path.startswith("/static/"):
-            resp.headers["Cache-Control"] = "no-cache"
+        resp.headers["Cache-Control"] = "no-cache"
     except Exception:
         pass
     return resp

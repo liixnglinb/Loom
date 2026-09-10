@@ -63,7 +63,9 @@ const NAV = [
 
 function renderNav(active){
   $('#mainNav').innerHTML = NAV.map(n=>
-    `<a class="tn-link ${n.id===active?'active':''}" data-v="${n.id}" onclick="nav.go('${n.id}')">${n.label}</a>`).join('');
+    `<a class="sb-item ${n.id===active?'active':''}" data-v="${n.id}" onclick="nav.go('${n.id}')">${n.label}</a>`).join('');
+  const st = document.getElementById('sbSettings');
+  if(st) st.classList.toggle('active', active==='settings');
 }
 
 /* ---------------- 路由 ---------------- */
@@ -111,9 +113,9 @@ const nav = {
       else if(view==='skill-edit'){ await window.renderSkillEdit(extra); renderNav('skills'); }
       else if(view==='pipelines'){ await window.renderPipelines(); renderNav('home'); }
       else if(view==='pipeline-edit'){ await window.renderPipelineEdit(extra); renderNav('home'); }
-      else if(view==='settings'){ await renderSettings(); renderNav(''); }
-      else if(view==='runs'){ await window.renderRuns(); renderNav('home'); }
-      else if(view==='run'){ await window.renderRunConsole(extra); renderNav('home'); }
+      else if(view==='settings'){ await renderSettings(); renderNav('settings'); }
+      else if(view==='runs'){ await window.renderRuns(); renderNav('runs'); }
+      else if(view==='run'){ await window.renderRunConsole(extra); renderNav('runs'); }
       else { await renderHome(); renderNav('home'); }
       if(seq===NAV_SEQ) viewTransitionIn();
     });
@@ -195,7 +197,7 @@ async function renderSettings(){
     </div>
     </div>`;
   api('/api/health').then(h=>{ const el=$('#ffVer'); if(el) el.textContent='v'+(h.version||''); }).catch(()=>{});
-  drawPresetList();
+  try{ drawPresetList(); }catch(e){ console.error('drawPresetList', e); }
 }
 
 function drawPresetList(){

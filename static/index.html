@@ -7,32 +7,34 @@
 <link rel="icon" href="/static/favicon.svg">
 <title>FlowForge 智模流水线</title>
 <link rel="stylesheet" href="/static/fonts/fonts.css">
-<link rel="stylesheet" href="/static/style.css?v=1000003d">
-<link rel="stylesheet" href="/static/motion.css?v=1000003d">
+<link rel="stylesheet" href="/static/style.css?v=1000004b">
+<link rel="stylesheet" href="/static/motion.css?v=1000004b">
 </head>
 <body>
 <div id="app" class="app">
-  <!-- 顶部导航（FlowForge 品牌 · 流程/技能/设置） -->
-  <header class="topnav">
-    <div class="tn-inner">
-      <a class="tn-brand" onclick="nav.go('home')">
-        <img class="tn-logo" src="/static/logo.svg" alt="logo" onerror="this.style.display='none'">
-        <span class="tn-name">Flow<span>Forge</span></span>
-      </a>
-      <nav class="tn-links" id="mainNav"></nav>
-      <div class="tn-right">
-        <button class="tn-link tn-top-action" data-v="settings" onclick="nav.go('settings')">设置</button>
-      </div>
-    </div>
-  </header>
+  <!-- 侧边栏（Codex / Claude 桌面端布局：品牌 + 新建 + 导航 + 底部） -->
+  <aside class="sidebar">
+    <a class="sb-brand" onclick="nav.go('home')">
+      <img class="sb-logo" src="/static/logo.svg" alt="" onerror="this.style.display='none'">
+      <span class="sb-name">Flow<span>Forge</span></span>
+    </a>
+    <button class="sb-new" onclick="nav.go('pipeline-edit/new')"><span class="btn-plus">＋</span> 创建流程</button>
+    <nav class="sb-nav" id="mainNav"></nav>
+    <div class="sb-spacer"></div>
+    <a class="sb-item sb-tail" id="sbSettings" data-v="settings" onclick="nav.go('settings')">设置</a>
+    <div class="sb-foot">FlowForge v1.0.0 · 本地服务</div>
+  </aside>
 
-  <main class="container" id="view"></main>
+  <!-- 主工作区 -->
+  <main class="main">
+    <div class="container" id="view"></div>
+  </main>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="/static/providers-catalog.js?v=1000003d"></script>
-<script src="/static/app.js?v=1000003d"></script>
-<script src="/static/editor.js?v=1000003d"></script>
-<script src="/static/run.js?v=1000003d"></script>
+<script src="/static/providers-catalog.js?v=1000004b"></script>
+<script src="/static/app.js?v=1000004b"></script>
+<script src="/static/editor.js?v=1000004b"></script>
+<script src="/static/run.js?v=1000004b"></script>
 </body>
 </html>
