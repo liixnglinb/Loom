@@ -23,6 +23,8 @@ DB_DIR = DATA_DIR
 # 用户自建 skill 目录（软件内新建/编辑的 skill 落在这里，可写、升级不丢）
 USER_SKILLS_DIR = DATA_DIR / "skills"
 EXPORT_DIR = DATA_DIR / "export"
+# 流程运行工作区：每次运行一个子目录 run-<id>/，产物文件（步骤 out）落在这里
+WORKSPACES_DIR = DATA_DIR / "workspaces"
 
-for _p in (USER_SKILLS_DIR, EXPORT_DIR):
+for _p in (USER_SKILLS_DIR, EXPORT_DIR, WORKSPACES_DIR):
     _p.mkdir(parents=True, exist_ok=True)

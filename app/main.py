@@ -1,18 +1,19 @@
 # -*- coding: utf-8 -*-
 """FlowForge 智模流水线 —— 极简版主入口。
 
-只保留两大能力：
+核心能力：
   1. 创建流程：可视化编排流程模板（步骤清单，每步绑定 skill / 产物 / 检查点）
   2. 创建 skill：技能库管理（新建 / 编辑 / 另存副本 / 删除 / 导入标准 skill 包）
+  3. 运行流程：SSE 实时流式执行（逐步产出、产物落盘工作区、检查点暂停、对话式局部修订）
 
-外加设置页（API 预设 / 连通检测）。无工作流执行、无内置模板、无授权墙、无更新器。
+外加设置页（API 预设 / 连通检测）。无内置模板、无授权墙、无更新器。
 """
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
-from . import db, llm, paths, pipelines
+from . import db, llm, paths, pipelines, runner
 
 app = FastAPI(title="FlowForge 智模流水线")
 
@@ -440,6 +441,159 @@ async def import_skill(file: UploadFile = File(...)):
             {"detail": "仅支持 .zip（标准 skill 包）或 .md（SKILL.md）文件"}, 400)
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+
+# ---------- 流程运行（SSE 实时执行 / 检查点 / 局部修订） ----------
+class RunStartIn(BaseModel):
+    label: str = ""
+
+class ReviseIn(BaseModel):
+    index: int
+    instruction: str
+    sync: bool = False
+
+
+def _sse_pack(ev: dict) -> str:
+    import json as _json
+    return f"data: {_json.dumps(ev, ensure_ascii=False)}\n\n"
+
+
+@app.post("/api/pipelines/{name}/run")
+def start_pipeline_run(name: str, b: RunStartIn):
+    """启动一次流程运行：返回 run（含 id），前端跳转运行控制台。"""
+    try:
+        run = runner.start_run(name, b.label or "")
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, 404)
+    except Exception as e:
+        return JSONResponse({"detail": f"启动失败: {e}"}, 500)
+    return {"ok": True, "run": run}
+
+
+@app.get("/api/runs")
+def list_runs(pipeline: str = "", limit: int = 50):
+    return {"runs": db.list_runs(pipeline or None, min(limit, 200))}
+
+
+@app.get("/api/runs/{run_id}")
+def get_run(run_id: str):
+    run = db.get_run(run_id)
+    if not run:
+        return JSONResponse({"detail": "运行不存在"}, 404)
+    return {"run": run, "artifacts": runner.read_artifacts(run)}
+
+
+@app.delete("/api/runs/{run_id}")
+def delete_run(run_id: str):
+    if not db.get_run(run_id):
+        return JSONResponse({"detail": "运行不存在"}, 404)
+    runner.cancel_run(run_id)
+    runner.drop_bus(run_id)
+    import shutil
+    shutil.rmtree(runner.workspace_dir(run_id), ignore_errors=True)
+    db.delete_run(run_id)
+    return {"ok": True}
+
+
+@app.get("/api/runs/{run_id}/stream")
+def stream_run(run_id: str):
+    """SSE 实时事件流：快照 state 打底 + 纯实时事件（无历史重放，客户端无重复）。
+
+    不在终态主动关流：运行完成后用户仍可发起局部修订，事件照常推送；
+    连接由客户端关闭（离开页面）或运行被删除时结束。
+    """
+    import asyncio
+    if not db.get_run(run_id):
+        return JSONResponse({"detail": "运行不存在"}, 404)
+    bus = runner.bus_for(run_id)
+    q = bus.subscribe()
+
+    async def gen():
+        try:
+            # 一条当前状态快照打底（step.delta 为权威全文，客户端据此覆盖）
+            for ev in bus.snapshot_events():
+                yield _sse_pack(ev)
+            idle = 0.0
+            while True:
+                got = False
+                while q:
+                    ev = q.pop(0)
+                    got = True
+                    if ev.get("type") == "state":
+                        run = db.get_run(run_id)
+                        yield _sse_pack({"type": "state", "run": run})
+                    else:
+                        yield _sse_pack(ev)
+                if not got:
+                    await asyncio.sleep(0.12)
+                    idle += 0.12
+                    if idle >= 15:
+                        yield ": keepalive\n\n"
+                        idle = 0.0
+                    run = db.get_run(run_id)
+                    if not run:
+                        yield _sse_pack({"type": "done"})
+                        return
+        finally:
+            bus.unsubscribe(q)
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache",
+                                      "X-Accel-Buffering": "no"})
+
+
+@app.post("/api/runs/{run_id}/continue")
+def continue_run(run_id: str):
+    """检查点确认后继续执行后续步骤。"""
+    try:
+        run = runner.resume_run(run_id)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, 400)
+    return {"ok": True, "run": run}
+
+
+@app.post("/api/runs/{run_id}/cancel")
+def cancel_run(run_id: str):
+    try:
+        run = runner.cancel_run(run_id)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, 404)
+    return {"ok": True, "run": run}
+
+
+@app.post("/api/runs/{run_id}/revise")
+def revise_run(run_id: str, b: ReviseIn):
+    """对话式局部修订：对指定步骤产物发修改指令，AI 输出新全文写回工作区。"""
+    try:
+        result = runner.revise_step(run_id, b.index, b.instruction, sync=b.sync)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, 400)
+    except llm.LLMError as e:
+        return JSONResponse({"detail": str(e)}, 500)
+    return result
+
+
+@app.get("/api/runs/{run_id}/artifacts")
+def run_artifacts(run_id: str):
+    run = db.get_run(run_id)
+    if not run:
+        return JSONResponse({"detail": "运行不存在"}, 404)
+    return {"artifacts": runner.read_artifacts(run)}
+
+
+@app.get("/api/runs/{run_id}/artifacts/{fname}")
+def download_artifact(run_id: str, fname: str):
+    run = db.get_run(run_id)
+    if not run:
+        return JSONResponse({"detail": "运行不存在"}, 404)
+    import re as _re
+    if not _re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,80}", fname or ""):
+        return JSONResponse({"detail": "文件名非法"}, 400)
+    f = runner.workspace_dir(run_id) / fname
+    if not f.is_file():
+        return JSONResponse({"detail": "文件不存在"}, 404)
+    return FileResponse(f, filename=fname)
 
 
 # ---------- 设置（API 预设 / 连通检测） ----------

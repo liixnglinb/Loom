@@ -52,6 +52,20 @@ def init_db():
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )""")
+    # 流程运行实例：一次运行 = {pipeline, workspace, steps快照, 状态, 当前步骤, 挂起原因}
+    c.execute("""CREATE TABLE IF NOT EXISTS runs(
+        id TEXT PRIMARY KEY,                    -- run-<时间戳随机>
+        pipeline TEXT NOT NULL,
+        label TEXT NOT NULL DEFAULT '',
+        workspace TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending', -- pending|running|waiting|done|failed|cancelled
+        cur_step INTEGER NOT NULL DEFAULT 0,
+        waiting_reason TEXT NOT NULL DEFAULT '',-- checkpoint|revision
+        steps TEXT NOT NULL DEFAULT '[]',       -- 运行时步骤快照 [{key,label,skill,model,out,checkpoint,role,status,delta?}]
+        error TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""")
     conn.commit(); conn.close()
 
 
@@ -240,6 +254,72 @@ def delete_preset(pid):
     conn = get_conn(); c = conn.cursor()
     c.execute("DELETE FROM api_presets WHERE id=?", (pid,))
     conn.commit(); conn.close()
+
+
+# ==================== 流程运行实例 ====================
+def _run_row(r):
+    d = dict(r)
+    try:
+        d["steps"] = json.loads(d.get("steps") or "[]")
+    except Exception:
+        d["steps"] = []
+    return d
+
+
+def create_run(run_id, pipeline, label="", steps=None):
+    now = _now()
+    conn = get_conn(); c = conn.cursor()
+    c.execute("""INSERT INTO runs(id,pipeline,label,workspace,status,cur_step,waiting_reason,steps,error,created_at,updated_at)
+                 VALUES(?,?,?,?,?,0,'',?, '', ?, ?)""",
+              (run_id, pipeline, label, f"run-{run_id}", "pending",
+               json.dumps(steps or [], ensure_ascii=False), now, now))
+    conn.commit(); conn.close()
+    return get_run(run_id)
+
+
+def get_run(run_id):
+    conn = get_conn()
+    r = conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+    conn.close()
+    return _run_row(r) if r else None
+
+
+def list_runs(pipeline=None, limit=50):
+    conn = get_conn()
+    if pipeline:
+        rows = conn.execute("SELECT * FROM runs WHERE pipeline=? ORDER BY created_at DESC, id DESC LIMIT ?",
+                            (pipeline, limit)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM runs ORDER BY created_at DESC, id DESC LIMIT ?",
+                            (limit,)).fetchall()
+    conn.close()
+    return [_run_row(r) for r in rows]
+
+
+def update_run(run_id, **fields):
+    """部分更新运行记录；steps 传 list 则自动序列化。"""
+    if not get_run(run_id):
+        return False
+    sets, vals = [], []
+    for k, v in fields.items():
+        if k == "steps" and isinstance(v, list):
+            v = json.dumps(v, ensure_ascii=False)
+        sets.append(f"{k}=?")
+        vals.append(v)
+    sets.append("updated_at=?")
+    vals.append(_now())
+    vals.append(run_id)
+    conn = get_conn(); c = conn.cursor()
+    c.execute(f"UPDATE runs SET {', '.join(sets)} WHERE id=?", vals)
+    conn.commit(); conn.close()
+    return True
+
+
+def delete_run(run_id):
+    conn = get_conn(); c = conn.cursor()
+    c.execute("DELETE FROM runs WHERE id=?", (run_id,))
+    conn.commit(); conn.close()
+    return True
 
 
 # 模块加载即建表（保证任何模块 import db 后立即可查询）

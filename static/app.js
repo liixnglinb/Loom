@@ -58,6 +58,7 @@ const ST = { presets:[], defaultPreset:null };
 const NAV = [
   {id:'home', label:'我的流程'},
   {id:'skills', label:'技能库'},
+  {id:'runs', label:'运行记录'},
 ];
 
 function renderNav(active){
@@ -111,6 +112,8 @@ const nav = {
       else if(view==='pipelines'){ await window.renderPipelines(); renderNav('home'); }
       else if(view==='pipeline-edit'){ await window.renderPipelineEdit(extra); renderNav('home'); }
       else if(view==='settings'){ await renderSettings(); renderNav(''); }
+      else if(view==='runs'){ await window.renderRuns(); renderNav('home'); }
+      else if(view==='run'){ await window.renderRunConsole(extra); renderNav('home'); }
       else { await renderHome(); renderNav('home'); }
       if(seq===NAV_SEQ) viewTransitionIn();
     });
@@ -124,34 +127,42 @@ async function renderHome(){
   $('#view').innerHTML = '<div class="loading-bar"></div>';
   const r = await api('/api/pipelines').catch(()=>({pipelines:[]}));
   const tpls = r.pipelines||[];
-  const card = p => `
-    <div class="card pl-card" onclick="nav.go('pipeline-edit/${esc(p.name)}')">
-      <div class="pl-card-head">
-        <span class="pl-emoji">${p.emoji||'🧩'}</span>
-        <div class="pl-card-main">
-          <div class="pl-name">${esc(p.label||p.name)}</div>
-          <div class="pl-sub"><code>${esc(p.name)}</code> · ${p.steps.length} 步 · ${relDate(p.updated_at)}</div>
+  const row = p => `
+    <div class="pl-card-row" onclick="nav.go('pipeline-edit/${esc(p.name)}')">
+      <div class="pl-row-main">
+        <div class="pl-row-title">
+          <span class="pl-row-name">${esc(p.label||p.name)}</span>
+          <code>${esc(p.name)}</code>
         </div>
+        <div class="pl-row-meta">
+          <span>${p.steps.length} 个步骤</span>
+          <span>更新于 ${relDate(p.updated_at)}</span>
+        </div>
+        <div class="pl-steps-mini">${p.steps.map((s,i)=>`<span class="pl-step-chip" title="${esc(s.skill)}">${i+1}. ${esc(s.label)}</span>`).join('')}</div>
       </div>
-      <p class="pl-desc">${esc(p.desc||'（无描述）')}</p>
-      <div class="pl-steps-preview">
-        ${p.steps.map((s,i)=>`<span class="pl-step-chip" title="${esc(s.skill)}">${i+1}. ${esc(s.label)}</span>`).join('<span class="pl-arrow">→</span>')}
+      <div class="pl-row-ops" onclick="event.stopPropagation()">
+        <button class="pf-op pf-op-start" onclick="plRun('${esc(p.name)}')">运行</button>
+        <button class="pf-op" onclick="nav.go('pipeline-edit/${esc(p.name)}')">编辑</button>
       </div>
     </div>`;
 
   $('#view').innerHTML = `
+    <div class="pl-wrap">
     <div class="page-head">
       <div><h1>我的流程</h1><div class="sub">把每一步工作交给 AI —— 步骤、绑定技能、产物文件、人工检查点，全部由你编排</div></div>
-      <button class="btn btn-primary" onclick="nav.go('pipeline-edit/new')">＋ 创建流程</button>
+      <button class="btn btn-primary" onclick="nav.go('pipeline-edit/new')"><span class="btn-plus">＋</span> 创建流程</button>
     </div>
-    ${tpls.length ? `<div class="pl-grid">${tpls.map(card).join('')}</div>`
-      : `<div class="empty" style="padding:70px 0;text-align:center">
-           <div style="font-size:40px;margin-bottom:14px">🧩</div>
-           <div style="font-size:15px;font-weight:600;margin-bottom:6px">还没有流程</div>
-           <div class="muted" style="margin-bottom:18px">创建你的第一个流程：几个步骤、每步一个技能，串成一条流水线</div>
-           <button class="btn btn-primary" onclick="nav.go('pipeline-edit/new')">＋ 创建流程</button>
-         </div>`}
-  `;
+    <div class="card">
+      <div class="card-h">
+        <div><div class="ct">我创建的流程</div><div class="cs">点击进入编排器，或从「流程编排」页管理副本与删除</div></div>
+        <button class="btn btn-accent" onclick="nav.go('pipeline-edit/new')"><span class="btn-plus">＋</span> 创建流程</button>
+      </div>
+      <div class="set-row">
+        ${tpls.length ? tpls.map(row).join('')
+          : `<div class="pf-empty">还没有流程 —— 创建你的第一个流程：几个步骤、每步一个技能，串成一条流水线</div>`}
+      </div>
+    </div>
+    </div>`;
 }
 
 /* ================= 视图：设置 ================= */

@@ -68,40 +68,43 @@ window.renderSkills = async function(){
   $('#view').innerHTML = '<div class="loading-bar"></div>';
   await plLoad();
   const all = PL_SKILLS;
-  const card = s => `
-    <div class="sk-card sk-card-user" onclick="skView('${esc(s.name)}')">
-      <div class="sk-card-top">
-        <span class="sk-ico">✦</span>
-        <div class="sk-card-main">
-          <div class="sk-name">${esc(s.name)}</div>
-          <div class="sk-chars">${s.chars>0?(s.chars/1000).toFixed(1)+'k 字':'空'}</div>
+  const row = s => `
+    <div class="pl-card-row" onclick="skView('${esc(s.name)}')">
+      <div class="pl-row-main">
+        <div class="pl-row-title">
+          <span class="pl-row-name">${esc(s.name)}</span>
+          <span class="run-badge">${s.source==='user'?'自建':'内置'}</span>
         </div>
+        <div class="pl-row-meta"><span>${s.chars>0?(s.chars/1000).toFixed(1)+'k 字':'空'}</span></div>
+        ${s.desc?`<div class="pl-steps-mini"><span class="pl-step-chip" style="max-width:520px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:bottom" title="${esc(s.desc)}">${esc(s.desc)}</span></div>`:''}
       </div>
-      <p class="sk-desc">${esc(s.desc||'（无简介）')}</p>
+      <div class="pl-row-ops" onclick="event.stopPropagation()">
+        <button class="pf-op pf-op-start" onclick="skView('${esc(s.name)}')">查看</button>
+        ${s.source==='user'?`<button class="pf-op" onclick="nav.go('skill-edit/${esc(s.name)}')">编辑</button>`:''}
+      </div>
     </div>`;
   $('#view').innerHTML = `
+    <div class="pl-wrap">
     <div class="page-head">
       <div><h1>技能库</h1><div class="sub">skill 是每个步骤注入给 AI 的执行规范 —— 新建、导入标准 skill 包、或随时编辑</div></div>
       <div style="display:flex;gap:10px">
-        <button class="btn btn-ghost" onclick="skImportModal()">⬆ 导入</button>
-        <button class="btn btn-primary" onclick="nav.go('skill-edit/new')">＋ 新建技能</button>
+        <button class="btn btn-ghost" onclick="skImportModal()">导入</button>
+        <button class="btn btn-primary" onclick="nav.go('skill-edit/new')"><span class="btn-plus">＋</span> 新建技能</button>
       </div>
     </div>
     <input type="file" id="skImportFile" accept=".zip,.md" style="display:none" onchange="skImportDo(this)">
-    ${all.length?`
-      <div class="sk-sec-title"><span class="panel-title">我的技能（${all.length}）</span></div>
-      <div class="sk-grid">${all.map(card).join('')}</div>`
-    :`
-      <div class="empty" style="padding:70px 0;text-align:center">
-        <div style="font-size:40px;margin-bottom:14px">✦</div>
-        <div style="font-size:15px;font-weight:600;margin-bottom:6px">还没有技能</div>
-        <div class="muted" style="margin-bottom:18px">新建一份 Markdown 执行规范，或导入标准 skill 包（zip / SKILL.md）</div>
-        <div style="display:flex;gap:10px;justify-content:center">
-          <button class="btn btn-ghost" onclick="skImportModal()">⬆ 导入</button>
-          <button class="btn btn-primary" onclick="nav.go('skill-edit/new')">＋ 新建技能</button>
-        </div>
-      </div>`}
-  `;
+    <div class="card">
+      <div class="card-h">
+        <div><div class="ct">我的技能 <span class="muted">（${all.length}）</span></div>
+          <div class="cs">支持导入标准 skill 包（zip / SKILL.md），附属文件随包入库</div></div>
+        <button class="btn btn-accent" onclick="skImportModal()">导入</button>
+      </div>
+      <div class="set-row">
+        ${all.length ? all.map(row).join('')
+          : `<div class="pf-empty">还没有技能 —— 新建一份 Markdown 执行规范，或导入标准 skill 包（zip / SKILL.md）</div>`}
+      </div>
+    </div>
+    </div>`;
 };
 
 /* ---------------- 导入技能 ---------------- */
@@ -250,42 +253,55 @@ window.skSave = async function(){
  * 第二部分：流程编排器
  * ===================================================================== */
 
-/* ---------------- 流程列表页 ---------------- */
+/* ---------------- 流程列表页（行式卡 = 设置页 .pf-preset 同构，无图标） ---------------- */
 window.renderPipelines = async function(){
   $('#view').innerHTML = '<div class="loading-bar"></div>';
   await plLoad();
-  const card = p => `
-    <div class="card pl-card pl-card-custom">
-      <div class="pl-card-head">
-        <span class="pl-emoji">${p.emoji||'🧩'}</span>
-        <div class="pl-card-main">
-          <div class="pl-name">${esc(p.label||p.name)}</div>
-          <div class="pl-sub"><code>${esc(p.name)}</code> · ${p.steps.length} 步</div>
+  const row = p => `
+    <div class="pl-card-row" onclick="nav.go('pipeline-edit/${esc(p.name)}')">
+      <div class="pl-row-main">
+        <div class="pl-row-title">
+          <span class="pl-row-name">${esc(p.label||p.name)}</span>
+          <code>${esc(p.name)}</code>
+          ${p.desc?`<span class="pf-url" style="max-width:420px" title="${esc(p.desc)}">${esc(p.desc)}</span>`:''}
+        </div>
+        <div class="pl-row-meta">
+          <span>${p.steps.length} 个步骤</span>
+          <span class="pl-steps-mini">${p.steps.map((s,i)=>`<span class="pl-step-chip" title="${esc(s.skill)}">${i+1}. ${esc(s.label)}</span>`).join('')}</span>
         </div>
       </div>
-      <p class="pl-desc">${esc(p.desc||'')}</p>
-      <div class="pl-steps-preview">
-        ${p.steps.map((s,i)=>`<span class="pl-step-chip" title="${esc(s.skill)}">${i+1}. ${esc(s.label)}</span>`).join('<span class="pl-arrow">→</span>')}
-      </div>
-      <div class="pl-actions">
-        <button class="btn btn-primary btn-sm" onclick="nav.go('pipeline-edit/${esc(p.name)}')">编辑</button>
-        <button class="btn btn-ghost btn-sm" onclick="plDuplicate('${esc(p.name)}')">创建副本</button>
-        <button class="btn btn-ghost btn-sm pl-danger" onclick="plDelete('${esc(p.name)}')">删除</button>
+      <div class="pl-row-ops" onclick="event.stopPropagation()">
+        <button class="pf-op pf-op-start" onclick="plRun('${esc(p.name)}')">运行</button>
+        <button class="pf-op" onclick="nav.go('pipeline-edit/${esc(p.name)}')">编辑</button>
+        <button class="pf-op" title="创建副本" onclick="plDuplicate('${esc(p.name)}')">副本</button>
+        <button class="pf-op pf-op-danger" title="删除" onclick="plDelete('${esc(p.name)}')">删除</button>
       </div>
     </div>`;
   $('#view').innerHTML = `
+    <div class="pl-wrap">
     <div class="page-head">
       <div><h1>流程编排</h1><div class="sub">步骤数量、名称、每步绑定的技能，全部由你决定 —— 无任何预置模板</div></div>
-      <button class="btn btn-primary" onclick="nav.go('pipeline-edit/new')">＋ 创建流程</button>
+      <button class="btn btn-primary" onclick="nav.go('pipeline-edit/new')"><span class="btn-plus">＋</span> 创建流程</button>
     </div>
-    ${PL_TPLS.length?`<div class="pl-grid">${PL_TPLS.map(card).join('')}</div>`
-      :`<div class="empty" style="padding:70px 0;text-align:center">
-          <div style="font-size:40px;margin-bottom:14px">🧩</div>
-          <div style="font-size:15px;font-weight:600;margin-bottom:6px">还没有流程</div>
-          <div class="muted" style="margin-bottom:18px">从零编排：几个步骤、每步一个技能，串成一条流水线</div>
-          <button class="btn btn-primary" onclick="nav.go('pipeline-edit/new')">＋ 创建流程</button>
-        </div>`}
-  `;
+    <div class="card">
+      <div class="card-h">
+        <div><div class="ct">我的流程</div><div class="cs">每个流程是一条有序步骤链，点击卡片进入编排器</div></div>
+        <button class="btn btn-accent" onclick="nav.go('pipeline-edit/new')"><span class="btn-plus">＋</span> 创建流程</button>
+      </div>
+      <div class="set-row">
+        ${PL_TPLS.length ? PL_TPLS.map(row).join('')
+          : `<div class="pf-empty">还没有流程 —— 从零编排：几个步骤、每步一个技能，串成一条流水线</div>`}
+      </div>
+    </div>
+    </div>`;
+};
+
+window.plRun = async function(name){
+  const r = await _post('/api/pipelines/'+encodeURIComponent(name)+'/run', {})
+    .catch(e=>({detail:e.message||'启动失败'}));
+  if(r.detail){ toast(r.detail); return; }
+  toast('流程已启动', true);
+  nav.go('run/'+r.run.id);
 };
 
 window.plDuplicate = async function(name){
@@ -310,20 +326,30 @@ window.plDelete = async function(name){
   renderPipelines();
 };
 
-/* ---------------- 流程编辑器 ---------------- */
+/* ---------------- 流程编辑器（pv 控件体系 = 设置页弹窗同款，无图标） ---------------- */
+/* 角色选项复用文件前段定义的 ROLES（执行 / 审查 / 润色） */
+
 window.renderPipelineEdit = async function(name){
   $('#view').innerHTML = '<div class="loading-bar"></div>';
-  await plLoad();
+  await Promise.all([plLoad(), stPresets()]);
   if(name && name !== 'new'){
     const p = PL_TPLS.find(x=>x.name===name);
     if(!p){ toast('流程不存在'); nav.go('pipelines'); return; }
     PL_EDIT = JSON.parse(JSON.stringify(p));
   }else{
-    PL_EDIT = {name:'', label:'', desc:'', emoji:'🧩', g:'custom',
+    PL_EDIT = {name:'', label:'', desc:'', g:'custom',
       steps:[plBlankStep(1)]};
   }
   plDrawEditor();
 };
+
+let _ST_PRESETS = null;
+async function stPresets(){
+  if(_ST_PRESETS) return _ST_PRESETS;
+  try{ const r = await _api('/api/providers'); _ST_PRESETS = r.presets||[]; }
+  catch(e){ _ST_PRESETS = []; }
+  return _ST_PRESETS;
+}
 
 function plBlankStep(n){
   return {key:'step'+n, label:'第'+n+'步', skill:(PL_SKILLS[0]?PL_SKILLS[0].name:''),
@@ -339,8 +365,6 @@ function plNormalizeSteps(){
   }
 }
 
-const EMOJIS = ['🧩','⚡','🏆','🧪','🚀','🎯','📚','🔧','🧠','💡','📊','🛡️','⚗️','🔬','✍️','🧭','⚙️','🌟'];
-
 function plSyncInputs(){
   const E = PL_EDIT; if(!E) return;
   const nameEl = document.getElementById('plName');
@@ -351,13 +375,21 @@ function plSyncInputs(){
   if(descEl)  E.desc = descEl.value;
 }
 
+/* 设置页弹窗同款：pv-f 字段（label + 控件 + 提示） */
+const pvf = (label, inner, hint, err) => `
+  <div class="pv-f"><label class="pv-label">${label}</label>
+    ${inner}
+    ${err||hint||''}
+  </div>`;
+const pvh = t => `<div class="pv-foot-hint">${t}</div>`;
+
 function plDrawEditor(){
   plSyncInputs();
   plNormalizeSteps();
   const E = PL_EDIT;
   const isNew = !E.name;
   const skillInfo = n => PL_SKILLS.find(s=>s.name===n) || null;
-  const presetNames = (ST_PRESETS||[]).map(p=>p.name);
+  const presetNames = (_ST_PRESETS||[]).map(p=>p.name);
 
   /* --- 单个步骤卡片 --- */
   const stepCard = (s,i) => {
@@ -371,87 +403,79 @@ function plDrawEditor(){
         ${i<E.steps.length-1?'<div class="step-line"></div>':''}
       </div>
       <div class="step-body">
-        <div class="step-grid">
-          <div class="fld fld-wide">
-            <label class="fld-l">步骤名称 <b class="req">*</b></label>
-            <input class="fi" value="${esc(s.label)}" placeholder="如：赛题分析"
-              oninput="plSet(${i},'label',this.value)">
+        <div class="pv-form">
+          <div class="pv-row2">
+            ${pvf(`步骤名称 <b class="req">*</b>`,
+              `<input class="pv-input" value="${esc(s.label)}" placeholder="如：赛题分析"
+                oninput="plSet(${i},'label',this.value)">`)}
+            ${pvf(`标识 key <b class="req">*</b>`,
+              `<input class="pv-input mono ${keyDup||keyBad?'fld-err':''}" value="${esc(s.key)}"
+                placeholder="如 analysis" oninput="plSet(${i},'key',this.value)">`,
+              '', keyDup?`<div class="fld-err-t">key 重复，保存前需修改</div>`
+                        :keyBad?`<div class="fld-err-t">小写字母 / 数字 / 连字符 / 下划线</div>`:'')}
+            ${pvf(`角色`,
+              `<div class="radio-pills">${ROLES.map(r=>`
+                <button type="button" class="pill ${s.role===r.v?'active':''}" title="${esc(r.hint)}"
+                  onclick="plSet(${i},'role','${r.v}');plDrawEditor()">${r.label}</button>`).join('')}</div>`)}
           </div>
-          <div class="fld">
-            <label class="fld-l">标识 key <b class="req">*</b></label>
-            <input class="fi mono ${keyDup||keyBad?'fld-err':''}" value="${esc(s.key)}"
-              placeholder="如 analysis" oninput="plSet(${i},'key',this.value)">
-            ${keyDup?'<div class="fld-err-t">key 重复，保存前需修改</div>':keyBad?'<div class="fld-err-t">小写字母/数字/连字符/下划线</div>':''}
+          <div class="pv-row2">
+            ${pvf(`主技能 <b class="req">*</b>
+              <a class="fld-link" onclick="nav.go('skills')">查看技能库</a>`,
+              `<select class="pv-input mono" onchange="plSet(${i},'skill',this.value)">
+                <option value="" ${!s.skill?'selected':''}>（选择技能）</option>
+                ${PL_SKILLS.map(sk=>`<option value="${esc(sk.name)}" ${s.skill===sk.name?'selected':''}>${esc(sk.name)}${sk.source==='user'?' · 自建':''}</option>`).join('')}
+                ${s.skill && !PL_SKILLS.some(sk=>sk.name===s.skill)?`<option value="${esc(s.skill)}" selected>${esc(s.skill)}（已删除的技能）</option>`:''}
+              </select>`,
+              main?`<div class="pv-foot-hint">${esc(main.desc)}</div>`:'')}
+            ${pvf(`产物文件`,
+              `<input class="pv-input mono" value="${esc(s.out||'')}" placeholder="如 ANALYSIS.md"
+                oninput="plSet(${i},'out',this.value)">`,
+              pvh('写入工作区，后续步骤可引用'))}
           </div>
-          <div class="fld">
-            <label class="fld-l">角色</label>
-            <div class="seg">
-              ${ROLES.map(r=>`<button class="seg-btn ${s.role===r.v?'on':''}" title="${esc(r.hint)}"
-                onclick="plSet(${i},'role','${r.v}');plDrawEditor()">${r.label}</button>`).join('')}
-            </div>
-          </div>
-        </div>
-        <div class="step-grid">
-          <div class="fld fld-wide">
-            <label class="fld-l">主技能 <b class="req">*</b> <a class="fld-link" onclick="nav.go('skills')">查看技能库 →</a></label>
-            <select class="fi mono" onchange="plSet(${i},'skill',this.value)">
-              <option value="" ${!s.skill?'selected':''}>（选择技能）</option>
-              ${PL_SKILLS.map(sk=>`<option value="${esc(sk.name)}" ${s.skill===sk.name?'selected':''}>${esc(sk.name)}${sk.source==='user'?' · 自建':''}</option>`).join('')}
-              ${s.skill && !PL_SKILLS.some(sk=>sk.name===s.skill)?`<option value="${esc(s.skill)}" selected>${esc(s.skill)}（已删除的技能）</option>`:''}
-            </select>
-            ${main?`<div class="fld-hint">${esc(main.desc)}</div>`:''}
-          </div>
-          <div class="fld">
-            <label class="fld-l">产物文件</label>
-            <input class="fi mono" value="${esc(s.out||'')}" placeholder="如 ANALYSIS.md"
-              oninput="plSet(${i},'out',this.value)">
-            <div class="fld-hint">写入工作区，后续步骤可引用</div>
-          </div>
-        </div>
-        <div class="step-adv">
-          <button class="step-adv-toggle" onclick="this.parentElement.classList.toggle('open')">
-            <span class="adv-arrow">▸</span> 高级选项
-            ${(s.model||(s.extra_skills||[]).length)?'<span class="adv-dot"></span>':''}
-          </button>
-          <div class="step-adv-body">
-            <div class="step-grid">
-              <div class="fld">
-                <label class="fld-l">叠加技能（规范类，可多个）</label>
-                <div class="extra-chips">
-                  ${(s.extra_skills||[]).map((n,xi)=>`<span class="x-chip">${esc(n)}<b onclick="plExtraDel(${i},${xi})">×</b></span>`).join('')||'<span class="muted" style="font-size:12px">无</span>'}
-                  <select class="fi fi-inline" onchange="plExtraAdd(${i},this.value);this.value=''">
-                    <option value="">＋ 添加…</option>
-                    ${PL_SKILLS.filter(sk=>sk.name!==s.skill && !(s.extra_skills||[]).includes(sk.name))
-                      .map(sk=>`<option value="${esc(sk.name)}">${esc(sk.name)}</option>`).join('')}
-                  </select>
-                </div>
+          <div class="step-adv">
+            <button type="button" class="step-adv-toggle" onclick="this.parentElement.classList.toggle('open')">
+              <span class="adv-arrow">▸</span> 高级选项
+              ${(s.model||(s.extra_skills||[]).length)?'<span class="adv-dot"></span>':''}
+            </button>
+            <div class="step-adv-body">
+              <div class="pv-row2">
+                ${pvf(`叠加技能（规范类，可多个）`,
+                  `<div class="extra-chips">
+                    ${(s.extra_skills||[]).map((n,xi)=>`<span class="x-chip">${esc(n)}<b onclick="plExtraDel(${i},${xi})">×</b></span>`).join('')||'<span class="muted" style="font-size:12px">无</span>'}
+                    <select class="pv-input fi-inline" onchange="plExtraAdd(${i},this.value);this.value=''">
+                      <option value="">添加…</option>
+                      ${PL_SKILLS.filter(sk=>sk.name!==s.skill && !(s.extra_skills||[]).includes(sk.name))
+                        .map(sk=>`<option value="${esc(sk.name)}">${esc(sk.name)}</option>`).join('')}
+                    </select>
+                  </div>`)}
+                ${pvf(`本步模型`,
+                  `<select class="pv-input" onchange="plSet(${i},'model',this.value)">
+                    <option value="" ${!s.model?'selected':''}>跟随全局默认</option>
+                    ${presetNames.map(n=>`<option value="${esc(n)}" ${s.model===n?'selected':''}>预设：${esc(n)}</option>`).join('')}
+                    ${s.model && !presetNames.includes(s.model)?`<option value="${esc(s.model)}" selected>${esc(s.model)}</option>`:''}
+                  </select>`)}
               </div>
-              <div class="fld">
-                <label class="fld-l">本步模型</label>
-                <select class="fi" onchange="plSet(${i},'model',this.value)">
-                  <option value="" ${!s.model?'selected':''}>跟随全局默认</option>
-                  ${presetNames.map(n=>`<option value="${esc(n)}" ${s.model===n?'selected':''}>预设：${esc(n)}</option>`).join('')}
-                  ${s.model && !presetNames.includes(s.model)?`<option value="${esc(s.model)}" selected>${esc(s.model)}</option>`:''}
-                </select>
+              <div class="pl-check-row">
+                <div><div class="k">人工检查点</div>
+                  <div class="cs2">本步完成后暂停，等我确认再继续</div></div>
+                <label class="switch"><input type="checkbox" ${s.checkpoint?'checked':''}
+                  onchange="plSet(${i},'checkpoint',this.checked)"><span class="slider"></span></label>
               </div>
             </div>
-            <label class="pl-check">
-              <input type="checkbox" ${s.checkpoint?'checked':''} onchange="plSet(${i},'checkpoint',this.checked)">
-              人工检查点 —— 本步完成后暂停，等我确认再继续
-            </label>
           </div>
         </div>
       </div>
       <div class="step-ops">
-        <button class="pl-op" title="上移" onclick="plMove(${i},-1)" ${i===0?'disabled':''}>↑</button>
-        <button class="pl-op" title="下移" onclick="plMove(${i},1)" ${i===E.steps.length-1?'disabled':''}>↓</button>
-        <button class="pl-op pl-op-del" title="删除步骤" onclick="plDel(${i})">✕</button>
+        <button type="button" class="plop" title="上移" onclick="plMove(${i},-1)" ${i===0?'disabled':''}>上</button>
+        <button type="button" class="plop" title="下移" onclick="plMove(${i},1)" ${i===E.steps.length-1?'disabled':''}>下</button>
+        <button type="button" class="plop plop-del" title="删除步骤" onclick="plDel(${i})">删</button>
       </div>
     </div>`;
   };
 
   const stepsHtml = E.steps.map(stepCard).join('');
   $('#view').innerHTML = `
+    <div class="pl-wrap">
     <div class="page-head">
       <div><h1>${isNew?'创建流程':'编辑流程'}${E.label?` · ${esc(E.label)}`:''}</h1>
         <div class="sub">步骤从上到下依次执行；每步绑定一个技能，产物文件写入同一工作区供后续引用</div></div>
@@ -460,39 +484,34 @@ function plDrawEditor(){
         <button class="btn btn-primary" onclick="plSave()">保存流程</button>
       </div>
     </div>
-    <div class="card pl-meta">
-      <div class="pl-meta-grid">
-        <div class="fld ${isNew?'':'fld-plain'}">
-          <label class="fld-l">流程名（英文小写，唯一） <b class="req">*</b></label>
-          <input class="fi mono" id="plName" placeholder="如 my-pipeline"
-            value="${esc(isNew?(E._draftName||''):E.name)}" ${isNew?'':'disabled'}>
-          ${isNew?'<div class="fld-hint">创建后不可改；显示名称随时可改</div>':''}
+    <div class="card">
+      <div class="card-h"><div><div class="ct">基本信息</div><div class="cs">流程的唯一标识与展示名称</div></div></div>
+      <div class="pv-form" style="padding:2px 2px 16px">
+        <div class="pv-row2">
+          ${pvf(`流程名（英文小写，唯一） <b class="req">*</b>`,
+            `<input class="pv-input mono" id="plName" placeholder="如 my-pipeline"
+              value="${esc(isNew?(E._draftName||''):E.name)}" ${isNew?'':'disabled'}>`,
+            isNew?pvh('创建后不可改；显示名称随时可改'):'')}
+          ${pvf(`显示名称 <b class="req">*</b>`,
+            `<input class="pv-input" id="plLabel" placeholder="如：我的国赛冲刺流" value="${esc(E.label)}"
+              oninput="plEdit('label',this.value)">`)}
         </div>
-        <div class="fld">
-          <label class="fld-l">显示名称 <b class="req">*</b></label>
-          <input class="fi" id="plLabel" placeholder="如：我的国赛冲刺流" value="${esc(E.label)}"
-            oninput="plEdit('label',this.value)">
-        </div>
-        <div class="fld fld-emoji">
-          <label class="fld-l">图标</label>
-          <div class="emoji-grid">
-            ${EMOJIS.map(e=>`<button class="emoji-cell ${E.emoji===e?'on':''}" onclick="plEdit('emoji','${e}');plDrawEditor()">${e}</button>`).join('')}
-          </div>
-        </div>
-      </div>
-      <div class="fld">
-        <label class="fld-l">流程描述</label>
-        <textarea class="fi pl-desc-in" id="plDesc" rows="2"
-          placeholder="写清这套流程适合什么场景"
-          oninput="plEdit('desc',this.value)">${esc(E.desc||'')}</textarea>
+        ${pvf(`流程描述`,
+          `<textarea class="pv-input" id="plDesc" rows="2"
+            placeholder="写清这套流程适合什么场景"
+            oninput="plEdit('desc',this.value)">${esc(E.desc||'')}</textarea>`)}
       </div>
     </div>
-    <div class="pl-steps-head">
-      <span class="panel-title">步骤清单 <span class="muted">（${E.steps.length}）</span></span>
-      <button class="btn btn-ghost btn-sm" onclick="plAdd()">＋ 添加步骤</button>
+    <div class="card">
+      <div class="card-h">
+        <div><div class="ct">步骤清单 <span class="muted">（${E.steps.length}）</span></div>
+          <div class="cs">从上到下依次执行，可用右侧按钮调整顺序</div></div>
+        <button class="btn btn-accent" onclick="plAdd()"><span class="btn-plus">＋</span> 添加步骤</button>
+      </div>
+      <div class="pl-steps-body" id="plSteps">${stepsHtml}</div>
     </div>
-    <div id="plSteps">${stepsHtml}</div>
-    <div style="height:60px"></div>`;
+    <div style="height:60px"></div>
+    </div>`;
 }
 
 /* ---------------- 编辑操作 ---------------- */
@@ -557,7 +576,7 @@ window.plSave = async function(){
   }
   const payload = {
     name, label,
-    desc: E.desc||'', emoji: E.emoji||'', g: E.g||'custom',
+    desc: E.desc||'', g: E.g||'custom',
     steps: E.steps.map(s=>({
       key:(s.key||'').trim(), label:(s.label||'').trim(),
       skill:[(s.skill||'').trim(), ...(s.extra_skills||[])].join(' ').trim(),
@@ -574,9 +593,5 @@ window.plSave = async function(){
   toast('流程已保存', true);
   nav.go('pipelines');
 };
-
-/* 预设名列表（本步模型下拉用；app.js 设置页维护，这里只读获取一次） */
-let ST_PRESETS = null;
-(async function(){ try{ const r = await _api('/api/providers'); ST_PRESETS = r.presets||[]; }catch(e){} })();
 
 })();

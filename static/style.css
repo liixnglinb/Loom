@@ -1530,5 +1530,109 @@ input:focus::placeholder,textarea:focus::placeholder{color:#c3c7cf}
   .step-grid{grid-template-columns:1fr}
 }
 
-/* ---- 极简版补充 ---- */
-.step-grid .fld.fld-wide{grid-column:1 / -1}
+
+/* =====================================================================
+ * FlowForge 流程页（UI 基准 = 设置页：card + card-h + pv 控件体系）
+ * 页面结构: page-head > .card(基本信息) + .card(步骤清单) —— 与设置页同构
+ * 控件全部复用设置页 .pv-form/.pv-row2/.pv-f/.pv-label/.pv-input/.pv-foot-hint
+ * ===================================================================== */
+.pl-wrap{max-width:1240px;margin:0 auto}
+.pl-card-row{display:flex;align-items:center;justify-content:space-between;gap:16px;
+  border:1px solid var(--border);border-radius:var(--r-2);padding:16px 18px;background:#fff;
+  box-shadow:0 1px 2px rgba(16,20,30,.03);transition:border-color var(--slide),box-shadow var(--slide);cursor:pointer}
+.pl-card-row:hover{border-color:#9aa0aa;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.pl-row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.pl-row-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pl-row-name{font-weight:760;font-size:14.5px;color:var(--ink)}
+.pl-row-meta{display:flex;gap:14px;margin-top:2px;color:var(--text-3);font-size:11.5px;flex-wrap:wrap;align-items:center}
+.pl-row-meta code{font-family:var(--font-mono);font-size:11px;color:var(--text-4)}
+.pl-steps-mini{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.pl-row-ops{display:flex;gap:4px;flex-shrink:0;align-items:center}
+.pl-steps-body{display:flex;flex-direction:column;gap:10px}
+/* 步骤卡：设置页行式卡同款外框，内嵌序号轨道 */
+.step-card{display:flex;gap:0;background:#fff;border:1px solid var(--border);
+  border-radius:var(--r-2);transition:border-color var(--slide),box-shadow var(--slide)}
+.step-card:hover{border-color:#9aa0aa;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.step-rail{flex:none;width:46px;display:flex;flex-direction:column;align-items:center;
+  padding:16px 0 6px;border-right:1px dashed var(--line-soft)}
+.step-no{width:26px;height:26px;border-radius:50%;background:var(--on);color:#fff;flex:none;
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.step-line{flex:1;width:2px;background:var(--line-soft);margin-top:8px;border-radius:2px}
+.step-body{flex:1;min-width:0;padding:16px 16px 14px;display:flex;flex-direction:column;gap:14px}
+.step-body .pv-form{gap:14px}
+.step-ops{flex:none;width:38px;display:flex;flex-direction:column;gap:4px;padding:14px 6px;align-items:center}
+/* 高级选项折叠：卡内子分区（card-h 小节风格） */
+.step-adv{border:1px solid var(--line-soft);border-radius:var(--r-3);overflow:hidden}
+.step-adv-toggle{width:100%;display:flex;align-items:center;gap:7px;border:0;background:var(--surface-2);
+  padding:9px 12px;font-size:12.5px;font-weight:600;color:var(--text-2);cursor:pointer;transition:color var(--slide)}
+.step-adv-body{display:none;padding:14px 12px 12px;border-top:1px solid var(--line-soft);flex-direction:column;gap:12px}
+.step-adv.open .step-adv-body{display:flex}
+.adv-arrow{display:inline-block;transition:transform var(--slide);font-size:10px;color:var(--text-4)}
+.step-adv.open .adv-arrow{transform:rotate(90deg)}
+.adv-dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+/* 检查点开关行：setting-row 同款 */
+.pl-check-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:12px 2px 2px;border-top:1px solid var(--line-soft)}
+.pl-check-row .k{font-size:13px;font-weight:600;color:var(--text)}
+.pl-check-row .cs2{font-size:11.5px;color:var(--muted);margin-top:3px}
+/* 步骤小节标题（card-h .ct 缩小版） */
+.step-sec{font-size:13px;font-weight:760;color:var(--ink);display:flex;align-items:center;gap:8px}
+.step-sec .muted{font-weight:400}
+/* 页头副标题下的金色链接 */
+.fld-link{font-size:12px;color:var(--gold-ink);cursor:pointer;text-decoration:none;font-weight:500}
+.fld-link:hover{text-decoration:underline}
+/* 检查点 toggle（黑白开关，呼应 btn-primary） */
+.ck-switch{position:relative;width:36px;height:20px;flex:none;cursor:pointer}
+.ck-switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.ck-switch .tr{position:absolute;inset:0;background:var(--surface-4);border-radius:999px;transition:background var(--slide)}
+.ck-switch .tr::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:left var(--slide)}
+.ck-switch input:checked + .tr{background:var(--on)}
+.ck-switch input:checked + .tr::after{left:18px}
+/* 编辑器 textarea 与 pv-input 同高比例 */
+textarea.pv-input{resize:vertical;min-height:60px;line-height:1.55}
+.pv-input.mono{font-family:var(--font-mono);font-size:12.5px}
+
+/* =====================================================================
+ * 运行控制台（#/run/<id> · #/runs）—— UI 基准 = 设置页 token
+ * ===================================================================== */
+.run-grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+@media (max-width:1100px){.run-grid{grid-template-columns:1fr}}
+.run-side{display:flex;flex-direction:column;gap:16px}
+.run-steps{display:flex;flex-direction:column;gap:10px}
+.run-step{border:1px solid var(--border);border-radius:var(--r-2);background:#fff;
+  transition:border-color var(--slide),box-shadow var(--slide)}
+.run-step:hover{border-color:#9aa0aa}
+.run-step.open{border-color:var(--gold)}
+.run-step-head{display:flex;gap:12px;align-items:center;padding:12px 14px;cursor:pointer}
+.step-no-sm{width:26px;height:26px;border-radius:50%;flex:none;display:flex;align-items:center;
+  justify-content:center;font-size:12px;font-weight:700;background:var(--surface-3);color:var(--text-3)}
+.step-no-sm.sn-running{background:var(--accent);color:#fff;animation:ff-pulse 1.4s ease-in-out infinite}
+.step-no-sm.sn-done{background:var(--on);color:#fff}
+.step-no-sm.sn-failed{background:var(--bad);color:#fff}
+.step-no-sm.sn-revising{background:var(--gold);color:#fff;animation:ff-pulse 1.4s ease-in-out infinite}
+@keyframes ff-pulse{0%,100%{opacity:1}50%{opacity:.55}}
+.run-step-main{flex:1;min-width:0}
+.run-step-name{font-size:13.5px;font-weight:640;color:var(--ink);display:flex;gap:8px;align-items:center}
+.run-step-meta{display:flex;gap:10px;margin-top:3px;font-size:11.5px;color:var(--text-3);flex-wrap:wrap;align-items:center}
+.run-step-meta code{font-family:var(--font-mono);font-size:11px;color:var(--text-4)}
+.run-step-body{border-top:1px dashed var(--line-soft);padding:12px 14px}
+.run-delta{margin:0;max-height:340px;overflow:auto;font-family:var(--font-mono);font-size:12.5px;
+  line-height:1.6;white-space:pre-wrap;word-break:break-word;color:var(--text)}
+.run-badge{font-size:10.5px;padding:2px 8px;border-radius:var(--radius-pill);border:1px solid var(--line);
+  background:var(--surface-2);color:var(--text-3);flex:none}
+.run-badge.rb-running{border-color:rgba(201,162,39,.4);background:var(--accent-soft);color:var(--gold-ink)}
+.run-badge.rb-revising{border-color:rgba(201,162,39,.4);background:var(--accent-soft);color:var(--gold-ink)}
+.run-badge.rb-done{border-color:rgba(46,125,50,.25);background:#eef5ee;color:#2e7d32}
+.run-badge.rb-failed{border-color:rgba(198,40,40,.25);background:#fdeeee;color:var(--bad)}
+.run-badge.rb-waiting{border-color:rgba(201,162,39,.4);background:var(--accent-soft);color:var(--gold-ink)}
+.run-badge.rb-cancelled{opacity:.8}
+/* 对话面板 */
+.convo-list{display:flex;flex-direction:column;gap:10px;padding:2px 2px 12px;max-height:320px;overflow:auto}
+.convo-msg{border:1px solid var(--line-soft);border-radius:var(--r-3);padding:10px 12px;font-size:12.5px;line-height:1.55}
+.cm-user{background:var(--surface-2)}
+.cm-ai{background:var(--accent-soft);border-color:rgba(201,162,39,.25)}
+.cm-role{font-size:10.5px;font-weight:700;color:var(--text-4);margin-bottom:4px;letter-spacing:.4px}
+.cm-text{color:var(--text);white-space:pre-wrap;word-break:break-word}
+.art-row{cursor:default}
+.art-row .pf-op{text-decoration:none;display:inline-flex;align-items:center}
