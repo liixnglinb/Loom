@@ -59,33 +59,19 @@ def main() -> int:
                       ACL="public-read", ContentType="application/json")
     print(f"↑ latest.json  version={manifest['version']}")
 
-    # 下载页在 lxlrwxs.top，读 COS 上的 latest.json 属于跨域。没配 CORS 时
-    # fetch 会静默失败，页面就一直显示写死的旧版本号 —— 看着正常，其实说谎。
-    try:
-        from qcloud_cos import CosSchema
-        cors = {"CORSRules": [{"AllowedOrigin": ["https://lxlrwxs.top", "https://*.lxlrwxs.top"],
-                               "AllowedMethod": ["GET", "HEAD"],
-                               "AllowedHeader": ["*"],
-                               "ExposeHeader": ["ETag", "Content-Length"],
-                               "MaxAgeSeconds": 86400}]}
-        client.put_bucket_cors(Bucket=bucket, CORSConfiguration=cors)
-        print("[cos] CORS 已设：lxlrwxs.top 可跨域读 latest.json")
-    except Exception as e:
-        print(f"[cos] ⚠ CORS 设置失败（下载页版本号会退回写死值）：{e}")
-
-    # 匿名回读：签名请求成功不代表公网能下，这一步才是用户看到的真相
+    # 匿名回读：签名请求成功不代表公网能下，这一步才是用户看到的真相。
+    # 顺带确认跨域头 —— COS 默认就回 Access-Control-Allow-Origin: *，
+    # 下载页的 fetch 能读到；真哪天变成空了，这里会先发现。
     import requests
     base = f"https://{bucket}.cos.{region}.myqcloud.com"
-    got = requests.get(f"{base}/latest.json", timeout=20)
+    got = requests.get(f"{base}/latest.json", timeout=20,
+                       headers={"Origin": "https://lxlrwxs.top"})
     got.raise_for_status()
-    print("[cos] 匿名读 latest.json ->", got.json().get("version"))
+    print("[cos] 匿名读 latest.json ->", got.json().get("version"),
+          "| 跨域头:", got.headers.get("access-control-allow-origin") or "缺失（下载页读不到版本号）")
     head = requests.head(manifest["url"], timeout=20)
     print(f"[cos] 匿名 HEAD 安装包 -> HTTP {head.status_code} "
           f"{int(head.headers.get('content-length') or 0)/1048576:.1f} MB")
-    print("[cos] 跨域预检 ->", requests.options(
-        f"{base}/latest.json",
-        headers={"Origin": "https://lxlrwxs.top",
-                 "Access-Control-Request-Method": "GET"}, timeout=20).status_code)
 
     # 桶刚被清空过（2026-09-15 实测 0 对象），这里只列清单不自动删任何东西：
     # 攒够两个版本后再谈保留策略，删线上包必须是显式动作。
