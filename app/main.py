@@ -1,24 +1,30 @@
 # -*- coding: utf-8 -*-
-"""FlowForge 智模流水线 —— 极简版主入口。
+"""Loom 织流 —— 主入口。
 
 核心能力：
-  1. 创建流程：可视化编排流程模板（步骤清单，每步绑定 skill / 产物 / 检查点）
+  1. 创建流程：可视化编排流程模板（步骤清单，每步绑定技能 / 引擎 / 产物 / 检查点）
   2. 创建 skill：技能库管理（新建 / 编辑 / 另存副本 / 删除 / 导入标准 skill 包）
-  3. 运行流程：SSE 实时流式执行（逐步产出、产物落盘工作区、检查点暂停、对话式局部修订）
+  3. 运行流程：把每步交给本机智能体 CLI（claude / codex）执行，SSE 实时推送
+     工具调用与产出，检查点暂停，支持对话式局部修订与「从此步重跑」
+  4. 内置库：出厂自带一条通用全自动工作流 + 一条轻量流，全部可编辑、可恢复出厂
 
-外加设置页（API 预设 / 连通检测）。无内置模板、无授权墙、无更新器。
+外加设置页（智能体引擎接入 / API 预设 / 连通检测）与 GitHub Releases 检查更新。无授权墙。
 """
+import re
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
-from . import db, llm, paths, pipelines, runner
+from . import agents, db, llm, paths, pipelines, presets_library, runner, updater
 
-app = FastAPI(title="FlowForge 智模流水线")
+app = FastAPI(title="Loom 织流")
 
 STATIC = paths.STATIC_DIR
 app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
+
+# 出厂技能与内置流程播种（幂等；只在库版本号变化时同步技能）
+presets_library.seed()
 
 
 @app.middleware("http")
@@ -79,11 +85,15 @@ class PipelineUpdate(BaseModel):
 
 @app.get("/api/pipelines")
 def list_pipelines():
-    """返回全部流程模板（步骤清单完整返回，供编排器/新建页展示）。"""
+    """返回全部流程模板（步骤清单完整返回，供编排器/新建页展示）。
+    runs = 被跑过的次数，侧栏「项目」用它筛掉从没开工的流程。"""
+    counts = db.run_counts()
     out = []
     for p in db.list_pipelines():
         out.append({"template": p["name"], "name": p["name"], "label": p["label"],
                     "desc": p["desc"], "emoji": p["emoji"], "g": p["g"],
+                    "builtin": int(p.get("builtin") or 0),
+                    "runs": int(counts.get(p["name"], 0)),
                     "steps": p.get("steps") or []})
     return {"pipelines": out}
 
@@ -95,11 +105,12 @@ def create_pipeline(p: PipelineIn):
         return JSONResponse({"detail": "模板名只能含小写字母/数字/连字符/下划线"}, 400)
     if db.get_pipeline(name):
         return JSONResponse({"detail": f"模板名「{name}」已存在"}, 400)
-    okv, err = pipelines.validate_steps(p.steps)
+    steps = pipelines.normalize_steps(p.steps)
+    okv, err = pipelines.validate_steps(steps)
     if not okv:
         return JSONResponse({"detail": err}, 400)
     db.create_pipeline(name, p.label or name, p.desc, p.emoji, p.g or "custom",
-                       steps=p.steps)
+                       steps=steps)
     return {"ok": True, "name": name}
 
 
@@ -108,13 +119,25 @@ def update_pipeline(name: str, u: PipelineUpdate):
     p = db.get_pipeline(name)
     if not p:
         return JSONResponse({"detail": "not found"}, 404)
+    steps = None
     if u.steps is not None:
-        okv, err = pipelines.validate_steps(u.steps)
+        steps = pipelines.normalize_steps(u.steps)
+        okv, err = pipelines.validate_steps(steps)
         if not okv:
             return JSONResponse({"detail": err}, 400)
     db.update_pipeline(name, label=u.label or None, desc=u.desc or None,
-                       emoji=u.emoji or None, g=u.g or None, steps=u.steps)
+                       emoji=u.emoji or None, g=u.g or None, steps=steps)
     return {"ok": True}
+
+
+@app.post("/api/pipelines/{name}/restore")
+def restore_pipeline(name: str):
+    """把某个内置流程的步骤清单恢复成出厂版本（技能正文另行用 /api/library/reset）。"""
+    factory = presets_library.factory_steps(name)
+    if not factory:
+        return JSONResponse({"detail": "该流程不是内置流程，没有出厂版本可恢复"}, 400)
+    db.update_pipeline(name, steps=factory, builtin=1)
+    return {"ok": True, "steps": factory}
 
 
 @app.delete("/api/pipelines/{name}")
@@ -147,24 +170,54 @@ def duplicate_pipeline(name: str, p: PipelineIn):
 
 @app.get("/api/pipelines/{name}/export")
 def export_pipeline(name: str):
-    """导出模板为 JSON 文件（备份 / 分享）。"""
-    import json as _json
+    """导出模板为 JSON 文件（备份 / 分享）。字段和 POST /api/pipelines 收的对齐，
+    导出的文件要能原样导回来，所以不带 id / builtin / 时间戳这些库内字段。"""
     p = db.get_pipeline(name)
     if not p:
         return JSONResponse({"detail": "not found"}, 404)
-    p = dict(p)
-    p.pop("id", None)
-    p["steps"] = p.pop("steps", [])
-    return JSONResponse(p, headers={
-        "Content-Disposition": f'attachment; filename="flowforge-{name}.json"'})
+    body = {k: p.get(k) for k in ("name", "label", "desc", "emoji", "g")}
+    body["steps"] = p.get("steps") or []
+    return JSONResponse(body, headers={
+        "Content-Disposition": f'attachment; filename="loom-{name}.json"'})
+
+
+@app.get("/api/pipelines/{name}/preview/{index}")
+def preview_pipeline_step(name: str, index: int, brief: str = ""):
+    """预览第 index 步实际发给智能体的提示词（系统规范 + 用户指令）。"""
+    try:
+        return runner.preview_step_prompt(name, index, brief)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, 404)
+    except Exception as e:
+        return JSONResponse({"detail": f"预览失败: {e}"}, 500)
 
 
 # ---------- Skill 库（自建 + 随包内置只读） ----------
+def _skill_desc(text: str) -> str:
+    """技能简介：优先 YAML frontmatter 的 description，否则取首行正文标题。"""
+    import re as _re
+    body = text
+    m = _re.match(r"^---\s*\n(.*?)\n---\s*\n?", text, _re.S)
+    if m:
+        body = text[m.end():]
+        for line in m.group(1).splitlines():
+            km = _re.match(r"^(description|title)\s*:\s*(.+)$", line.strip())
+            if km:
+                val = km.group(2).strip().strip("'\"").strip()
+                if val:
+                    return val[:160]
+    for line in body.splitlines():
+        t = line.strip().lstrip("#").strip()
+        if t:
+            return t[:160]
+    return ""
+
+
 @app.get("/api/skills")
 def list_skills():
     """枚举 skill（自建优先）。
 
-    每个 skill 返回：name、desc（SKILL.md 首个非空标题/首段，截断 120 字）、
+    每个 skill 返回：name、desc（frontmatter.description 或首个正文行）、
     source（user=自建可编辑 / bundled=随包内置只读）、chars（正文长度）。
     """
     seen = {}
@@ -180,14 +233,8 @@ def list_skills():
                 text = (d / "SKILL.md").read_text(encoding="utf-8")
             except Exception:
                 text = ""
-            desc = ""
-            for line in text.splitlines():
-                t = line.strip().lstrip("#").strip()
-                if t:
-                    desc = t[:120]
-                    break
-            seen[d.name] = {"name": d.name, "desc": desc, "source": source,
-                            "chars": len(text)}
+            seen[d.name] = {"name": d.name, "desc": _skill_desc(text),
+                            "source": source, "chars": len(text)}
     out = list(seen.values())
     out.sort(key=lambda x: (x["source"] != "user", x["name"]))
     return {"skills": out}
@@ -443,14 +490,15 @@ async def import_skill(file: UploadFile = File(...)):
 
 
 
-# ---------- 流程运行（SSE 实时执行 / 检查点 / 局部修订） ----------
+# ---------- 流程运行（智能体执行 / SSE 实时 / 检查点 / 修订 / 重跑） ----------
 class RunStartIn(BaseModel):
     label: str = ""
+    brief: str = ""
+    engine: str = ""
 
 class ReviseIn(BaseModel):
     index: int
     instruction: str
-    sync: bool = False
 
 
 def _sse_pack(ev: dict) -> str:
@@ -462,7 +510,7 @@ def _sse_pack(ev: dict) -> str:
 def start_pipeline_run(name: str, b: RunStartIn):
     """启动一次流程运行：返回 run（含 id），前端跳转运行控制台。"""
     try:
-        run = runner.start_run(name, b.label or "")
+        run = runner.start_run(name, b.label or "", b.brief or "", b.engine or "")
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, 404)
     except Exception as e:
@@ -480,7 +528,8 @@ def get_run(run_id: str):
     run = db.get_run(run_id)
     if not run:
         return JSONResponse({"detail": "运行不存在"}, 404)
-    return {"run": run, "artifacts": runner.read_artifacts(run)}
+    return {"run": run, "artifacts": runner.read_artifacts(run),
+            "logs": runner.list_logs(run_id)}
 
 
 @app.delete("/api/runs/{run_id}")
@@ -561,16 +610,50 @@ def cancel_run(run_id: str):
     return {"ok": True, "run": run}
 
 
-@app.post("/api/runs/{run_id}/revise")
-def revise_run(run_id: str, b: ReviseIn):
-    """对话式局部修订：对指定步骤产物发修改指令，AI 输出新全文写回工作区。"""
+class RerunIn(BaseModel):
+    index: int
+
+
+@app.post("/api/runs/{run_id}/rerun")
+def rerun_run(run_id: str, b: RerunIn):
+    """从第 index 步（0 基）起重跑，其后步骤一并复位。"""
     try:
-        result = runner.revise_step(run_id, b.index, b.instruction, sync=b.sync)
+        run = runner.rerun_from(run_id, b.index)
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, 400)
-    except llm.LLMError as e:
-        return JSONResponse({"detail": str(e)}, 500)
+    return {"ok": True, "run": run}
+
+
+@app.post("/api/runs/{run_id}/revise")
+def revise_run(run_id: str, b: ReviseIn):
+    """对话式局部修订：让智能体就地修改该步产物文件。"""
+    if not b.instruction.strip():
+        return JSONResponse({"detail": "修改要求不能为空"}, 400)
+    try:
+        result = runner.revise_step(run_id, b.index, b.instruction)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, 400)
     return result
+
+
+@app.get("/api/runs/{run_id}/files")
+def run_files(run_id: str):
+    if not db.get_run(run_id):
+        return JSONResponse({"detail": "运行不存在"}, 404)
+    return {"files": runner.list_workspace(run_id)}
+
+
+@app.get("/api/runs/{run_id}/files/{fpath:path}")
+def run_file_detail(run_id: str, fpath: str):
+    """预览工作区里的一个文件（运行台的实时面板用）。"""
+    if not db.get_run(run_id):
+        return JSONResponse({"detail": "运行不存在"}, 404)
+    try:
+        return runner.read_workspace_file(run_id, fpath)
+    except FileNotFoundError:
+        return JSONResponse({"detail": "文件不存在"}, 404)
+    except Exception as e:
+        return JSONResponse({"detail": f"读取失败：{e}"}, 500)
 
 
 @app.get("/api/runs/{run_id}/artifacts")
@@ -581,28 +664,197 @@ def run_artifacts(run_id: str):
     return {"artifacts": runner.read_artifacts(run)}
 
 
-@app.get("/api/runs/{run_id}/artifacts/{fname}")
+@app.get("/api/runs/{run_id}/artifacts/{fname:path}")
 def download_artifact(run_id: str, fname: str):
     run = db.get_run(run_id)
     if not run:
         return JSONResponse({"detail": "运行不存在"}, 404)
-    import re as _re
-    if not _re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,80}", fname or ""):
-        return JSONResponse({"detail": "文件名非法"}, 400)
-    f = runner.workspace_dir(run_id) / fname
-    if not f.is_file():
+    try:
+        f = runner.ws_file(run_id, fname)
+    except FileNotFoundError:
         return JSONResponse({"detail": "文件不存在"}, 404)
-    return FileResponse(f, filename=fname)
+    # inline：图片 / PDF 要能在预览面板里直接显示，下载靠 <a download>
+    return FileResponse(f, filename=f.name, content_disposition_type="inline")
 
 
-# ---------- 设置（API 预设 / 连通检测） ----------
-class SettingIn(BaseModel):
-    key: str
-    value: str
+@app.get("/api/runs/{run_id}/logs")
+def run_logs(run_id: str):
+    if not db.get_run(run_id):
+        return JSONResponse({"detail": "运行不存在"}, 404)
+    return {"logs": runner.list_logs(run_id)}
 
-@app.post("/api/settings")
-def save_setting(s: SettingIn):
-    db.set_setting(s.key, s.value)
+
+@app.get("/api/runs/{run_id}/logs/{name}")
+def run_log_detail(run_id: str, name: str, lines: int = 500):
+    """读一份转录日志尾部。只接受纯文件名，路径校验在 runner.read_log 里。"""
+    if not db.get_run(run_id):
+        return JSONResponse({"detail": "运行不存在"}, 404)
+    try:
+        return runner.read_log(run_id, name, lines)
+    except FileNotFoundError as e:
+        return JSONResponse({"detail": str(e)}, 404)
+    except ValueError as e:
+        return JSONResponse({"detail": str(e)}, 400)
+
+
+# ---------- 智能体引擎与内置库 ----------
+class EngineIn(BaseModel):
+    default_engine: str | None = None
+    claude_cli: str | None = None
+    codex_cli: str | None = None
+    agent_timeout: str | None = None
+    codex_sandbox: str | None = None
+    reasoning_effort: str | None = None
+    step_retry: str | None = None
+    auto_continue: str | None = None
+
+
+@app.get("/api/agents")
+def get_agents():
+    """引擎可用性 + 接入配置（步骤里选引擎、设置页显示就绪状态都用它）。"""
+    return {"agents": agents.agents_status(),
+            "default_engine": db.get_setting("default_engine"),
+            "claude_cli": db.get_setting("claude_cli"),
+            "codex_cli": db.get_setting("codex_cli"),
+            "agent_timeout": str(agents.step_timeout()),
+            "codex_sandbox": agents.codex_sandbox(),
+            "sandbox_options": list(agents.SANDBOXES),
+            "reasoning_effort": agents.reasoning_effort(),
+            "effort_options": ["auto"] + list(agents.EFFORTS),
+            "step_retry": str(agents.step_retry()),
+            "auto_continue": "1" if agents.auto_continue() else "0",
+            "library_version": db.get_setting("library_version"),
+            "bundled_skills": list(presets_library.BUNDLED_SKILLS),
+            "paths": {"data": str(paths.DATA_DIR), "skills": str(paths.USER_SKILLS_DIR),
+                      "workspaces": str(paths.WORKSPACES_DIR)}}
+
+
+@app.post("/api/agents")
+def save_agents(b: EngineIn):
+    """局部更新：字段省略即不动，显式传空串才是清除。"""
+    if b.default_engine is not None:
+        eng = b.default_engine.strip()
+        if eng and eng not in agents.ENGINES:
+            return JSONResponse({"detail": "默认引擎无效"}, 400)
+        db.set_setting("default_engine", eng)
+    for key, val in (("claude_cli", b.claude_cli), ("codex_cli", b.codex_cli)):
+        if val is not None:
+            db.set_setting(key, val.strip())
+    if b.agent_timeout is not None:
+        try:
+            n = int(b.agent_timeout)
+        except ValueError:
+            return JSONResponse({"detail": "单步超时要填整数秒"}, 400)
+        if not 60 <= n <= 21600:
+            return JSONResponse({"detail": "单步超时范围 60–21600 秒"}, 400)
+        db.set_setting("agent_timeout", str(n))
+    if b.codex_sandbox is not None:
+        v = b.codex_sandbox.strip()
+        if v and v not in agents.SANDBOXES:
+            return JSONResponse({"detail": "沙箱模式无效"}, 400)
+        db.set_setting("codex_sandbox", v)
+    if b.reasoning_effort is not None:
+        v = b.reasoning_effort.strip()
+        if v and v not in agents.EFFORTS and v != "auto":
+            return JSONResponse({"detail": "推理力度无效"}, 400)
+        db.set_setting("reasoning_effort", v)
+    if b.step_retry is not None:
+        try:
+            n = int(b.step_retry)
+        except ValueError:
+            return JSONResponse({"detail": "重试次数要填整数"}, 400)
+        if not 0 <= n <= 3:
+            return JSONResponse({"detail": "重试次数范围 0–3"}, 400)
+        db.set_setting("step_retry", str(n))
+    if b.auto_continue is not None:
+        db.set_setting("auto_continue", "1" if b.auto_continue.strip() in ("1", "true") else "0")
+    agents.clear_bin_cache()
+    return get_agents()
+
+
+@app.post("/api/reveal")
+def reveal_dir(which: str = "data", run_id: str = "", file: str = ""):
+    """在资源管理器里打开本机目录。只认白名单键，或数据库里真实存在的一次运行 ——
+    路径一律由 runner 拼，绝不接受调用方直接给的目录。"""
+    import subprocess
+    if which == "run":
+        if not db.get_run(run_id):
+            return JSONResponse({"detail": "运行不存在"}, 404)
+        try:
+            target = runner.ws_file(run_id, file) if file else runner.workspace_dir(run_id).resolve()
+        except FileNotFoundError:
+            return JSONResponse({"detail": "文件不存在"}, 404)
+        args = ["explorer", f"/select,{target}"] if file else ["explorer", str(target)]
+    else:
+        targets = {"data": paths.DATA_DIR, "skills": paths.USER_SKILLS_DIR,
+                   "workspaces": paths.WORKSPACES_DIR}
+        d = targets.get((which or "").strip())
+        if not d:
+            return JSONResponse({"detail": "未知目录"}, 400)
+        d.mkdir(parents=True, exist_ok=True)
+        args = ["explorer", str(d)]
+    try:
+        subprocess.Popen(args)
+    except Exception as e:
+        return JSONResponse({"detail": f"打开失败：{e}"}, 500)
+    return {"ok": True}
+
+
+@app.get("/api/stats")
+def usage_stats():
+    """设置页「使用统计」：全部由 runs 表的 step.meta 与工作区实际占用算出来。"""
+    return runner.usage_stats()
+
+
+# ---------- 自动更新 ----------
+class RepoIn(BaseModel):
+    repo: str = ""
+    asset: str = ""
+
+
+@app.get("/api/update")
+def update_state():
+    s = updater.snapshot()
+    s["active_runs"] = db.count_active_runs()
+    return s
+
+
+@app.post("/api/update/repo")
+def update_set_repo(b: RepoIn):
+    """只收 owner/name；填错比不填更糟，所以这里必须校验。"""
+    r = (b.repo or "").strip().strip("/")
+    if r and not re.fullmatch(r"[\w.-]+/[\w.-]+", r):
+        return JSONResponse({"detail": "仓库要写成 owner/name 的形式"}, 400)
+    db.set_setting("update_repo", r)
+    db.set_setting("update_asset", (b.asset or "").strip())
+    return updater.check(force=True) | {"active_runs": db.count_active_runs()}
+
+
+@app.post("/api/update/check")
+def update_check():
+    return updater.check(force=True) | {"active_runs": db.count_active_runs()}
+
+
+@app.post("/api/update/download")
+def update_download():
+    return updater.start_download() | {"active_runs": db.count_active_runs()}
+
+
+@app.post("/api/library/reset")
+def reset_library():
+    """恢复出厂：内置流程步骤复位 + 出厂技能覆盖回原版（用户自建技能不受影响）。"""
+    return {"ok": True, **presets_library.seed(force=True)}
+
+
+# ---------- 设置（外观 / 键值配置） ----------
+@app.post("/api/settings/bulk")
+def save_settings_bulk(patch: dict):
+    """一次保存多个外观键（语言 / 主题 / 字号…）。只收 ui_ 前缀，
+    引擎与端点配置必须走 /api/agents、/api/presets，避免这里绕过去。"""
+    for k, v in (patch or {}).items():
+        if not isinstance(k, str) or not k.startswith("ui_"):
+            continue
+        db.set_setting(k.strip(), "" if v is None else str(v))
     return {"ok": True}
 
 @app.get("/api/settings")

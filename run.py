@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""FlowForge 智模流水线 启动脚本（端口自愈 + 中文诊断）。
+"""Loom 织流 启动脚本（端口自愈 + 中文诊断）。
 
 用法: python run.py [--port 8000] [--auto-kill]
 """
@@ -65,20 +65,23 @@ def diagnose_start_error(err) -> str:
     return f"启动失败：{s}"
 
 
-STALE_HINT = "检测到旧 FlowForge 进程仍占用端口，正在自动结束并重启…"
+STALE_HINT = "检测到旧 Loom 进程仍占用端口，正在自动结束并重启…"
 
 
 def main():
     port = DEFAULT_PORT
     auto_kill = False
-    for a in sys.argv[1:]:
+    argv = sys.argv[1:]
+    for i, a in enumerate(argv):
         if a == "--auto-kill":
             auto_kill = True
-        elif a.startswith("--port"):
+        elif a in ("--port", "-p") or a.startswith("--port="):
+            raw = a.split("=", 1)[1] if "=" in a else (argv[i + 1] if i + 1 < len(argv) else "")
             try:
-                port = int(a.split("=", 1)[1])
-            except Exception:
-                pass
+                port = int(raw)
+            except ValueError:
+                print(f"ERROR: --port 需要数字端口，收到「{raw}」")
+                sys.exit(1)
     import importlib.util
     if not importlib.util.find_spec("uvicorn"):
         print("ERROR: 未安装 uvicorn。请运行: pip install fastapi uvicorn python-multipart")
@@ -110,7 +113,7 @@ def main():
             sys.exit(1)
 
     import uvicorn
-    print(f"FlowForge 智模流水线 启动: http://127.0.0.1:{port}")
+    print(f"Loom 织流 启动: http://127.0.0.1:{port}")
     try:
         uvicorn.run("app.main:app", host="127.0.0.1", port=port, reload=False)
     except Exception as e:

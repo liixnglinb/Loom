@@ -20,6 +20,17 @@ def get_conn():
     return conn
 
 
+def _now():
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _add_column(c, table, col, ddl):
+    """轻量列迁移：老库缺列时补上。"""
+    cols = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
+    if col not in cols:
+        c.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+
+
 def init_db():
     conn = get_conn()
     c = conn.cursor()
@@ -30,11 +41,13 @@ def init_db():
         label TEXT NOT NULL DEFAULT '',        -- 展示名
         desc TEXT NOT NULL DEFAULT '',
         emoji TEXT NOT NULL DEFAULT '',
-        g TEXT NOT NULL DEFAULT 'custom',      -- 分组（custom / research…）
+        g TEXT NOT NULL DEFAULT 'custom',      -- 分组（built-in / custom / …）
         steps TEXT NOT NULL DEFAULT '[]',      -- 有序步骤清单 JSON 数组
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )""")
+    _add_column(c, "pipeline_definitions", "builtin",
+                "builtin INTEGER NOT NULL DEFAULT 0")  # 1=出厂内置（可恢复出厂）
     c.execute("""CREATE TABLE IF NOT EXISTS settings(
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -66,11 +79,8 @@ def init_db():
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )""")
+    _add_column(c, "runs", "brief", "brief TEXT NOT NULL DEFAULT ''")  # 任务说明
     conn.commit(); conn.close()
-
-
-def _now():
-    return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
 # ==================== 流程模板定义（配置驱动） ====================
@@ -87,6 +97,14 @@ def list_pipelines():
     return rows
 
 
+def run_counts():
+    """每条流程被跑过几次。侧栏「项目」只列真跑过的，靠这个判定。"""
+    conn = get_conn()
+    rows = conn.execute("SELECT pipeline, COUNT(*) c FROM runs GROUP BY pipeline").fetchall()
+    conn.close()
+    return {r["pipeline"]: r["c"] for r in rows}
+
+
 def get_pipeline(name):
     conn = get_conn()
     r = conn.execute("SELECT * FROM pipeline_definitions WHERE name=?", (name,)).fetchone()
@@ -101,18 +119,20 @@ def get_pipeline(name):
     return d
 
 
-def create_pipeline(name, label="", desc="", emoji="", g="custom", steps=None):
+def create_pipeline(name, label="", desc="", emoji="", g="custom", steps=None,
+                    builtin=0):
     now = _now()
     conn = get_conn(); c = conn.cursor()
-    c.execute("""INSERT INTO pipeline_definitions(name,label,desc,emoji,g,steps,created_at,updated_at)
-                 VALUES(?,?,?,?,?,?,?,?)""",
+    c.execute("""INSERT INTO pipeline_definitions(name,label,desc,emoji,g,steps,builtin,created_at,updated_at)
+                 VALUES(?,?,?,?,?,?,?,?,?)""",
               (name, label, desc, emoji, g,
-               json.dumps(steps or [], ensure_ascii=False), now, now))
+               json.dumps(steps or [], ensure_ascii=False), int(bool(builtin)), now, now))
     pid = c.lastrowid; conn.commit(); conn.close()
     return pid
 
 
-def update_pipeline(name, label=None, desc=None, emoji=None, g=None, steps=None):
+def update_pipeline(name, label=None, desc=None, emoji=None, g=None, steps=None,
+                    builtin=None):
     p = get_pipeline(name)
     if not p: return False
     conn = get_conn(); c = conn.cursor()
@@ -120,10 +140,11 @@ def update_pipeline(name, label=None, desc=None, emoji=None, g=None, steps=None)
     ndesc = desc if desc is not None else p["desc"]
     nemoji = emoji if emoji is not None else p["emoji"]
     ng = g if g is not None else p["g"]
+    nbuiltin = int(bool(builtin)) if builtin is not None else int(p.get("builtin") or 0)
     nsteps = json.dumps(steps if steps is not None else p["steps"], ensure_ascii=False)
-    c.execute("""UPDATE pipeline_definitions SET label=?, desc=?, emoji=?, g=?, steps=?, updated_at=?
-                 WHERE name=?""",
-              (nlabel, ndesc, nemoji, ng, nsteps, _now(), name))
+    c.execute("""UPDATE pipeline_definitions SET label=?, desc=?, emoji=?, g=?, steps=?,
+                 builtin=?, updated_at=? WHERE name=?""",
+              (nlabel, ndesc, nemoji, ng, nsteps, nbuiltin, _now(), name))
     conn.commit(); conn.close()
     return True
 
@@ -266,13 +287,13 @@ def _run_row(r):
     return d
 
 
-def create_run(run_id, pipeline, label="", steps=None):
+def create_run(run_id, pipeline, label="", steps=None, brief=""):
     now = _now()
     conn = get_conn(); c = conn.cursor()
-    c.execute("""INSERT INTO runs(id,pipeline,label,workspace,status,cur_step,waiting_reason,steps,error,created_at,updated_at)
-                 VALUES(?,?,?,?,?,0,'',?, '', ?, ?)""",
+    c.execute("""INSERT INTO runs(id,pipeline,label,workspace,status,cur_step,waiting_reason,steps,brief,error,created_at,updated_at)
+                 VALUES(?,?,?,?,?,0,'',?,?, '', ?, ?)""",
               (run_id, pipeline, label, f"run-{run_id}", "pending",
-               json.dumps(steps or [], ensure_ascii=False), now, now))
+               json.dumps(steps or [], ensure_ascii=False), brief or "", now, now))
     conn.commit(); conn.close()
     return get_run(run_id)
 
@@ -282,6 +303,16 @@ def get_run(run_id):
     r = conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
     conn.close()
     return _run_row(r) if r else None
+
+
+def count_active_runs():
+    """还在跑 / 停在检查点等人 的运行数。更新前拿它决定要不要弹提示。"""
+    conn = get_conn()
+    n = conn.execute(
+        "SELECT COUNT(*) FROM runs WHERE status IN ('running','revising','waiting')"
+    ).fetchone()[0]
+    conn.close()
+    return int(n or 0)
 
 
 def list_runs(pipeline=None, limit=50):

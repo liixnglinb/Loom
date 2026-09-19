@@ -1,91 +1,80 @@
 /* =====================================================================
- * FlowForge 运行控制台（#/run/<id> · #/runs）
- * UI 基准 = 设置页：card + card-h + pv 控件体系，黑白灰+金黄，无图标
- * 实时可视化：SSE 流式渲染每个步骤的生成内容；产物面板 + 对话式局部修订
+ * Loom 织流 运行控制台（#/run/<id> · #/runs）—— Codex 式转录 + 底部输入面板
  * ===================================================================== */
 (function(){
 'use strict';
 const $ = s => document.querySelector(s);
+const t = window.t;
+const ico = window.icon;
 const esc = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const _api = (u,o) => fetch(u,o).then(r=>r.json());
 const _post = (u,b) => _api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
-let _toastTimer = null;
-function toast(msg, ok=false){
-  const el = document.getElementById('toast');
-  if(!el) return;
-  el.textContent = msg||'';
-  el.className = 'toast show '+(ok?'ok':'err');
-  clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(()=>{ el.className='toast'; }, 2400);
-}
-function _lockScroll(on){ document.body.style.overflow = on?'hidden':''; }
+const toast = (m,ok) => window.ffToast(m,ok);
+const _lockScroll = on => { document.body.style.overflow = on?'hidden':''; };
+const ART_URL = (runId,name) => '/api/runs/'+encodeURIComponent(runId)+'/artifacts/'+encodeURI(name);
+const jsq = s => String(s??'').replace(/\\/g,'\\\\').replace(/"/g,'&quot;').replace(/'/g,"\\'");
+const dur = ms => { const s=Math.round((ms||0)/1000);
+  return s<60 ? s+'s' : t('run.durLong',{m:Math.floor(s/60), s:s%60}); };
 
 /* ---------------- 运行列表 ---------------- */
-const ST_ZH = {pending:'待执行', running:'执行中', waiting:'等待确认', done:'已完成',
-               failed:'失败', cancelled:'已取消', revising:'修订中'};
 window.renderRuns = async function(){
-  $('#view').innerHTML = '<div class="loading-bar"></div>';
-  const r = await _api('/api/runs').catch(()=>({runs:[]}));
-  const runs = r.runs||[];
+  window.viewLoading();
+  const RS = window.RUN_ST();
+  const runs = (await _api('/api/runs').catch(()=>({runs:[]}))).runs||[];
+  window.__chrome = {title:t('nav.runs'), icon:'runs'};   /* 这页只看历史，下任务走侧栏入口 */
   const row = u => `
     <div class="pl-card-row" onclick="nav.go('run/${esc(u.id)}')">
       <div class="pl-row-main">
-        <div class="pl-row-title">
-          <span class="pl-row-name">${esc(u.label||u.pipeline)}</span>
+        <div class="pl-row-title"><span class="pl-row-name">${esc(u.label||u.pipeline)}</span>
           <code>${esc(u.id)}</code>
-          <span class="run-badge rb-${esc(u.status)}">${ST_ZH[u.status]||u.status}</span>
-        </div>
-        <div class="pl-row-meta">
-          <span>${(u.steps||[]).length} 个步骤</span>
-          <span>${esc(u.created_at||'')}</span>
-        </div>
+          <span class="run-badge rb-${esc(u.status)}">${esc(RS[u.status]||u.status)}</span></div>
+        <div class="pl-row-meta"><span>${(u.steps||[]).length} ${esc(t('c.steps'))}</span><span>${esc(u.created_at)}</span></div>
       </div>
       <div class="pl-row-ops" onclick="event.stopPropagation()">
-        <button class="pf-op pf-op-start" onclick="nav.go('run/${esc(u.id)}')">打开</button>
-        <button class="pf-op pf-op-danger" onclick="runDelete('${esc(u.id)}')">删除</button>
+        <button class="pf-op pf-op-start" onclick="nav.go('run/${esc(u.id)}')">${esc(t('c.view'))}</button>
+        <button class="pf-op pf-op-danger" onclick="runDelete('${esc(u.id)}')">${esc(t('c.delete'))}</button>
       </div>
     </div>`;
-  $('#view').innerHTML = `
-    <div class="pl-wrap">
-    <div class="page-head">
-      <div><h1>运行记录</h1><div class="sub">每一次流程执行的实例：步骤状态、生成内容、产物文件全程保留</div></div>
-    </div>
-    <div class="card">
-      <div class="card-h"><div><div class="ct">全部运行</div><div class="cs">点击进入运行控制台</div></div></div>
-      <div class="set-row">
-        ${runs.length ? runs.map(row).join('')
-          : `<div class="pf-empty">还没有运行记录 —— 到流程列表点「运行」启动一次</div>`}
-      </div>
-    </div>
-    </div>`;
+  $('#view').innerHTML = `<div class="pl-list">${
+    runs.length?runs.map(row).join(''):`<div class="pf-empty">${esc(t('home.recentEmpty'))}</div>`}</div>`;
 };
 window.runDelete = async function(id){
-  if(!confirm('确定删除运行「'+id+'」？工作区产物一并删除。')) return;
+  if(!confirm(t('run.delConfirm'))) return;
   await _api('/api/runs/'+id, {method:'DELETE'}).catch(()=>({}));
-  toast('已删除'); renderRuns();
+  toast(t('run.deleted'));
+  window.renderSidebarLists();
+  renderRuns();
 };
 
-/* ---------------- 运行控制台 ---------------- */
-let RUN = null;          // 当前 run 对象
-let ARTS = {};           // 产物快照
-let ES = null;           // EventSource
-let SEEN = {};           // 每步已渲染字符数（增量渲染）
-let ACTIVE_TAB = 'stream';
-let ACTIVE_STEP = null;  // 当前展开的步骤
-let REVISER = {};        // 步骤修订进行中标记
-let CONVO = [];          // 对话面板消息 [{role,text}]
-let _POLL = null;
+/* ---------------- 控制台状态 ---------------- */
+let RUN = null;
+let ARTS = {};
+let LOGS = [];
+let ES = null;
+let ACTIVE_STEP = null;
+let REVISER = {};
+let CONVO = [];
+let TRACE = {};
+let FOLD = {};      // 步骤 → 是否展开全部轨迹
 
-function runStatusBadge(u){
-  return `<span class="run-badge rb-${esc(u.status)}">${ST_ZH[u.status]||esc(u.status)}</span>`;
+function chromeActions(u){
+  const b = [];
+  if(u.status==='waiting') b.push(`<button class="btn btn-primary btn-sm" onclick="runContinue()">${esc(t('run.continue'))}</button>`);
+  if(u.status==='running') b.push(`<button class="btn btn-ghost btn-sm" onclick="runCancel()">${ico('stop')}${esc(t('run.stop'))}</button>`);
+  if(u.status!=='running' && u.status!=='waiting') b.push(`<button class="btn btn-ghost btn-sm" onclick="runRerun(0)">${ico('refresh')}${esc(t('run.rerun'))}</button>`);
+  b.push(`<button class="btn btn-ghost btn-sm" onclick="runDelete('${esc(u.id)}')">${esc(t('c.delete'))}</button>`);
+  return b.join('');
 }
 
 window.renderRunConsole = async function(runId){
-  $('#view').innerHTML = '<div class="loading-bar"></div>';
+  window.viewLoading();
   const d = await _api('/api/runs/'+encodeURIComponent(runId)).catch(()=>null);
-  if(!d || !d.run){ toast('运行不存在'); nav.go('runs'); return; }
-  RUN = d.run; ARTS = d.artifacts||{};
-  SEEN = {}; CONVO = CONVO.filter(m=>m._run===runId);
+  if(!d || !d.run){ toast(t('run.notFound')); nav.go('runs'); return; }
+  RUN = d.run; ARTS = d.artifacts||{}; LOGS = d.logs||[];
+  WS = [];                               /* 清单跟着运行走，切回来重新拉 */
+  TRACE = {}; FOLD = {}; CONVO = CONVO.filter(m=>m._run===runId);
+  if(ACTIVE_STEP===null || ACTIVE_STEP>=(RUN.steps||[]).length)
+    ACTIVE_STEP = Math.min(RUN.cur_step||0, Math.max(0,(RUN.steps||[]).length-1));
   drawConsole();
   connectStream(runId);
 };
@@ -93,343 +82,638 @@ window.renderRunConsole = async function(runId){
 function drawConsole(){
   const u = RUN;
   const steps = u.steps||[];
-  if(ACTIVE_STEP===null && steps.length) ACTIVE_STEP = Math.min(u.cur_step||0, steps.length-1);
+  const done = steps.filter(s=>s.status==='done').length;
+  const pct = steps.length ? Math.round(done/steps.length*100) : 0;
+  window.__chrome = {title:u.label||u.pipeline, icon:'runs', actions:chromeActions(u)};
+  window.paintChrome && window.paintChrome();
+  $('#view').classList.add('with-composer');
+
   $('#view').innerHTML = `
-    <div class="pl-wrap">
-    <div class="page-head">
-      <div><h1>${esc(u.label||u.pipeline)} ${runStatusBadge(u)}</h1>
-        <div class="sub">${esc(u.id)} · 工作区 modex-data/workspaces/${esc(u.id.startsWith('run-')?u.id:'run-'+u.id)}</div></div>
-      <div style="display:flex;gap:10px">
-        ${u.status==='waiting' ? `<button class="btn btn-primary" onclick="runContinue()">继续执行</button>` : ''}
-        ${u.status==='running' ? `<button class="btn btn-ghost" onclick="runCancel()">停止</button>` : ''}
-        <button class="btn btn-ghost" onclick="nav.go('runs')">返回列表</button>
-      </div>
+    <div class="rp-bar">
+      <div class="run-badge rb-${esc(u.status)}">${esc(window.RUN_ST()[u.status]||u.status)}</div>
+      <div class="rp-track"><div class="rp-fill" style="width:${pct}%"></div></div>
+      <span class="rp-pct">${pct}%</span>
+      <span class="muted-sm">${esc(t('run.stepOf',{done, total:steps.length}))}</span>
     </div>
 
-    <div class="run-grid">
-      <div class="run-main">
-        <!-- 步骤进度 -->
-        <div class="card">
-          <div class="card-h">
-            <div><div class="ct">执行进度</div><div class="cs">步骤 ${Math.min((u.cur_step||0)+ (u.status==='done'?0:0), steps.length)||0} / ${steps.length}${u.waiting_reason==='checkpoint'?' · 检查点等待确认':''}</div></div>
-            ${u.status==='done'?'<span class="run-badge rb-done">全部完成</span>':''}
-          </div>
-          <div class="run-steps">
-            ${steps.map((s,i)=>stepRail(s,i)).join('')}
-          </div>
-        </div>
+    ${u.brief?`<div class="card"><div class="card-h"><div><div class="ct">${esc(t('run.brief'))}</div>
+      <div class="cs">${esc(t('run.briefSub'))}</div></div>
+      <button class="btn btn-ghost btn-sm" onclick="toggleBrief()">${esc(t('c.view'))}</button></div>
+      <div class="brief-text" id="briefBox">${esc(u.brief)}</div></div>`:''}
 
-        <!-- 产物面板 -->
-        <div class="card">
-          <div class="card-h">
-            <div><div class="ct">产物文件</div><div class="cs">步骤输出实时写入工作区，可下载</div></div>
-            <button class="btn btn-ghost btn-sm" onclick="runRefreshArts()">刷新</button>
-          </div>
-          <div class="set-row" id="runArts">
-            ${Object.keys(ARTS).length ? Object.keys(ARTS).map(n=>`
-              <div class="pl-card-row art-row">
-                <div class="pl-row-main">
-                  <div class="pl-row-title"><span class="pl-row-name">${esc(n)}</span>
-                    <span class="muted" style="font-size:11.5px">${(ARTS[n]||'').length} 字</span></div>
-                </div>
-                <div class="pl-row-ops">
-                  <button class="pf-op" onclick="runViewArt('${esc(n)}')">查看</button>
-                  <a class="pf-op" href="/api/runs/${esc(u.id)}/artifacts/${esc(n)}" download>下载</a>
-                </div>
-              </div>`).join('')
-            : `<div class="pf-empty">还没有产物文件</div>`}
-          </div>
-        </div>
-      </div>
+    ${u.error?`<div class="rs-fail-msg">${esc(u.error)}</div>`:''}
 
-      <!-- 右栏：对话 / 局部修改 -->
-      <div class="run-side">
-        <div class="card">
-          <div class="card-h"><div><div class="ct">对话 · 局部修改</div>
-            <div class="cs">选择步骤，用自然语言让 AI 修改产物内容</div></div></div>
-          <div class="pv-form" style="padding:2px 2px 12px">
-            <div class="pv-f"><label class="pv-label">目标步骤</label>
-              <select class="pv-input" id="rvStep">
-                ${steps.map((s,i)=>`<option value="${i}" ${i===ACTIVE_STEP?'selected':''}>${i+1}. ${esc(s.label||s.key)}${s.out?('（'+esc(s.out)+'）'):''}</option>`).join('')}
-              </select></div>
-            <div class="pv-f"><label class="pv-label">修改要求</label>
-              <textarea class="pv-input" id="rvText" rows="3" placeholder="如：把第二段的数据来源改成国家统计局 2023 年口径，其余不动"></textarea></div>
-            <button class="btn btn-primary" onclick="runRevise()">发送修改指令</button>
-            <div class="pv-foot-hint" id="rvHint">AI 会输出修改后的完整文件并写回工作区，可随时再次修改。</div>
-          </div>
-          <div id="runConvo"></div>
-        </div>
-      </div>
-    </div>
-    <div style="height:60px"></div>
-    </div>`;
+    <div class="transcript" id="transcript">${steps.map((s,i)=>stepBlock(s,i)).join('')}</div>
+    ${procCard()}
+
+    <div class="sect">${esc(t('run.artifacts'))}
+      <span class="muted">(<span id="wsCount">${WS.length}</span>)</span>
+      ${['running','revising','waiting'].includes(u.status)?`<span class="ws-live"><i></i>${esc(t('run.wsLive'))}</span>`:''}
+      <span class="spacer"></span>
+      <button class="pf-op" onclick="wsTick()">${ico('refresh')}${esc(t('run.refresh'))}</button></div>
+    <div class="pl-list" id="runArts">${wsRows()}</div>
+
+    ${composerHtml(u)}`;
   drawConvo();
+  wsWatch();                       /* 跑动中才轮询，状态一变这里就会停表 */
+  if(!WS.length) wsTick();
 }
 
-function stepRail(s, i){
+function toggleBriefOpen(){
+  const b = document.getElementById('briefBox');
+  if(b) b.classList.toggle('hidden');
+}
+window.toggleBrief = toggleBriefOpen;
+
+/* ---------------- 工作区：实时文件面板 ----------------
+   智能体是在子进程里直接写盘的，没有任何事件可订阅，所以跑动期间定点轮询
+   /files（一次 scandir，几十个小文件而已）。停下就立刻停表，不留后台定时器。 */
+let WS = [];
+let WS_TIMER = null;
+const WS_HOT_SEC = 20;    /* 「刚写入」按 mtime 距今算，不按轮询相位算 ——
+                             后者会让标记只活 0–3 秒，写盘时机差一点就整轮看不见 */
+
+const fmtB = n => { n = n || 0;
+  return n < 1024 ? n + ' B' : n < 1048576 ? (n/1024).toFixed(1) + ' KB' : (n/1048576).toFixed(1) + ' MB'; };
+const ago = sec => { if(!sec) return ''; const d = Math.max(0, Math.floor(Date.now()/1000) - sec);
+  return d < 60 ? 'now' : window.ffRelDate(new Date(sec*1000).toISOString()); };
+const outNames = () => new Set(((RUN && RUN.steps) || []).map(s => s.out).filter(Boolean));
+
+function wsRows(){
+  const outs = outNames();
+  const files = WS.length ? WS : [...outs].map(n => ({path:n, bytes:0, mtime:0, kind:'text'}));
+  if(!files.length) return `<div class="pf-empty">${esc(t('run.noArtifacts'))}</div>`;
+  return files.map(f => {
+    const isOut = outs.has(f.path);
+    const chg = f.mtime && (Date.now()/1000 - f.mtime) < WS_HOT_SEC;
+    return `
+    <div class="pl-card-row art-row">
+      <div class="pl-row-main"><div class="pl-row-title">
+        <span class="ws-ic">${ico(WS_ICON[f.kind] || 'file')}</span>
+        <span class="pl-row-name mono">${esc(f.path)}</span>
+        ${isOut?`<span class="ff-tag">${esc(t('run.wsOut'))}</span>`:''}
+        ${chg?`<span class="ws-chip">${esc(t('run.wsChg'))}</span>`:''}
+        <span class="muted-sm">${f.bytes?esc(fmtB(f.bytes)):'·'}${f.mtime?' · '+esc(ago(f.mtime)):''}</span></div></div>
+      <div class="pl-row-ops" onclick="event.stopPropagation()">
+        <button class="pf-op" onclick="runViewArt('${jsq(f.path)}')">${esc(t('c.view'))}</button>
+        <a class="pf-op" href="${ART_URL(RUN.id,f.path)}" download>${esc(t('c.download'))}</a>
+      </div>
+    </div>`;
+  }).join('');
+}
+const WS_ICON = {image:'eye', pdf:'file', text:'file', binary:'package'};
+
+function wsPaint(){
+  const box = document.getElementById('runArts');
+  if(box) box.innerHTML = wsRows();
+  const n = document.getElementById('wsCount');
+  if(n) n.textContent = String(WS.length);
+}
+
+async function wsTick(){
+  if(!RUN) return;
+  /* 面板已经不在页面上（切到别的视图）→ 顺手停表，别留一个后台轮询 */
+  if(!document.getElementById('runArts')){
+    if(WS_TIMER){ clearInterval(WS_TIMER); WS_TIMER = null; }
+    return;
+  }
+  const d = await _api('/api/runs/'+encodeURIComponent(RUN.id)+'/files').catch(()=>null);
+  if(!d || !d.files) return;
+  WS = d.files;
+  wsPaint();
+}
+
+function wsWatch(){
+  const live = RUN && ['running','revising','waiting'].includes(RUN.status);
+  if(live && !WS_TIMER) WS_TIMER = setInterval(wsTick, 3000);
+  if(!live && WS_TIMER){ clearInterval(WS_TIMER); WS_TIMER = null; }
+}
+
+/* ---------------- 步骤：转录块 ---------------- */
+const KIND_ICON = {tool:'tool', status:'chevron', note:'bolt', err:'warn'};
+
+function traceLines(s, i){
+  const rows = (TRACE[i] && TRACE[i].length) ? TRACE[i] : (s.trace||[]);
+  if(!rows.length) return '';
+  const all = rows.map(x=>`<div class="ts-line ${esc(x.kind||'status')}">${ico(KIND_ICON[x.kind]||'tool')}
+    ${x.name?`<b>${esc(x.name)}</b>`:''}<span>${esc(x.text||'')}</span></div>`).join('');
+  if(rows.length<=10 || FOLD[i]) return all;
+  return `<div class="ts-line">${ico('chevron')}<span>${rows.length-10} ${esc(t('run.moreLines')||'')}</span></div>`
+    + rows.slice(-10).map(x=>`<div class="ts-line ${esc(x.kind||'status')}">${ico(KIND_ICON[x.kind]||'tool')}
+        ${x.name?`<b>${esc(x.name)}</b>`:''}<span>${esc(x.text||'')}</span></div>`).join('');
+}
+
+function stepLog(s, i){
+  if(s.meta && s.meta.log) return s.meta.log;
+  if(!s.key) return '';
+  const p = String(i+1).padStart(2,'0')+'_'+s.key+'_';
+  const hit = LOGS.find(L=>L.name.startsWith(p));
+  return hit ? hit.name : '';
+}
+
+function stepBlock(s, i){
+  const RS = window.RUN_ST();
   const st = s.status||'pending';
-  const active = i===ACTIVE_STEP;
-  const open = active && (st==='running'||st==='revising'||st==='done'||st==='failed');
+  const open = i===ACTIVE_STEP;
+  const meta = s.meta||{};
+  const art = s.out && ARTS[s.out]!==undefined;
+  const iconBody = st==='done' ? ico('check') : String(i+1);
+  const stateCls = st==='done'?'is-done':st==='running'?'is-running':st==='failed'?'is-failed':
+                   st==='revising'?'is-running':st==='waiting'?'is-waiting':'';
   return `
-  <div class="run-step ${open?'open':''} ${'rs-'+st}" data-i="${i}">
-    <div class="run-step-head" onclick="runToggleStep(${i})">
-      <div class="step-no-sm ${'sn-'+st}">${i+1}</div>
-      <div class="run-step-main">
-        <div class="run-step-name">${esc(s.label||s.key)} ${REVISER[i]?'<span class="run-badge rb-revising">修订中</span>':''}</div>
-        <div class="run-step-meta">
-          <code>${esc(s.key)}</code>${s.skill?`<span>${esc(s.skill)}</span>`:''}
-          ${s.out?`<span>产物 ${esc(s.out)}</span>`:''}
-          ${s.checkpoint?'<span>检查点</span>':''}
-          <span class="run-badge rb-${esc(st)}">${ST_ZH[st]||st}</span>
-        </div>
+  <div class="ts-step ${stateCls} ${open?'open':''}" data-i="${i}">
+    <div class="ts-head" onclick="runToggleStep(${i})">
+      <div class="ts-ico">${iconBody}</div>
+      <div class="ts-name">${esc(s.label||s.key)}</div>
+      <div class="ts-meta">
+        ${s.engine_used?`<span>${esc(window.ENGINE_LABEL(s.engine_used))}</span>`:''}
+        ${meta.tools?`<span>${meta.tools} ${esc(t('run.toolUnit'))}</span>`:''}
+        ${meta.duration_ms?`<span>${dur(meta.duration_ms)}</span>`:''}
+        <span class="run-badge rb-${esc(st)}">${esc(RS[st]||st)}</span>
+        ${st!=='running'?`<button class="pf-op" onclick="event.stopPropagation();runRerun(${i})">${ico('refresh')}${esc(t('run.rerunFrom'))}</button>`:''}
+        ${(()=>{ const lg=stepLog(s,i); return lg?`<button class="pf-op" onclick="event.stopPropagation();runShowLog('${jsq(lg)}')" title="${esc(t('run.logHint'))}">${ico('terminal')}${esc(t('run.log'))}</button>`:''; })()}
       </div>
     </div>
-    <div class="run-step-body" ${open?'':'style="display:none"'}>
-      <pre class="run-delta" id="delta-${i}">${esc((s.delta||'').slice(-8000))}</pre>
+    <div class="ts-body">
+      ${s.skill?`<div class="ts-line"><b>${esc(t('ed.mainSkill'))}</b><span>${esc(s.skill)}</span></div>`:''}
+      ${traceLines(s,i)}
+      ${(s.delta||'').trim()?`<pre class="run-delta" id="delta-${i}">${esc((s.delta||'').slice(-8000))}</pre>`:''}
+      ${st==='failed'&&s.msg?`<div class="ts-line err">${ico('warn')}<span>${esc(s.msg)}</span></div>`:''}
+      ${art?`<div class="ts-art">${ico('file')}<code>${esc(s.out)}</code>
+        <button class="pf-op" onclick="runViewArt('${jsq(s.out)}')">${esc(t('c.view'))}</button>
+        <span class="muted">${esc(t('c.words',{n:(ARTS[s.out]||'').length}))}</span></div>`:''}
     </div>
   </div>`;
 }
+
+/* ---------------- 右上角：进程面板 ----------------
+   只读 RUN.steps 的状态，不另存一份 —— 转录区和进程卡永远说同一句话。 */
+const PROC_ICON = {
+  done:      {ic:'checkCircle', cls:'ok'},
+  running:   {ic:'spinner',     cls:'live'},
+  revising:  {ic:'spinner',     cls:'live'},
+  waiting:   {ic:'pause',       cls:'wait'},
+  failed:    {ic:'warn',        cls:'bad'},
+  cancelled: {ic:'circle',      cls:'dim'},
+  pending:   {ic:'circle',      cls:'dim'},
+};
+let PROC_OPEN = true;
+
+function procRows(){
+  const steps = (RUN && RUN.steps) || [];
+  return steps.map((s,i)=>{
+    const st = s.status || 'pending';
+    const m = PROC_ICON[st] || PROC_ICON.pending;
+    return `<button class="pc-row ${m.cls}${i===ACTIVE_STEP?' on':''}" onclick="procJump(${i})">
+      <span class="pc-ic ${m.cls==='live'?'sp':''}">${ico(m.ic)}</span>
+      <span class="pc-t">${esc(s.label||s.key||(''+(i+1)))}</span>
+      ${st==='failed'&&s.meta&&s.meta.log
+        ? `<span class="pc-log" role="button" title="${esc(t('run.log'))}"
+             onclick="event.stopPropagation();runShowLog('${jsq(s.meta.log)}')">${ico('terminal')}</span>`
+        : ''}</button>`;
+  }).join('');
+}
+
+function procCard(){
+  const steps = (RUN && RUN.steps) || [];
+  if(!steps.length) return '';
+  const done = steps.filter(s=>s.status==='done').length;
+  return `<aside class="proc-card${PROC_OPEN?'':' min'}" id="procCard">
+    <div class="pc-head">
+      <span class="pc-title">${esc(t('run.proc'))}</span>
+      <span class="pc-count">${done}/${steps.length}</span>
+      <span class="spacer"></span>
+      <button class="pc-x" onclick="procToggle()" title="${esc(t('run.procToggle'))}">${ico(PROC_OPEN?'chevronUp':'chevronDown')}</button>
+    </div>
+    <div class="pc-list">${procRows()}</div></aside>`;
+}
+
+function paintProc(){
+  const card = document.getElementById('procCard');
+  if(!card){ return; }
+  const steps = (RUN && RUN.steps) || [];
+  const done = steps.filter(s=>s.status==='done').length;
+  card.classList.toggle('min', !PROC_OPEN);
+  card.querySelector('.pc-count').textContent = done+'/'+steps.length;
+  card.querySelector('.pc-x').innerHTML = ico(PROC_OPEN?'chevronUp':'chevronDown');
+  const list = card.querySelector('.pc-list');
+  if(PROC_OPEN) list.innerHTML = procRows();
+}
+
+window.procToggle = function(){
+  PROC_OPEN = !PROC_OPEN;
+  const card = document.getElementById('procCard');
+  if(!card) return;
+  card.classList.toggle('min', !PROC_OPEN);
+  card.querySelector('.pc-x').innerHTML = ico(PROC_OPEN?'chevronUp':'chevronDown');
+  card.querySelector('.pc-list').innerHTML = PROC_OPEN ? procRows() : '';
+};
+window.procJump = function(i){
+  ACTIVE_STEP = i;                  // 点进程卡就是"我要看这一步"，已展开的也要跟过来
+  const box = document.getElementById('transcript');
+  const el = box && box.children[i];
+  const s = document.getElementById('rvStep');
+  if(s) s.value = String(i);
+  if(!el){ paintProc(); return; }
+  if(!el.classList.contains('open')){
+    const head = el.querySelector('.ts-head');
+    if(head) head.click();          // 展开走既有开合逻辑，别在这儿复制一份状态机
+  }
+  paintProc();
+  el.scrollIntoView({block:'center', behavior:'smooth'});
+};
+
+/* ---------------- 底部输入面板 ---------------- */
+function composerHtml(u){
+  const steps = u.steps||[];
+  const running = u.status==='running'||u.status==='revising';
+  const cur = steps[Math.min(u.cur_step||0, steps.length-1)] || {};
+  return `
+  <div class="composer">
+    <div class="composer-inner">
+      ${running?`<div class="cp-state">${ico('bolt')}<span>${esc(t('run.runningOn',{label:cur.label||cur.key||''}))}</span>
+        <span class="spacer"></span><button class="pf-op" onclick="runCancel()">${esc(t('run.stop'))}</button></div>`:''}
+      ${u.status==='waiting'?`<div class="cp-state">${ico('play')}<span>${esc(t('run.checkpointWait').trim())}</span>
+        <span class="spacer"></span><button class="pf-op pf-op-start" onclick="runContinue()">${esc(t('run.continue'))}</button></div>`:''}
+      <div id="runConvo"></div>
+      <div class="cp-row">
+        ${ffSelect(steps.map((s,i)=>({v:String(i), label:(i+1)+'. '+(s.label||s.key)})),
+          String(ACTIVE_STEP), {id:'rvStep', cls:'ff-ghost'})}
+        <textarea class="cp-input" id="rvText" rows="1" placeholder="${esc(t('run.composerPh'))}"
+          oninput="cpGrow(this)" onkeydown="cpKey(event)"></textarea>
+        <button class="cp-send" onclick="runRevise()" title="${esc(t('run.send'))}">${ico('send')}</button>
+      </div>
+    </div>
+  </div>`;
+}
+window.cpGrow = function(el){ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,160)+'px'; };
+window.cpKey = function(e){ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); runRevise(); } };
 
 /* ---------------- SSE ---------------- */
 function connectStream(runId){
   if(ES){ ES.close(); ES=null; }
   const es = new EventSource('/api/runs/'+encodeURIComponent(runId)+'/stream');
   ES = es;
-  es.onmessage = e => {
-    let ev; try{ ev = JSON.parse(e.data); }catch(_){ return; }
-    handleEvent(ev, runId);
-  };
-  es.onerror = () => { /* EventSource 自动重连 */ };
+  es.onmessage = e => { let ev; try{ ev = JSON.parse(e.data); }catch(_){ return; } handleEvent(ev, runId); };
 }
 
 function handleEvent(ev, runId){
   if(!RUN || RUN.id!==runId) return;
   if(ev.type==='state'){
-    // state 快照：权威状态。delta 非空时覆盖本地（去重防重连重复）；空则保留流式缓冲
-    const prevStatus = RUN.status;
+    const prev = RUN.status;
     const remote = ev.run;
     if(remote){
       (remote.steps||[]).forEach((rs,i)=>{
         const local = RUN.steps && RUN.steps[i];
-        if(rs.delta && rs.delta.length){
-          rs._buf = rs.delta;
-        }else if(local && local.delta && !local._buf){
-          rs._buf = local.delta;   // 保留流式中途已收的增量
-        }
+        if(local && local.delta && !rs.delta) rs.delta = local.delta;
+        if(local && (TRACE[i]||[]).length && !(rs.trace||[]).length) rs.trace = TRACE[i];
       });
       RUN = remote;
-      refreshProgress(); refreshHeader();
-      if(prevStatus!==RUN.status && ['done','failed','cancelled','waiting'].includes(RUN.status)){
-        drawConsole();
-      }
+      if(ev.artifacts) ARTS = ev.artifacts;
+      if(prev!==RUN.status){ redraw(); window.renderSidebarLists(); }
+      else refreshTranscript();
     }
     return;
   }
   if(ev.type==='delta'){
     const i = ev.index;
-    SEEN[i] = (SEEN[i]||0) + ev.text.length;
     if(RUN.steps && RUN.steps[i]){
       RUN.steps[i].delta = (RUN.steps[i].delta||'') + ev.text;
       RUN.steps[i].status = 'running';
     }
     updateDeltaPane(i);
-    markStepBadge(i, 'running');
   }
   else if(ev.type==='step_start'){
-    if(RUN.steps && RUN.steps[ev.index]){ RUN.steps[ev.index].status='running'; RUN.steps[ev.index].delta=''; RUN.steps[ev.index]._buf=''; }
-    SEEN[ev.index]=0;
-    RUN.cur_step = ev.index;
-    openStep(ev.index);
-    markStepBadge(ev.index, 'running');
-    refreshProgress();
+    if(RUN.steps && RUN.steps[ev.index]){ RUN.steps[ev.index].status='running'; RUN.steps[ev.index].delta=''; }
+    TRACE[ev.index]=[]; FOLD[ev.index]=false;
+    RUN.cur_step = ev.index; ACTIVE_STEP = ev.index;
+    redraw();
   }
   else if(ev.type==='step_done'){
-    if(RUN.steps && RUN.steps[ev.index]){ RUN.steps[ev.index].status='done'; if(ev.step && ev.step.delta) RUN.steps[ev.index]._buf = ev.step.delta; }
-    markStepBadge(ev.index, 'done');
-    toast(`第 ${ev.index+1} 步完成（${ev.chars} 字）`, true);
+    if(RUN.steps && RUN.steps[ev.index]){
+      RUN.steps[ev.index].status='done';
+      if(ev.step) Object.assign(RUN.steps[ev.index], ev.step);
+    }
+    runRefreshArts(true);
+    redraw();
   }
-  else if(ev.type==='checkpoint'){
-    toast('检查点：等待你确认后继续', true);
+  else if(ev.type==='tool' || ev.type==='status' || ev.type==='note'){
+    appendTrace(ev.index, {kind:ev.type, name:ev.name||'', text:ev.text||''});
   }
+  else if(ev.type==='checkpoint'){ toast(t('run.checkpointWait').trim(), true); }
   else if(ev.type==='revise_delta'){
     REVISER[ev.index] = true;
     if(RUN.steps && RUN.steps[ev.index]){
       RUN.steps[ev.index].status='revising';
       RUN.steps[ev.index].delta = (RUN.steps[ev.index].delta||'') + ev.text;
-      RUN.steps[ev.index]._buf = RUN.steps[ev.index].delta;
     }
-    markStepBadge(ev.index, 'revising');
     updateDeltaPane(ev.index);
   }
   else if(ev.type==='revise_done'){
     REVISER[ev.index] = false;
-    markStepBadge(ev.index, 'done');
-    CONVO.push({_run:RUN.id, role:'assistant', text:`已按要求改写「${(RUN.steps[ev.index]||{}).label||''}」，可继续追加要求。`});
-    drawConvo();
+    CONVO.push({_run:RUN.id, role:'assistant', text:t('run.reviseDone',{label:(RUN.steps[ev.index]||{}).label||''})});
+    redraw();
     runRefreshArts(true);
   }
   else if(ev.type==='error'){
-    toast('出错了：'+(ev.message||''), false);
-    if(ev.index!==undefined) markStepBadge(ev.index, 'failed');
+    toast(ev.message||'error');
+    if(ev.index!==undefined) appendTrace(ev.index, {kind:'err', name:'', text:ev.message||''});
   }
-  else if(ev.type==='done'){
-    refreshHeader();
-  }
+}
+
+function redraw(){ drawConsole(); }
+function refreshTranscript(){
+  const box = document.getElementById('transcript');
+  if(box) box.innerHTML = (RUN.steps||[]).map((s,i)=>stepBlock(s,i)).join('');
+  paintProc();          /* 状态事件只走这条，进程卡不能落后于转录 */
 }
 
 function updateDeltaPane(i){
   const el = document.getElementById('delta-'+i);
-  const s = RUN.steps && RUN.steps[i];
-  if(el && s){ el.textContent = (s.delta||'').slice(-8000); autoScroll(el); }
+  if(el){ el.textContent = ((RUN.steps[i]||{}).delta||'').slice(-8000); autoScroll(el); }
 }
-
+function appendTrace(i, line){
+  if(i===undefined || i===null) return;
+  TRACE[i] = (TRACE[i]||[]).concat([line]);
+  if(TRACE[i].length > 400) TRACE[i] = TRACE[i].slice(-300);
+  const box = document.querySelector(`.ts-step[data-i="${i}"] .ts-body`);
+  if(!box){ refreshTranscript(); return; }
+  const d = document.createElement('div');
+  d.className = 'ts-line '+(line.kind||'status');
+  d.innerHTML = ico(KIND_ICON[line.kind]||'tool')
+    + (line.name?`<b>${esc(line.name)}</b>`:'')+`<span>${esc(line.text||'')}</span>`;
+  const pre = box.querySelector('.run-delta');
+  box.insertBefore(d, pre || (box.querySelector('.ts-art') || null));
+}
 function autoScroll(el){
   if(!el) return;
-  const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-  if(nearBottom) el.scrollTop = el.scrollHeight;
-}
-
-function openStep(i){
-  ACTIVE_STEP = i;
-  document.querySelectorAll('.run-step').forEach(el=>{
-    const idx = Number(el.dataset.i);
-    const open = idx===i;
-    el.classList.toggle('open', open);
-    const body = el.querySelector('.run-step-body');
-    if(body) body.style.display = open?'':'none';
-  });
-  const el = document.getElementById('delta-'+i);
-  if(el) el.scrollTop = el.scrollHeight;
+  if(el.scrollHeight - el.scrollTop - el.clientHeight < 80) el.scrollTop = el.scrollHeight;
 }
 
 window.runToggleStep = function(i){
-  const el = document.querySelector(`.run-step[data-i="${i}"]`);
+  const el = document.querySelector(`.ts-step[data-i="${i}"]`);
   if(!el) return;
   const open = !el.classList.contains('open');
   el.classList.toggle('open', open);
-  const body = el.querySelector('.run-step-body');
-  if(body) body.style.display = open?'':'none';
-  if(open) ACTIVE_STEP = i;
+  if(open){ ACTIVE_STEP = i; const s=document.getElementById('rvStep'); if(s) s.value=String(i); }
+  paintProc();          /* 进程卡的高亮跟着 ACTIVE_STEP 走，直接点转录标题也一样 */
 };
 
-function markStepBadge(i, st){
-  const el = document.querySelector(`.run-step[data-i="${i}"]`);
-  if(el){
-    el.classList.remove('rs-pending','rs-running','rs-done','rs-failed','rs-cancelled','rs-revising');
-    el.classList.add('rs-'+st);
-    const no = el.querySelector('.step-no-sm');
-    if(no){ no.className = 'step-no-sm sn-'+st; }
-  }
-  const badge = el ? el.querySelector('.run-badge') : null;
-  if(badge){ badge.className = 'run-badge rb-'+st; badge.textContent = ST_ZH[st]||st; }
-}
-
-function refreshProgress(){
-  const u = RUN;
-  const el = document.querySelector('.run-steps');
-  if(el && u.steps) el.innerHTML = u.steps.map((s,i)=>stepRail(s,i)).join('');
-  const cs = document.querySelector('.run-main .card .cs');
-  if(cs) cs.textContent = `步骤 ${(u.cur_step||0)} / ${(u.steps||[]).length}${u.waiting_reason==='checkpoint'?' · 检查点等待确认':''}`;
-}
-
-function refreshHeader(){
-  const h1 = document.querySelector('#view h1');
-  if(h1 && RUN){ h1.innerHTML = esc(RUN.label||RUN.pipeline)+' '+runStatusBadge(RUN); }
-  const ph = document.querySelector('.page-head > div:last-child');
-  // 按钮区重绘
-  const phEl = document.querySelector('.page-head');
-  if(phEl && RUN){
-    const btns = `
-      ${RUN.status==='waiting' ? `<button class="btn btn-primary" onclick="runContinue()">继续执行</button>` : ''}
-      ${RUN.status==='running' ? `<button class="btn btn-ghost" onclick="runCancel()">停止</button>` : ''}
-      <button class="btn btn-ghost" onclick="nav.go('runs')">返回列表</button>`;
-    const wrap = phEl.querySelector('div[style]');
-    if(wrap) wrap.innerHTML = btns;
-  }
-}
-
+/* ---------------- 操作 ---------------- */
 window.runContinue = async function(){
   const r = await _post('/api/runs/'+RUN.id+'/continue');
   if(r.detail){ toast(r.detail); return; }
-  toast('已继续执行', true);
+  toast(t('st.running'), true);
 };
 window.runCancel = async function(){
   const r = await _post('/api/runs/'+RUN.id+'/cancel');
   if(r.detail){ toast(r.detail); return; }
-  toast('已发送停止信号');
+  toast(t('st.cancelled'));
+};
+window.runRerun = async function(index){
+  const s = (RUN.steps||[])[index]||{};
+  const tail = (RUN.steps||[]).length - index - 1;
+  let msg = t('run.rerunConfirm',{n:index+1, label:s.label||s.key||''});
+  if(tail>0) msg += '\n' + t('run.rerunTail',{n:tail}).replace(/^\\n/,'');
+  if(!confirm(msg)) return;
+  const r = await _post('/api/runs/'+RUN.id+'/rerun', {index}).catch(e=>({detail:String(e)}));
+  if(r.detail){ toast(r.detail); return; }
+  toast(t('run.rerunDone'), true);
+  TRACE = {}; FOLD = {}; ACTIVE_STEP = index;
+  renderRunConsole(RUN.id);
 };
 window.runRefreshArts = async function(silent){
   const d = await _api('/api/runs/'+RUN.id+'/artifacts').catch(()=>null);
-  if(!d) return;
-  ARTS = d.artifacts||{};
-  const box = document.getElementById('runArts');
-  if(box) box.innerHTML = Object.keys(ARTS).length ? Object.keys(ARTS).map(n=>`
-      <div class="pl-card-row art-row">
-        <div class="pl-row-main">
-          <div class="pl-row-title"><span class="pl-row-name">${esc(n)}</span>
-            <span class="muted" style="font-size:11.5px">${(ARTS[n]||'').length} 字</span></div>
-        </div>
-        <div class="pl-row-ops">
-          <button class="pf-op" onclick="runViewArt('${esc(n)}')">查看</button>
-          <a class="pf-op" href="/api/runs/${esc(RUN.id)}/artifacts/${esc(n)}" download>下载</a>
-        </div>
-      </div>`).join('')
-    : `<div class="pf-empty">还没有产物文件</div>`;
-  if(!silent) toast('产物已刷新', true);
+  if(d) ARTS = d.artifacts||{};
+  await wsTick();
+  if(!silent) toast(t('run.refresh'), true);
 };
-window.runViewArt = function(n){
-  const text = ARTS[n]||'';
+
+/* 预览一个工作区文件：文本 / markdown（可切原文）、图片、PDF 就地看，
+   pptx / docx 这类浏览器画不出来的，给下载和「在文件夹中显示」。 */
+let WS_MD_RAW = false;
+let WS_VIEW = null;
+window.runViewArt = async function(n){
+  const stale = document.getElementById('runArtRoot');
+  if(stale) stale.remove();
   _lockScroll(true);
+  const meta = WS.find(f => f.path === n) || {path:n, kind:'text'};
   const root = document.createElement('div');
   root.id = 'runArtRoot';
   root.innerHTML = `<div class="modal open" onclick="if(event.target===this)runCloseArt()">
     <div class="modal-box sk-view-modal">
-      <div class="modal-top"><div class="pv-head"><h3>${esc(n)}</h3></div>
+      <div class="modal-top"><div class="pv-head"><h3>${esc(n)}</h3>
+        <span class="muted-sm">${esc(fmtB(meta.bytes))}</span></div>
         <button class="modal-x" onclick="runCloseArt()">×</button></div>
-      <div class="sk-view-body"><pre class="sk-pre">${esc(text)}</pre></div>
+      <div class="sk-view-body" id="wsBody"><div class="lg-empty">${esc(t('run.wsLoading'))}</div></div>
       <div class="sk-view-foot">
-        <button class="btn btn-ghost btn-sm" onclick="runCloseArt()">关闭</button>
-        <a class="btn btn-primary btn-sm" href="/api/runs/${esc(RUN.id)}/artifacts/${esc(n)}" download>下载</a>
+        <span class="ws-md-toggle" id="wsToggle" hidden>
+          <button class="pf-op" onclick="wsSetView(false)">${esc(t('run.wsRendered'))}</button>
+          <button class="pf-op" onclick="wsSetView(true)">${esc(t('run.wsRaw'))}</button></span>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-sm" onclick="wsReveal('${jsq(n)}')">${esc(t('run.wsReveal'))}</button>
+        <a class="btn btn-primary btn-sm" href="${ART_URL(RUN.id,n)}" download>${esc(t('c.download'))}</a>
       </div>
     </div></div>`;
   document.body.appendChild(root);
-};
-window.runCloseArt = function(){
-  const r = document.getElementById('runArtRoot');
-  if(r) r.remove();
-  _lockScroll(false);
+  WS_VIEW = {path:n, kind:meta.kind, text:ARTS[n] || ''};
+  wsPaintBody();
 };
 
-/* ---------------- 对话式局部修订 ---------------- */
-window.runRevise = async function(){
+function wsSetView(raw){ WS_MD_RAW = !!raw; wsPaintBody(); }
+window.wsSetView = wsSetView;
+
+async function wsPaintBody(){
+  const body = document.getElementById('wsBody');
+  if(!body || !WS_VIEW) return;
+  const {path, kind} = WS_VIEW;
+  const url = ART_URL(RUN.id, path);
+  const tg = document.getElementById('wsToggle');
+  if(tg) tg.hidden = !(kind === 'text' && /\.(md|markdown)$/i.test(path));
+  if(kind === 'image'){ body.innerHTML = `<div class="ws-media"><img src="${url}" alt="${esc(path)}"></div>`; return; }
+  if(kind === 'pdf'){ body.innerHTML = `<iframe class="ws-frame" src="${url}"></iframe>`; return; }
+  if(kind !== 'text'){
+    body.innerHTML = `<div class="lg-empty">${ico('package')}<span>${esc(t('run.wsBinary'))}</span></div>`;
+    return;
+  }
+  if(WS_VIEW.text === '' || WS_VIEW.truncated){
+    const d = await _api(`/api/runs/${encodeURIComponent(RUN.id)}/files/${path.split('/').map(encodeURIComponent).join('/')}`)
+                .catch(()=>null);
+    if(!d || d.detail){ body.innerHTML = `<div class="lg-empty">${esc((d&&d.detail)||t('run.wsFail'))}</div>`; return; }
+    WS_VIEW = {path, kind, text:d.text||'', truncated:d.truncated};
+  }
+  const isMd = /\.(md|markdown)$/i.test(path);
+  const txt = WS_VIEW.text;
+  body.innerHTML = (isMd && !WS_MD_RAW)
+    ? `<div class="ws-md">${window.mdToHtml(txt)}</div>`
+    : `<pre class="sk-pre">${esc(txt)}</pre>`;
+  if(WS_VIEW.truncated) body.insertAdjacentHTML('beforeend', `<div class="muted-sm">${esc(t('run.wsTrunc'))}</div>`);
+}
+
+window.wsReveal = async function(n){
+  const q = `which=run&run_id=${encodeURIComponent(RUN.id)}&file=${encodeURIComponent(n)}`;
+  const r = await _api('/api/reveal?'+q, {method:'POST'}).catch(()=>({detail:''}));
+  if(r && r.detail) toast(r.detail || t('run.wsRevealFail'));
+};
+window.runCloseArt = function(){ const r=document.getElementById('runArtRoot'); if(r) r.remove(); _lockScroll(false); };
+
+/* ---------------- 转录日志（诊断） ----------------
+   引擎吐的是 stream-json 原始行，claude / codex 形状不同但都在这里压成
+   「一类一行」的现场时间线；解析不出来的行原样兜底显示，绝不吞掉。 */
+let LOG_RAW = '';
+function logArgs(input){
+  if(!input || typeof input!=='object') return '';
+  for(const k of ['command','file_path','path','pattern','query','url','description']){
+    const v = input[k];
+    if(typeof v==='string' && v.trim()) return v.trim().replace(/\s+/g,' ').slice(0,180);
+  }
+  const s = JSON.stringify(input);
+  return s.length>180 ? s.slice(0,180)+'…' : s;
+}
+
+function oneLine(v){
+  if(typeof v==='string') return v;
+  if(Array.isArray(v)) return v.map(oneLine).filter(Boolean).join(' ');
+  if(v && typeof v==='object') return oneLine(v.text)||oneLine(v.message)||JSON.stringify(v);
+  return String(v==null?'':v);
+}
+
+function parseLogLine(raw){
+  let ev;
+  try{ ev = JSON.parse(raw); }catch(e){ return [{kind:'raw', text: raw.slice(0,300)}]; }
+  if(!ev || typeof ev!=='object') return [{kind:'raw', text: String(raw).slice(0,300)}];
+  const rows = [];
+  const t = ev.type;
+  if(t==='system'){
+    if(ev.subtype==='init')
+      rows.push({kind:'sys', text:`${ev.model||'?'} · ${(ev.tools||[]).length} ${t0('run.lgTools')}`});
+    else if(ev.subtype==='api_retry')
+      rows.push({kind:'err', text:`${t0('run.lgRetry')} ${ev.attempt||'?'}/${ev.max_retries||'?'} · `
+        + `${oneLine(ev.error).slice(0,160)} · ${Math.round((ev.retry_delay_ms||0)/1000)}s`});
+    else rows.push({kind:'sys', text: oneLine(ev).slice(0,240)});
+  }else if(t==='assistant'){
+    for(const b of (ev.message||{}).content||[]){
+      if(b.type==='text' && (b.text||'').trim()) rows.push({kind:'out', text: b.text.trim().replace(/\s+/g,' ').slice(0,400)});
+      else if(b.type==='tool_use') rows.push({kind:'tool', text: `${b.name||'tool'} · ${logArgs(b.input)}`});
+      else if(b.type!=='thinking') rows.push({kind:'raw', text: `${b.type} ${logArgs(b)}`.slice(0,240)});
+    }
+    if((ev.message||{}).error) rows.push({kind:'err', text: oneLine(ev.message.error).slice(0,240)});
+  }else if(t==='user'){
+    for(const b of (ev.message||{}).content||[]){
+      if(b.type!=='tool_result') continue;
+      rows.push({kind: b.is_error?'err':'ret', text: oneLine(b.content).replace(/\s+/g,' ').slice(0,260)});
+    }
+  }else if(t==='result'){
+    const bits = [`${ev.num_turns||0} ${t0('run.lgTurns')}`,
+                  `${Math.round((ev.duration_ms||0)/1000)}s`];
+    if(ev.total_cost_usd) bits.push('$'+Number(ev.total_cost_usd).toFixed(4));
+    rows.push({kind: ev.is_error?'err':'end',
+      text: bits.join(' · ')+' · '+(oneLine(ev.result||ev.terminal_reason)||t0(ev.is_error?'run.lgFailed':'run.lgOk'))
+        .replace(/\s+/g,' ').slice(0,300)});
+  }else if(t==='thread.started'||t==='turn.started'){
+    rows.push({kind:'sys', text: t});
+  }else if(t==='item.completed'){
+    const it = ev.item||{};
+    if(it.type==='agent_message' && (it.text||'').trim())
+      rows.push({kind:'out', text: it.text.trim().replace(/\s+/g,' ').slice(0,400)});
+    else if(it.type==='command_execution')
+      rows.push({kind:'tool', text:`shell · ${oneLine(it.command).slice(0,180)}`
+        + (it.exit_code!=null ? ` → ${t0('run.lgExit')} ${it.exit_code}` : '')});
+    else if(it.type==='file_change')
+      rows.push({kind:'tool', text:`files · ${(it.changes||[]).map(c=>c.path).join(', ').slice(0,180)}`});
+    else if(it.type==='reasoning' && (it.text||'').trim())
+      rows.push({kind:'ret', text: it.text.trim().replace(/\s+/g,' ').slice(0,260)});
+    else if(it.type==='error') rows.push({kind:'err', text: oneLine(it).slice(0,240)});
+  }else if(t==='turn.completed'){
+    const u = ev.usage||{};
+    rows.push({kind:'end', text:`${t0('run.lgOk')} · in ${u.input_tokens||0} · out ${u.output_tokens||0}`
+      + (u.cached_input_tokens?` · cache ${u.cached_input_tokens}`:'')});
+  }else if(t==='turn.failed'||t==='error'){
+    rows.push({kind:'err', text: oneLine(ev.error||ev.message||ev).slice(0,300)});
+  }
+  return rows.length ? rows : null;
+}
+
+function t0(k){ return window.t(k); }
+
+function logRows(lines){
+  const out = [];
+  for(const ln of lines||[]){
+    if(!ln || !ln.trim()) continue;
+    const r = parseLogLine(ln);
+    if(r) out.push(...r);
+  }
+  return out;
+}
+
+window.runShowLog = async function(name){
+  const stale = document.getElementById('runLogRoot');
+  if(stale) stale.remove();          // 连续点两步的日志会叠两层、锁死滚动
+  _lockScroll(true);
+  const root = document.createElement('div');
+  root.id = 'runLogRoot';
+  root.innerHTML = `<div class="modal open" onclick="if(event.target===this)runCloseLog()">
+    <div class="modal-box sk-view-modal">
+      <div class="modal-top"><div class="pv-head"><h3>${esc(t('run.lgTitle'))}</h3>
+        <span class="lg-name">${esc(name)}</span></div>
+        <button class="modal-x" onclick="runCloseLog()">×</button></div>
+      <div class="sk-view-body"><div class="lg-empty">${ico('spinner')}<span>${esc(t('run.lgLoading'))}</span></div></div>
+    </div></div>`;
+  document.body.appendChild(root);
+  const d = await _api(`/api/runs/${RUN.id}/logs/${encodeURIComponent(name)}?lines=1200`).catch(e=>({detail:String(e)}));
+  const body = root.querySelector('.sk-view-body');
+  if(!body) return;
+  if(d.detail || !d.lines){
+    body.innerHTML = `<div class="lg-empty">${esc(d.detail||t('run.lgEmpty'))}</div>`;
+    return;
+  }
+  const rows = logRows(d.lines);
+  LOG_RAW = d.lines.join('\n');
+  const head = `<div class="lg-bar"><span>${esc(t('run.lgMeta'))} · ${d.lines.length} ${esc(t('run.lgLines'))}`
+    + ` · ${(d.bytes/1024).toFixed(1)} KB${d.truncated?' · '+esc(t('run.lgTrunc')):''}</span>
+      <span class="spacer"></span>
+      <button class="pf-op" onclick="runCopyLog()">${ico('copy')}${esc(t('run.lgCopy'))}</button>
+      <a class="pf-op" href="${ART_URL(RUN.id,'_turn_logs/'+name)}" download>${ico('download')}${esc(t('c.download'))}</a></div>`;
+  body.innerHTML = head + (rows.length ? `<div class="lg-list">${rows.map(r=>
+    `<div class="lg-line lg-${r.kind}"><span class="lg-k">${esc(t('run.lg'+r.kind.charAt(0).toUpperCase()+r.kind.slice(1)))}</span>`
+    +`<span class="lg-t">${esc(r.text)}</span></div>`).join('')}</div>`
+    : `<div class="lg-empty">${esc(t('run.lgEmpty'))}</div>`);
+};
+window.runCopyLog = function(){
+  navigator.clipboard.writeText(LOG_RAW).then(()=>toast(t('run.lgCopied'), true))
+    .catch(()=>toast(t('run.lgCopyFail')));
+};
+window.runCloseLog = function(){ const r=document.getElementById('runLogRoot'); if(r) r.remove(); _lockScroll(false); };
+
+/* ---------------- 通过输入面板发起修改 ---------------- */
+async function runRevise(){
   const sel = document.getElementById('rvStep');
   const txt = document.getElementById('rvText');
   if(!sel || !txt) return;
-  const idx = Number(sel.value);
   const instruction = (txt.value||'').trim();
-  if(!instruction){ toast('请填写修改要求'); return; }
+  if(!instruction){ toast(t('run.reviseEmpty')); return; }
+  const idx = Number(sel.value);
   CONVO.push({_run:RUN.id, role:'user', text:instruction});
-  txt.value='';
+  txt.value=''; txt.style.height='auto';
   drawConvo();
-  const r = await _post('/api/runs/'+RUN.id+'/revise', {index: idx, instruction});
-  if(r.detail){ toast(r.detail); CONVO.push({_run:RUN.id, role:'assistant', text:'修改失败：'+r.detail}); drawConvo(); return; }
-  CONVO.push({_run:RUN.id, role:'assistant', text:'正在修改，生成内容会在步骤面板实时显示…'});
-  drawConvo();
-};
+  const r = await _post('/api/runs/'+RUN.id+'/revise', {index: idx, instruction}).catch(e=>({detail:String(e)}));
+  if(r.detail){ CONVO.push({_run:RUN.id, role:'assistant', text:r.detail}); drawConvo(); return; }
+}
+window.runRevise = runRevise;
 
 function drawConvo(){
   const box = document.getElementById('runConvo');
   if(!box) return;
   const items = CONVO.filter(m=>m._run===RUN.id);
   box.innerHTML = items.length ? `<div class="convo-list">${items.map(m=>`
-    <div class="convo-msg ${m.role==='user'?'cm-user':'cm-ai'}"><div class="cm-role">${m.role==='user'?'你':'AI'}</div>
+    <div class="convo-msg"><div class="cm-role">${m.role==='user'?'YOU':'AI'}</div>
       <div class="cm-text">${esc(m.text)}</div></div>`).join('')}</div>` : '';
   box.scrollTop = box.scrollHeight;
 }
 
-/* 离开页面时断流 */
 window.addEventListener('hashchange', ()=>{
   if(ES && !location.hash.startsWith('#/run/')){ ES.close(); ES=null; }
+  $('#view') && $('#view').classList.remove('with-composer');
 });
 
 })();

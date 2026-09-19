@@ -1,40 +1,77 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN" data-theme="dark" data-font="default">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#ffffff">
-<link rel="icon" href="/static/favicon.svg">
-<title>FlowForge 智模流水线</title>
+<meta name="theme-color" content="#181818">
+<link rel="icon" href="/static/favicon.svg?v=2000032c">
+<title>Loom 织流</title>
 <link rel="stylesheet" href="/static/fonts/fonts.css">
-<link rel="stylesheet" href="/static/style.css?v=1000004b">
-<link rel="stylesheet" href="/static/motion.css?v=1000004b">
+<link rel="stylesheet" href="/static/style.css?v=2000032c">
+<script>
+/* 先落外观属性再渲染，避免深色模式闪白 */
+window.__FF_BOOT = fetch('/api/settings').then(r=>r.ok?r.json():{}).then(s=>{
+  const map = {ui_theme:'theme', ui_font:'font', ui_lang:'lang', ui_accent:'accent',
+               ui_textSize:'textSize', ui_uiZoom:'uiZoom', ui_contentWidth:'contentWidth',
+               ui_sidebar:'sidebar'};
+  const A = {};
+  for(const k in map) if(s[k]) A[map[k]] = s[k];
+  if(A.font==='system'||A.font==='cjk') A.font = 'default';
+  /* 折叠态先落到 html 上再渲染，否则启动会闪一下全宽侧栏 */
+  document.documentElement.dataset.sidebar =
+    A.sidebar==='collapsed' ? 'collapsed' : 'expanded';
+  window.__FF_APPEARANCE = Object.assign(
+    {lang:'zh', theme:'dark', font:'default', accent:'blue',
+     textSize:'m', uiZoom:'100%', contentWidth:'medium'}, A);
+}).catch(()=>{ window.__FF_APPEARANCE = {}; });
+</script>
 </head>
 <body>
 <div id="app" class="app">
-  <!-- 侧边栏（Codex / Claude 桌面端布局：品牌 + 新建 + 导航 + 底部） -->
   <aside class="sidebar">
-    <a class="sb-brand" onclick="nav.go('home')">
-      <img class="sb-logo" src="/static/logo.svg" alt="" onerror="this.style.display='none'">
-      <span class="sb-name">Flow<span>Forge</span></span>
-    </a>
-    <button class="sb-new" onclick="nav.go('pipeline-edit/new')"><span class="btn-plus">＋</span> 创建流程</button>
-    <nav class="sb-nav" id="mainNav"></nav>
-    <div class="sb-spacer"></div>
-    <a class="sb-item sb-tail" id="sbSettings" data-v="settings" onclick="nav.go('settings')">设置</a>
-    <div class="sb-foot">FlowForge v1.0.0 · 本地服务</div>
+    <div class="sb-top">
+      <button class="sb-brand" id="sbBrand" data-tip-any="1" data-tip=""
+        aria-expanded="true" onclick="sbToggle()">
+        <img class="sb-logo" src="/static/logo.svg?v=2000032c" alt="">
+        <span class="sb-name" id="brandName">织流</span>
+      </button>
+      <div class="sb-acts">
+        <button class="ic-btn" id="sbSearchBtn" data-tip-any="1" onclick="sbSearch(event)"></button>
+        <button class="ic-btn" id="sbActBtn" data-tip-any="1" onclick="sbActivity(event)"></button>
+      </div>
+    </div>
+    <div class="sb-scroll">
+      <button class="sb-new" id="sbNew" onclick="taskModal()"></button>
+      <nav class="sb-nav" id="mainNav"></nav>
+      <div id="sbLists"></div>
+    </div>
+    <div class="sb-foot">
+      <button class="sb-me" id="sbMe" onclick="footMenu(event)">
+        <span class="sb-me-av" id="sbMeAv"></span>
+        <span class="sb-me-name" id="sbMeName">claude</span>
+        <span class="sb-me-chev" id="sbMeChev"></span>
+      </button>
+      <button class="sb-update" id="sbUpdate" data-tip-any="1" hidden onclick="sbUpdateClick(event)"></button>
+    </div>
   </aside>
+  <div class="sb-pop" id="sbPop" hidden></div>
+  <div class="sb-pop sb-pop-search" id="sbFind" hidden></div>
 
-  <!-- 主工作区 -->
   <main class="main">
+    <header class="topbar">
+      <div class="tb-title" id="tbTitle"></div>
+      <div class="tb-actions" id="tbActions"></div>
+    </header>
     <div class="container" id="view"></div>
   </main>
 </div>
 
+<div class="ff-tip" id="ffTip" hidden></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="/static/providers-catalog.js?v=1000004b"></script>
-<script src="/static/app.js?v=1000004b"></script>
-<script src="/static/editor.js?v=1000004b"></script>
-<script src="/static/run.js?v=1000004b"></script>
+<script src="/static/providers-catalog.js?v=2000032c"></script>
+<script src="/static/ui.js?v=2000032c"></script>
+<script src="/static/app.js?v=2000032c"></script>
+<script src="/static/editor.js?v=2000032c"></script>
+<script src="/static/run.js?v=2000032c"></script>
 </body>
 </html>

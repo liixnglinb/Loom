@@ -1,23 +1,15 @@
-/* FlowForge 配置中心 —— 流程编排器 + Skill 管理器（独立于 app.js）
- * 路由: #/pipelines（流程列表）   #/pipeline-edit/<name|new>（流程编排器）
- *       #/skills（技能列表）     #/skill-edit/<name|new>（技能编辑器）
- * 依赖: 无（自带 $/esc/toast/_api/_post）
+/* Loom 织流 · 流程编排器 + 技能编辑器
+ * 路由 #/pipelines #/pipeline-edit/<name|new> #/skills #/skill-edit/<name|new>
+ * 文案走 window.t()
  */
 (function(){
 "use strict";
 
-/* ---------------- 本地工具 ---------------- */
 const $ = s => document.querySelector(s);
+const t = window.t;
+const ico = window.icon;
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-let _toastTimer = null;
-function toast(msg, ok=false){
-  const el = $('#toast');
-  if(!el) return;
-  el.textContent = msg||'';
-  el.className = 'toast show '+(ok?'ok':'err');
-  clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(()=>{ el.className='toast'; }, 2400);
-}
+function toast(msg, ok=false){ window.ffToast(msg, ok); }
 async function _api(path, opts){
   const r = await fetch(path, opts);
   const ct = r.headers.get('content-type')||'';
@@ -25,31 +17,18 @@ async function _api(path, opts){
   if(!r.ok) throw new Error('HTTP '+r.status);
   return r.text();
 }
-function _post(path, data){
-  return _api(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data||{})});
-}
-function _put(path, data){
-  return _api(path, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data||{})});
-}
-function _del(path){
-  return _api(path, {method:'DELETE'});
-}
-function _lockScroll(on){
-  document.body.style.overflow = on?'hidden':'';
-}
+function _post(path, data){ return _api(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data||{})}); }
+function _put(path, data){ return _api(path, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data||{})}); }
+function _del(path){ return _api(path, {method:'DELETE'}); }
+function _lockScroll(on){ document.body.style.overflow = on?'hidden':''; }
 
-/* ================= 状态 ================= */
-let PL_TPLS = [];        // 流程模板
-let PL_SKILLS = [];      // skill 元信息 [{name,desc,source,chars}]
-let PL_EDIT = null;      // 编辑中的流程
-let SK_EDIT = null;      // 编辑中的 skill {name, content, editable, isNew}
-const ROLES = [
-  {v:'executor',  label:'执行',   hint:'主执行步骤：产出本步文件'},
-  {v:'reviewer',  label:'审查',   hint:'检查前序产物，挑问题给修正意见'},
-  {v:'editor',    label:'润色',   hint:'对既有文稿做编辑改进'},
-];
+/* ---------------- 数据 ---------------- */
+let PL_TPLS = [];
+let PL_SKILLS = [];
+let PL_EDIT = null;
+let SK_EDIT = null;
+let _ST_PRESETS = null;
 
-/* ---------------- 数据加载 ---------------- */
 async function plLoad(){
   const [pips, sks] = await Promise.all([
     _api('/api/pipelines').catch(()=>({pipelines:[]})),
@@ -58,77 +37,66 @@ async function plLoad(){
   PL_TPLS = pips.pipelines || [];
   PL_SKILLS = sks.skills || [];
 }
+async function stPresets(){
+  if(_ST_PRESETS) return _ST_PRESETS;
+  try{ _ST_PRESETS = (await _api('/api/providers')).presets||[]; }
+  catch(e){ _ST_PRESETS = []; }
+  return _ST_PRESETS;
+}
+
+const ROLES = () => [
+  {v:'executor', label:t('ed.role.executor'), hint:t('ed.roleHint.executor')},
+  {v:'reviewer', label:t('ed.role.reviewer'), hint:t('ed.roleHint.reviewer')},
+  {v:'editor',   label:t('ed.role.editor'),   hint:t('ed.roleHint.editor')},
+];
+const pvf = (label, inner, hint) => `
+  <div class="pv-f"><label class="pv-label">${label}</label>${inner}${hint||''}</div>`;
+const pvh = (txt, id) => `<div class="pv-foot-hint"${id?` id="${esc(id)}"`:''}>${esc(txt)}</div>`;
 
 /* =====================================================================
- * 第一部分：Skill 管理
+ * 技能库
  * ===================================================================== */
-
-/* ---------------- 技能列表页 ---------------- */
 window.renderSkills = async function(){
-  $('#view').innerHTML = '<div class="loading-bar"></div>';
+  window.viewLoading();
   await plLoad();
-  const all = PL_SKILLS;
   const row = s => `
     <div class="pl-card-row" onclick="skView('${esc(s.name)}')">
       <div class="pl-row-main">
-        <div class="pl-row-title">
-          <span class="pl-row-name">${esc(s.name)}</span>
-          <span class="run-badge">${s.source==='user'?'自建':'内置'}</span>
-        </div>
-        <div class="pl-row-meta"><span>${s.chars>0?(s.chars/1000).toFixed(1)+'k 字':'空'}</span></div>
-        ${s.desc?`<div class="pl-steps-mini"><span class="pl-step-chip" style="max-width:520px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:bottom" title="${esc(s.desc)}">${esc(s.desc)}</span></div>`:''}
+        <div class="pl-row-title"><span class="pl-row-name">${esc(s.name)}</span>
+          <span class="sk-badge ${s.source==='user'?'sk-badge-user':''}">${s.source==='user'?esc(t('c.user')):esc(t('c.builtin'))}</span>
+          <span class="muted-sm">${s.chars>0?(s.chars/1000).toFixed(1)+'k':esc(t('sk.empty2'))}</span></div>
+        ${s.desc?`<div class="pl-steps-mini"><span class="pl-step-chip pl-chip-wide">${esc(s.desc)}</span></div>`:''}
       </div>
       <div class="pl-row-ops" onclick="event.stopPropagation()">
-        <button class="pf-op pf-op-start" onclick="skView('${esc(s.name)}')">查看</button>
-        ${s.source==='user'?`<button class="pf-op" onclick="nav.go('skill-edit/${esc(s.name)}')">编辑</button>`:''}
+        <button class="pf-op" onclick="skView('${esc(s.name)}')">${esc(t('c.view'))}</button>
+        ${s.source==='user'?`<button class="pf-op" onclick="nav.go('skill-edit/${esc(s.name)}')">${esc(t('c.edit'))}</button>`:''}
       </div>
     </div>`;
+  window.__chrome = {title:t('sk.title'), icon:'skill',
+    actions:`<button class="btn btn-ghost btn-sm" onclick="skImportModal()">${esc(t('c.import'))}</button>
+      <button class="btn btn-primary btn-sm" onclick="nav.go('skill-edit/new')"><span class="btn-plus">＋</span> ${esc(t('sk.new'))}</button>`};
   $('#view').innerHTML = `
-    <div class="pl-wrap">
-    <div class="page-head">
-      <div><h1>技能库</h1><div class="sub">skill 是每个步骤注入给 AI 的执行规范 —— 新建、导入标准 skill 包、或随时编辑</div></div>
-      <div style="display:flex;gap:10px">
-        <button class="btn btn-ghost" onclick="skImportModal()">导入</button>
-        <button class="btn btn-primary" onclick="nav.go('skill-edit/new')"><span class="btn-plus">＋</span> 新建技能</button>
-      </div>
-    </div>
-    <input type="file" id="skImportFile" accept=".zip,.md" style="display:none" onchange="skImportDo(this)">
-    <div class="card">
-      <div class="card-h">
-        <div><div class="ct">我的技能 <span class="muted">（${all.length}）</span></div>
-          <div class="cs">支持导入标准 skill 包（zip / SKILL.md），附属文件随包入库</div></div>
-        <button class="btn btn-accent" onclick="skImportModal()">导入</button>
-      </div>
-      <div class="set-row">
-        ${all.length ? all.map(row).join('')
-          : `<div class="pf-empty">还没有技能 —— 新建一份 Markdown 执行规范，或导入标准 skill 包（zip / SKILL.md）</div>`}
-      </div>
-    </div>
-    </div>`;
+    <input class="pl-file" type="file" id="skImportFile" accept=".zip,.md" onchange="skImportDo(this)">
+    <div class="pl-list">${PL_SKILLS.length?PL_SKILLS.map(row).join('')
+      :`<div class="pf-empty">${esc(t('sk.empty'))}</div>`}</div>`;
 };
 
-/* ---------------- 导入技能 ---------------- */
-window.skImportModal = function(){
-  const el = document.getElementById('skImportFile');
-  if(el) el.click();
-};
+window.skImportModal = function(){ const el=document.getElementById('skImportFile'); if(el) el.click(); };
 window.skImportDo = async function(input){
   const f = input.files && input.files[0];
   input.value = '';
   if(!f) return;
-  toast('正在导入「'+f.name+'」…');
-  const fd = new FormData();
-  fd.append('file', f);
+  toast(t('sk.importing',{name:f.name}));
+  const fd = new FormData(); fd.append('file', f);
   try{
     const r = await fetch('/api/skills/import', {method:'POST', body: fd});
     const d = await r.json().catch(()=>({detail:'HTTP '+r.status}));
     if(d.detail){ toast(d.detail); return; }
-    toast('已导入「'+d.name+'」（'+d.files+' 个文件，'+(d.chars/1000).toFixed(1)+'k 字）', true);
+    toast(t('sk.imported',{name:d.name}), true);
     renderSkills();
-  }catch(e){ toast('导入失败：'+e); }
+  }catch(e){ toast(t('sk.importFail',{err:e})); }
 };
 
-/* ---------------- 技能详情（弹窗查看） ---------------- */
 window.skView = async function(name){
   const d = await _api('/api/skills/'+encodeURIComponent(name)).catch(e=>({detail:e.message}));
   if(d.detail){ toast(d.detail); return; }
@@ -137,55 +105,46 @@ window.skView = async function(name){
   root.id = 'skViewRoot';
   root.innerHTML = `<div class="modal open" onclick="if(event.target===this)skCloseModal()">
     <div class="modal-box sk-view-modal">
-      <div class="modal-top">
-        <div class="pv-head"><h3>${esc(d.name)}</h3>
-          <span class="sk-badge ${d.editable?'sk-badge-user':''}">${d.editable?'自建·可编辑':'内置·只读'}</span></div>
-        <button class="modal-x" onclick="skCloseModal()">×</button>
-      </div>
+      <div class="modal-top"><div class="pv-head"><h3>${esc(d.name)}</h3>
+        <span class="sk-badge ${d.editable?'sk-badge-user':''}">${d.editable?esc(t('sk.badgeUser')):esc(t('sk.badgeBundled'))}</span></div>
+        <button class="modal-x" onclick="skCloseModal()">×</button></div>
       <div class="sk-view-body"><pre class="sk-pre">${esc(d.content)}</pre></div>
       <div class="sk-view-foot">
-        <button class="btn btn-ghost btn-sm" onclick="skCloseModal()">关闭</button>
+        <button class="btn btn-ghost btn-sm" onclick="skCloseModal()">${esc(t('c.close'))}</button>
         ${d.editable
-          ? `<button class="btn btn-primary btn-sm" onclick="skCloseModal();nav.go('skill-edit/${esc(d.name)}')">编辑</button>
-             <button class="btn btn-ghost btn-sm pl-danger" onclick="skDelete('${esc(d.name)}')">删除</button>`
-          : `<button class="btn btn-accent btn-sm" onclick="skDuplicate('${esc(d.name)}')">另存为可编辑副本</button>`}
+          ? `<button class="btn btn-primary btn-sm" onclick="skCloseModal();nav.go('skill-edit/${esc(d.name)}')">${esc(t('c.edit'))}</button>
+             <button class="btn btn-ghost btn-sm pl-danger" onclick="skDelete('${esc(d.name)}')">${esc(t('c.delete'))}</button>`
+          : `<button class="btn btn-accent btn-sm" onclick="skDuplicate('${esc(d.name)}')">${esc(t('sk.dupe'))}</button>`}
       </div>
-    </div>
-  </div>`;
+    </div></div>`;
   document.body.appendChild(root);
 };
-window.skCloseModal = function(){
-  const r = document.getElementById('skViewRoot');
-  if(r) r.remove();
-  _lockScroll(false);
-};
+window.skCloseModal = function(){ const r=document.getElementById('skViewRoot'); if(r) r.remove(); _lockScroll(false); };
 window.skDuplicate = async function(name){
   skCloseModal();
-  const nn = prompt('副本名（英文小写）：', name + '-my');
+  const nn = prompt(t('sk.dupeName'), name + '-my');
   if(nn===null) return;
   const r = await _post('/api/skills/'+encodeURIComponent(name)+'/duplicate', {name: nn.trim()})
-    .catch(e=>({detail:e.message||'复制失败'}));
+    .catch(e=>({detail:e.message||'fail'}));
   if(r.detail){ toast(r.detail); return; }
-  toast('已创建可编辑副本「'+r.name+'」', true);
+  toast(t('sk.dupeDone',{name:r.name}), true);
   nav.go('skill-edit/'+r.name);
 };
 window.skDelete = async function(name){
-  if(!confirm('确定删除自建技能「'+name+'」？引用它的流程步骤会读不到内容。')) return;
+  if(!confirm(t('sk.delConfirm',{name}))) return;
   skCloseModal();
-  const r = await _del('/api/skills/'+encodeURIComponent(name))
-    .catch(e=>({detail:e.message||'删除失败'}));
+  const r = await _del('/api/skills/'+encodeURIComponent(name)).catch(e=>({detail:e.message}));
   if(r.detail){ toast(r.detail); return; }
-  toast('已删除'); renderSkills();
+  toast(t('sk.deleted')); renderSkills();
 };
 
-/* ---------------- 技能编辑器 ---------------- */
 window.renderSkillEdit = async function(name){
-  $('#view').innerHTML = '<div class="loading-bar"></div>';
+  window.viewLoading();
   if(name && name !== 'new'){
     const d = await _api('/api/skills/'+encodeURIComponent(name)).catch(e=>({detail:e.message}));
     if(d.detail){ toast(d.detail); nav.go('skills'); return; }
     SK_EDIT = {name: d.name, content: d.content, editable: d.editable, isNew: false};
-    if(!d.editable){ toast('内置技能只读 —— 请「另存为可编辑副本」后修改'); }
+    if(!d.editable) toast(t('sk.readonly'));
   }else{
     SK_EDIT = {name:'', content:'', editable:true, isNew:true};
   }
@@ -196,192 +155,172 @@ function skDrawEditor(){
   const E = SK_EDIT;
   const readOnly = !E.editable;
   const lines = E.content ? E.content.split('\n').length : 0;
+  const title = (E.isNew?t('sk.newTitle'):(readOnly?t('sk.viewTitle'):t('sk.editTitle')))
+    + (E.name?` · ${E.name}`:'');
+  window.__chrome = {title: title, icon:'skill', actions: `
+    <button class="btn btn-ghost btn-sm" onclick="skBack()">${esc(t('c.back'))}</button>
+    ${!readOnly?`<button class="btn btn-primary btn-sm" onclick="skSave()">${esc(t('sk.save'))}</button>`:''}`};
   $('#view').innerHTML = `
-    <div class="page-head">
-      <div><h1>${E.isNew?'新建技能':(readOnly?'查看技能':'编辑技能')}${E.name?` · ${esc(E.name)}`:''}</h1>
-        <div class="sub">SKILL.md 全文就是执行该步骤时注入给 AI 的完整指令 —— 写清楚目标、输入、产出与硬性规则</div></div>
-      <div style="display:flex;gap:10px">
-        <button class="btn btn-ghost" onclick="skBack()">返回</button>
-        ${!readOnly?`<button class="btn btn-primary" onclick="skSave()">保存技能</button>`:''}
-      </div>
-    </div>
     <div class="card sk-edit-card">
       ${E.isNew?`
       <div class="sk-field">
-        <label class="pv-label">技能名（英文小写，步骤里引用它） <b class="req">*</b></label>
-        <input class="pv-input mono" id="skName" placeholder="如 my-review-checklist" maxlength="64">
-        <div class="sk-hint">只能小写字母/数字/连字符/下划线；在流程编排里以这个名字绑定到步骤</div>
+        <label class="pv-label">${esc(t('sk.nameField'))} <b class="req">*</b></label>
+        <input class="pv-input mono" id="skName" placeholder="${esc(t('sk.namePh'))}" maxlength="64">
+        <div class="sk-hint">${esc(t('sk.nameHint'))}</div>
       </div>`:''}
       <div class="sk-field sk-grow">
-        <label class="pv-label">技能内容（Markdown） <b class="req">*</b></label>
+        <label class="pv-label">${esc(t('sk.content'))} <b class="req">*</b></label>
         <textarea class="pv-input mono sk-content" id="skContent" ${readOnly?'readonly':''}
-          placeholder="# 我的技能\n\n## 目标\n这一步要产出什么…\n\n## 输入\n读取哪些前序文件…\n\n## 硬性规则\n- 必须…\n- 禁止…"
-          oninput="skSync()">${esc(E.content)}</textarea>
-        <div class="sk-hint"><span id="skCount">${lines}</span> 行 · 保存后立即生效</div>
+          placeholder="${esc(t('sk.contentPh'))}" oninput="skSync()">${esc(E.content)}</textarea>
+        <div class="sk-hint" id="skCount">${esc(t('sk.lines',{n:lines}))}</div>
       </div>
     </div>`;
-  if(!readOnly) setTimeout(()=>{ const t=document.getElementById('skContent'); if(t && E.isNew) t.focus(); }, 50);
+  if(!readOnly) setTimeout(()=>{ const el=document.getElementById('skContent'); if(el && E.isNew) el.focus(); }, 50);
 }
 window.skSync = function(){
-  const t = document.getElementById('skContent');
+  const el = document.getElementById('skContent');
   const c = document.getElementById('skCount');
-  if(t && c) c.textContent = t.value ? t.value.split('\n').length : 0;
-  if(t) SK_EDIT.content = t.value;
+  if(el && c) c.textContent = t('sk.lines',{n: el.value?el.value.split('\n').length:0});
+  if(el) SK_EDIT.content = el.value;
 };
 window.skBack = function(){ nav.go('skills'); };
 window.skSave = async function(){
   const E = SK_EDIT;
   const content = ($('#skContent') && $('#skContent').value) || E.content || '';
-  if(!content.trim()){ toast('技能内容不能为空'); return; }
+  if(!content.trim()){ toast(t('sk.needContent')); return; }
   if(E.isNew){
     const name = ($('#skName') && $('#skName').value || '').trim();
-    if(!name){ toast('请填写技能名'); return; }
-    const r = await _post('/api/skills', {name, content}).catch(e=>({detail:e.message||'保存失败'}));
+    if(!name){ toast(t('sk.needName')); return; }
+    const r = await _post('/api/skills', {name, content}).catch(e=>({detail:e.message}));
     if(r.detail){ toast(r.detail); return; }
-    toast('技能已创建', true);
-    nav.go('skills');
+    toast(t('sk.created'), true); nav.go('skills');
   }else{
     const r = await _put('/api/skills/'+encodeURIComponent(E.name), {name:E.name, content})
-      .catch(e=>({detail:e.message||'保存失败'}));
+      .catch(e=>({detail:e.message}));
     if(r.detail){ toast(r.detail); return; }
-    toast('技能已保存', true);
-    nav.go('skills');
+    toast(t('sk.saved'), true); nav.go('skills');
   }
 };
 
 /* =====================================================================
- * 第二部分：流程编排器
+ * 流程编排
  * ===================================================================== */
-
-/* ---------------- 流程列表页（行式卡 = 设置页 .pf-preset 同构，无图标） ---------------- */
 window.renderPipelines = async function(){
-  $('#view').innerHTML = '<div class="loading-bar"></div>';
+  window.viewLoading();
   await plLoad();
   const row = p => `
     <div class="pl-card-row" onclick="nav.go('pipeline-edit/${esc(p.name)}')">
       <div class="pl-row-main">
-        <div class="pl-row-title">
-          <span class="pl-row-name">${esc(p.label||p.name)}</span>
+        <div class="pl-row-title"><span class="pl-row-name">${esc(p.label||p.name)}</span>
           <code>${esc(p.name)}</code>
-          ${p.desc?`<span class="pf-url" style="max-width:420px" title="${esc(p.desc)}">${esc(p.desc)}</span>`:''}
-        </div>
-        <div class="pl-row-meta">
-          <span>${p.steps.length} 个步骤</span>
-          <span class="pl-steps-mini">${p.steps.map((s,i)=>`<span class="pl-step-chip" title="${esc(s.skill)}">${i+1}. ${esc(s.label)}</span>`).join('')}</span>
-        </div>
+          ${p.builtin?`<span class="ff-tag">${esc(t('c.builtin'))}</span>`:''}
+          ${p.desc?`<span class="pf-url">${esc(p.desc)}</span>`:''}</div>
+        <div class="pl-row-meta"><span>${p.steps.length} ${esc(t('c.steps'))}</span>
+          <span class="pl-steps-mini">${p.steps.map((s,i)=>
+            `<span class="pl-step-chip" title="${esc(s.skill)}">${i+1}. ${esc(s.label)}</span>`).join('')}</span></div>
       </div>
       <div class="pl-row-ops" onclick="event.stopPropagation()">
-        <button class="pf-op pf-op-start" onclick="plRun('${esc(p.name)}')">运行</button>
-        <button class="pf-op" onclick="nav.go('pipeline-edit/${esc(p.name)}')">编辑</button>
-        <button class="pf-op" title="创建副本" onclick="plDuplicate('${esc(p.name)}')">副本</button>
-        <button class="pf-op pf-op-danger" title="删除" onclick="plDelete('${esc(p.name)}')">删除</button>
+        <button class="pf-op pf-op-start" onclick="taskModal('${esc(p.name)}')">${esc(t('list.runned'))}</button>
+        <button class="pf-op" onclick="nav.go('pipeline-edit/${esc(p.name)}')">${esc(t('c.edit'))}</button>
+        <button class="pf-op pf-op-more" data-tip-any="1" data-tip="${esc(t('c.more'))}"
+          aria-label="${esc(t('c.more'))}" onclick="plRowMore(event,'${esc(p.name)}')">${ico('more')}</button>
       </div>
     </div>`;
+  window.__chrome = {title:t('list.flows'), icon:'flow',
+    actions:`<button class="btn btn-ghost btn-sm" onclick="plImportPick()">${esc(t('c.import'))}</button>
+      <input class="pl-file" type="file" id="plImportFile" accept="application/json,.json"
+        onchange="plImportFile(this)">
+      <button class="btn btn-ghost btn-sm" onclick="taskModal()">${esc(t('home.giveTask'))}</button>
+      <button class="btn btn-primary btn-sm" onclick="nav.go('pipeline-edit/new')"><span class="btn-plus">＋</span> ${esc(t('c.create'))}</button>`};
   $('#view').innerHTML = `
-    <div class="pl-wrap">
-    <div class="page-head">
-      <div><h1>流程编排</h1><div class="sub">步骤数量、名称、每步绑定的技能，全部由你决定 —— 无任何预置模板</div></div>
-      <button class="btn btn-primary" onclick="nav.go('pipeline-edit/new')"><span class="btn-plus">＋</span> 创建流程</button>
-    </div>
-    <div class="card">
-      <div class="card-h">
-        <div><div class="ct">我的流程</div><div class="cs">每个流程是一条有序步骤链，点击卡片进入编排器</div></div>
-        <button class="btn btn-accent" onclick="nav.go('pipeline-edit/new')"><span class="btn-plus">＋</span> 创建流程</button>
-      </div>
-      <div class="set-row">
-        ${PL_TPLS.length ? PL_TPLS.map(row).join('')
-          : `<div class="pf-empty">还没有流程 —— 从零编排：几个步骤、每步一个技能，串成一条流水线</div>`}
-      </div>
-    </div>
-    </div>`;
-};
-
-window.plRun = async function(name){
-  const r = await _post('/api/pipelines/'+encodeURIComponent(name)+'/run', {})
-    .catch(e=>({detail:e.message||'启动失败'}));
-  if(r.detail){ toast(r.detail); return; }
-  toast('流程已启动', true);
-  nav.go('run/'+r.run.id);
+    <div class="pl-list">${PL_TPLS.length?PL_TPLS.map(row).join('')
+      :`<div class="pf-empty">${esc(t('home.mineEmpty'))}</div>`}</div>`;
 };
 
 window.plDuplicate = async function(name){
   const base = PL_TPLS.find(p=>p.name===name); if(!base) return;
   let nn = name + '-copy', k = 2;
   while(PL_TPLS.some(p=>p.name===nn)) nn = `${name}-copy${k++}`;
-  const label = prompt('副本名称：', base.label + ' 副本');
+  const label = prompt(t('list.duplicateName'), base.label + ' copy');
   if(label===null) return;
   const r = await _post(`/api/pipelines/${encodeURIComponent(name)}/duplicate`,
-    {name: nn, label, steps: base.steps}).catch(e=>({detail:e.message||'复制失败'}));
+    {name: nn, label, steps: base.steps}).catch(e=>({detail:e.message}));
   if(r.detail){ toast(r.detail); return; }
-  toast('已创建副本「'+label+'」');
+  toast(t('list.copied',{name:label}), true);
   nav.go('pipeline-edit/'+r.name);
 };
-
 window.plDelete = async function(name){
-  if(!confirm('确定删除流程「'+name+'」？')) return;
-  const r = await _del(`/api/pipelines/${encodeURIComponent(name)}`)
-    .catch(e=>({detail:e.message||'删除失败'}));
+  if(!confirm(t('list.deleteConfirm',{name}))) return;
+  const r = await _del(`/api/pipelines/${encodeURIComponent(name)}`).catch(e=>({detail:e.message}));
   if(r.detail){ toast(r.detail); return; }
-  toast('已删除');
   renderPipelines();
 };
 
-/* ---------------- 流程编辑器（pv 控件体系 = 设置页弹窗同款，无图标） ---------------- */
-/* 角色选项复用文件前段定义的 ROLES（执行 / 审查 / 润色） */
-
-window.renderPipelineEdit = async function(name){
-  $('#view').innerHTML = '<div class="loading-bar"></div>';
-  await Promise.all([plLoad(), stPresets()]);
-  if(name && name !== 'new'){
-    const p = PL_TPLS.find(x=>x.name===name);
-    if(!p){ toast('流程不存在'); nav.go('pipelines'); return; }
-    PL_EDIT = JSON.parse(JSON.stringify(p));
-  }else{
-    PL_EDIT = {name:'', label:'', desc:'', g:'custom',
-      steps:[plBlankStep(1)]};
+/* 行操作收进 ⋯：副本 / 导出 / 恢复出厂 / 删除都不是每次都点的，
+   摊在行上是五个按钮，删除还和「运行」挨在一起。 */
+window.plRowMore = function(e, name){
+  const p = PL_TPLS.find(x=>x.name===name); if(!p) return;
+  const items = [
+    {v:'dup', label:t('c.duplicate'), run:()=>plDuplicate(name)},
+    {v:'exp', label:t('c.export'), run:()=>plExport(name)},
+  ];
+  if(p.builtin) items.push({v:'rst', label:t('home.restore'), run:()=>plRestoreFrom(name)});
+  items.push({v:'del', label:t('c.delete'), danger:true, run:()=>plDelete(name)});
+  window.ffActionMenu(e, items);
+};
+window.plExport = function(name){
+  const a = document.createElement('a');
+  a.href = `/api/pipelines/${encodeURIComponent(name)}/export`;
+  a.download = 'loom-' + name + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+};
+window.plImportPick = function(){
+  const el = document.getElementById('plImportFile'); if(el) el.click();
+};
+window.plImportFile = async function(el){
+  const f = el.files && el.files[0]; el.value = '';
+  if(!f) return;
+  let j = null;
+  try { j = JSON.parse(await f.text()); } catch(_){ toast(t('list.importBad')); return; }
+  const name = String((j && j.name) || '').trim();
+  const steps = (j && Array.isArray(j.steps)) ? j.steps : [];
+  if(!name || !steps.length){ toast(t('list.importBad')); return; }
+  let send = name, extra = '';
+  if(PL_TPLS.some(p=>p.name===name)){
+    let nn = name + '-copy', k = 2;
+    while(PL_TPLS.some(p=>p.name===nn)) nn = `${name}-copy${k++}`;
+    if(!confirm(t('list.importDup',{name, nn}))) return;
+    send = nn; extra = ' copy';      /* 撞名换了标识还沿用原显示名，列表里会出现两行同名 */
   }
-  plDrawEditor();
+  const r = await _post('/api/pipelines', {name: send, label: (j.label || name) + extra,
+      desc: j.desc || '', emoji: j.emoji || '', g: j.g || 'custom', steps}).catch(e=>({detail:e.message}));
+  if(r.detail){ toast(r.detail); return; }
+  toast(t('list.imported',{name: r.name || send}), true);
+  await plLoad();
+  nav.go('pipeline-edit/' + (r.name || send));
 };
 
-let _ST_PRESETS = null;
-async function stPresets(){
-  if(_ST_PRESETS) return _ST_PRESETS;
-  try{ const r = await _api('/api/providers'); _ST_PRESETS = r.presets||[]; }
-  catch(e){ _ST_PRESETS = []; }
-  return _ST_PRESETS;
-}
-
 function plBlankStep(n){
-  return {key:'step'+n, label:'第'+n+'步', skill:(PL_SKILLS[0]?PL_SKILLS[0].name:''),
-    extra_skills:[], out:'STEP'+n+'.md', checkpoint:false, role:'executor', model:''};
+  return {key:'step'+n, label:t('ed.newStep',{n}), skill:(PL_SKILLS[0]?PL_SKILLS[0].name:''),
+    extra_skills:[], out:'STEP'+n+'.md', checkpoint:false, role:'executor',
+    engine:'', model:'', extra_prompt:''};
 }
-/* 兼容旧数据：把 "a b c" 空格组合拆成 主技能 + 叠加技能 */
 function plNormalizeSteps(){
   for(const s of PL_EDIT.steps){
     const parts = String(s.skill||'').trim().split(/\s+/).filter(Boolean);
     s.skill = parts[0] || '';
-    s.extra_skills = Array.isArray(s.extra_skills) ? s.extra_skills
-      : parts.slice(1);
+    s.extra_skills = Array.isArray(s.extra_skills) ? s.extra_skills : parts.slice(1);
+    s.extra_prompt = s.extra_prompt || '';
+    s.engine = s.engine || '';
   }
 }
-
 function plSyncInputs(){
   const E = PL_EDIT; if(!E) return;
-  const nameEl = document.getElementById('plName');
-  const labelEl = document.getElementById('plLabel');
-  const descEl  = document.getElementById('plDesc');
+  const labelEl = $('#plLabel'), descEl = $('#plDesc'), nameEl = $('#plName');
   if(!E.name && nameEl && nameEl.value.trim()) E._draftName = nameEl.value.trim();
   if(labelEl) E.label = labelEl.value;
-  if(descEl)  E.desc = descEl.value;
+  if(descEl) E.desc = descEl.value;
 }
-
-/* 设置页弹窗同款：pv-f 字段（label + 控件 + 提示） */
-const pvf = (label, inner, hint, err) => `
-  <div class="pv-f"><label class="pv-label">${label}</label>
-    ${inner}
-    ${err||hint||''}
-  </div>`;
-const pvh = t => `<div class="pv-foot-hint">${t}</div>`;
 
 function plDrawEditor(){
   plSyncInputs();
@@ -390,8 +329,9 @@ function plDrawEditor(){
   const isNew = !E.name;
   const skillInfo = n => PL_SKILLS.find(s=>s.name===n) || null;
   const presetNames = (_ST_PRESETS||[]).map(p=>p.name);
+  const readyEngines = (window.ST&&window.ST.agents||[]).filter(a=>a.found).map(a=>a.engine).join(' / ');
+  const ROLES_ = ROLES();
 
-  /* --- 单个步骤卡片 --- */
   const stepCard = (s,i) => {
     const main = skillInfo(s.skill);
     const keyDup = E.steps.filter(x=>(x.key||'').trim()===s.key.trim()).length > 1;
@@ -405,120 +345,128 @@ function plDrawEditor(){
       <div class="step-body">
         <div class="pv-form">
           <div class="pv-row2">
-            ${pvf(`步骤名称 <b class="req">*</b>`,
-              `<input class="pv-input" value="${esc(s.label)}" placeholder="如：赛题分析"
-                oninput="plSet(${i},'label',this.value)">`)}
-            ${pvf(`标识 key <b class="req">*</b>`,
+            ${pvf(`${esc(t('ed.stepName'))} <b class="req">*</b>`,
+              `<input class="pv-input" value="${esc(s.label)}" oninput="plSet(${i},'label',this.value)">`)}
+            ${pvf(`${esc(t('ed.stepKey'))} <b class="req">*</b>`,
               `<input class="pv-input mono ${keyDup||keyBad?'fld-err':''}" value="${esc(s.key)}"
-                placeholder="如 analysis" oninput="plSet(${i},'key',this.value)">`,
-              '', keyDup?`<div class="fld-err-t">key 重复，保存前需修改</div>`
-                        :keyBad?`<div class="fld-err-t">小写字母 / 数字 / 连字符 / 下划线</div>`:'')}
-            ${pvf(`角色`,
-              `<div class="radio-pills">${ROLES.map(r=>`
-                <button type="button" class="pill ${s.role===r.v?'active':''}" title="${esc(r.hint)}"
-                  onclick="plSet(${i},'role','${r.v}');plDrawEditor()">${r.label}</button>`).join('')}</div>`)}
+                oninput="plSet(${i},'key',this.value)">`,
+              keyDup?`<div class="fld-err-t">${esc(t('ed.keyDup'))}</div>`
+                    :keyBad?`<div class="fld-err-t">${esc(t('ed.keyHint'))}</div>`:'')}
           </div>
           <div class="pv-row2">
-            ${pvf(`主技能 <b class="req">*</b>
-              <a class="fld-link" onclick="nav.go('skills')">查看技能库</a>`,
-              `<select class="pv-input mono" onchange="plSet(${i},'skill',this.value)">
-                <option value="" ${!s.skill?'selected':''}>（选择技能）</option>
-                ${PL_SKILLS.map(sk=>`<option value="${esc(sk.name)}" ${s.skill===sk.name?'selected':''}>${esc(sk.name)}${sk.source==='user'?' · 自建':''}</option>`).join('')}
-                ${s.skill && !PL_SKILLS.some(sk=>sk.name===s.skill)?`<option value="${esc(s.skill)}" selected>${esc(s.skill)}（已删除的技能）</option>`:''}
-              </select>`,
+            ${pvf(`${esc(t('ed.mainSkill'))} <b class="req">*</b>
+              <a class="fld-link" onclick="nav.go('skills')">${esc(t('ed.viewSkills'))}</a>`,
+              (()=>{ const os=[{v:'',label:'—'}].concat(PL_SKILLS.map(sk=>({v:sk.name, label:sk.name+(sk.source==='user'?' · '+t('c.user'):'')})));
+                  if(s.skill && !PL_SKILLS.some(sk=>sk.name===s.skill)) os.push({v:s.skill, label:s.skill+'（'+t('sk.deleted')+'）'});
+                  return ffSelect(os, s.skill||'', {mono:true, onChange:(v)=>{ plSet(i,'skill',v); plDrawEditor(); }}); })(),
               main?`<div class="pv-foot-hint">${esc(main.desc)}</div>`:'')}
-            ${pvf(`产物文件`,
-              `<input class="pv-input mono" value="${esc(s.out||'')}" placeholder="如 ANALYSIS.md"
+            ${pvf(esc(t('ed.out')),
+              `<input class="pv-input mono" value="${esc(s.out||'')}" placeholder="${esc(t('ed.outPh'))}"
                 oninput="plSet(${i},'out',this.value)">`,
-              pvh('写入工作区，后续步骤可引用'))}
+              pvh(t('ed.outHint')))}
           </div>
+          ${pvf(esc(t('ed.role')),
+            ffSelect(ROLES_.map(r=>({v:r.v, label:r.label})), s.role||'executor',
+              {cls:'ff-pill', onChange:(v)=>plRole(i,v)}),
+            pvh((ROLES_.find(r=>r.v===(s.role||'executor'))||ROLES_[0]).hint, 'roleHint-'+i))}
           <div class="step-adv">
             <button type="button" class="step-adv-toggle" onclick="this.parentElement.classList.toggle('open')">
-              <span class="adv-arrow">▸</span> 高级选项
-              ${(s.model||(s.extra_skills||[]).length)?'<span class="adv-dot"></span>':''}
+              <span class="adv-arrow">▸</span> ${esc(t('ed.advanced'))}
+              <span class="adv-dot" id="advDot-${i}"
+                style="${(s.model||s.engine||(s.extra_skills||[]).length||s.extra_prompt)?'':'display:none'}"></span>
             </button>
             <div class="step-adv-body">
               <div class="pv-row2">
-                ${pvf(`叠加技能（规范类，可多个）`,
-                  `<div class="extra-chips">
-                    ${(s.extra_skills||[]).map((n,xi)=>`<span class="x-chip">${esc(n)}<b onclick="plExtraDel(${i},${xi})">×</b></span>`).join('')||'<span class="muted" style="font-size:12px">无</span>'}
-                    <select class="pv-input fi-inline" onchange="plExtraAdd(${i},this.value);this.value=''">
-                      <option value="">添加…</option>
-                      ${PL_SKILLS.filter(sk=>sk.name!==s.skill && !(s.extra_skills||[]).includes(sk.name))
-                        .map(sk=>`<option value="${esc(sk.name)}">${esc(sk.name)}</option>`).join('')}
-                    </select>
-                  </div>`)}
-                ${pvf(`本步模型`,
-                  `<select class="pv-input" onchange="plSet(${i},'model',this.value)">
-                    <option value="" ${!s.model?'selected':''}>跟随全局默认</option>
-                    ${presetNames.map(n=>`<option value="${esc(n)}" ${s.model===n?'selected':''}>预设：${esc(n)}</option>`).join('')}
-                    ${s.model && !presetNames.includes(s.model)?`<option value="${esc(s.model)}" selected>${esc(s.model)}</option>`:''}
-                  </select>`)}
+                ${pvf(esc(t('ed.engine')),
+                  ffSelect([['', t('ed.engineDefault')],['claude',t('eng.claude')],['codex',t('eng.codex')]]
+                    .map(([v,label])=>({v,label})), s.engine||'',
+                    {cls:'ff-pill', onChange:(v)=>plEng(i,v)}),
+                  pvh(readyEngines ? t('ed.engineHint')+' · '+t('ed.engineReady',{list:readyEngines}) : t('ed.engineNone')))}
+                ${pvf(esc(t('ed.model')),
+                  (()=>{ const om=[{v:'',label:t('ed.modelFollow')}].concat(
+                      presetNames.map(n=>({v:n, label:t('ed.modelPreset',{name:n})})));
+                    if(s.model && !presetNames.includes(s.model)) om.push({v:s.model, label:t('ed.modelRaw',{model:s.model})});
+                    return ffSelect(om, s.model||'', {onChange:(v)=>{ plSet(i,'model',v); plDrawEditor(); }}); })(),
+                  pvh(t('ed.modelHint')))}
               </div>
+              ${pvf(esc(t('ed.extraSkills')),
+                `<div class="extra-chips">
+                  ${(s.extra_skills||[]).map((n,xi)=>`<span class="x-chip">${esc(n)}<b onclick="plExtraDel(${i},${xi})">×</b></span>`).join('')||`<span class="muted-sm">${esc(t('c.none'))}</span>`}
+                  ${(()=>{ const add=PL_SKILLS.filter(sk=>sk.name!==s.skill && !(s.extra_skills||[]).includes(sk.name))
+                        .map(sk=>({v:sk.name,label:sk.name}));
+                      return add.length ? ffSelect(add, '', {action:true, cls:'ff-ghost',
+                        placeholder:t('ed.addSkill'), onChange:(v)=>plExtraAdd(i,v)}) : ''; })()}
+                </div>`)}
+              ${pvf(esc(t('ed.stepExtra')),
+                `<textarea class="pv-input" rows="3" placeholder="${esc(t('ed.stepExtraPh'))}"
+                  oninput="plSet(${i},'extra_prompt',this.value)">${esc(s.extra_prompt||'')}</textarea>`,
+                pvh(t('ed.stepExtraHint')))}
               <div class="pl-check-row">
-                <div><div class="k">人工检查点</div>
-                  <div class="cs2">本步完成后暂停，等我确认再继续</div></div>
+                <div><div class="k">${esc(t('ed.checkpoint'))}</div><div class="cs2">${esc(t('ed.checkpointHint'))}</div></div>
                 <label class="switch"><input type="checkbox" ${s.checkpoint?'checked':''}
                   onchange="plSet(${i},'checkpoint',this.checked)"><span class="slider"></span></label>
+              </div>
+              <div class="pl-check-row">
+                <div><div class="k">${esc(t('ed.preview'))}</div><div class="cs2">${esc(t('ed.previewSub'))}</div></div>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="plPreview(${i})">${esc(t('ed.preview'))}</button>
               </div>
             </div>
           </div>
         </div>
       </div>
       <div class="step-ops">
-        <button type="button" class="plop" title="上移" onclick="plMove(${i},-1)" ${i===0?'disabled':''}>上</button>
-        <button type="button" class="plop" title="下移" onclick="plMove(${i},1)" ${i===E.steps.length-1?'disabled':''}>下</button>
-        <button type="button" class="plop plop-del" title="删除步骤" onclick="plDel(${i})">删</button>
+        <button type="button" class="plop" title="${esc(t('ed.moveUp'))}" onclick="plMove(${i},-1)" ${i===0?'disabled':''}>↑</button>
+        <button type="button" class="plop" title="${esc(t('ed.moveDown'))}" onclick="plMove(${i},1)" ${i===E.steps.length-1?'disabled':''}>↓</button>
+        <button type="button" class="plop plop-del" title="${esc(t('ed.delStep'))}" onclick="plDel(${i})">×</button>
       </div>
     </div>`;
   };
 
-  const stepsHtml = E.steps.map(stepCard).join('');
+  window.__chrome = {
+    title: (isNew?t('ed.newTitle'):t('ed.editTitle')) + (E.label?` · ${E.label}`:''),
+    icon:'flow',
+    actions: `<button class="btn btn-ghost btn-sm" onclick="nav.go('pipelines')">${esc(t('c.cancel'))}</button>
+      <button class="btn btn-primary btn-sm" onclick="plSave()">${esc(t('ed.save'))}</button>`,
+  };
   $('#view').innerHTML = `
-    <div class="pl-wrap">
-    <div class="page-head">
-      <div><h1>${isNew?'创建流程':'编辑流程'}${E.label?` · ${esc(E.label)}`:''}</h1>
-        <div class="sub">步骤从上到下依次执行；每步绑定一个技能，产物文件写入同一工作区供后续引用</div></div>
-      <div style="display:flex;gap:10px">
-        <button class="btn btn-ghost" onclick="nav.go('pipelines')">取消</button>
-        <button class="btn btn-primary" onclick="plSave()">保存流程</button>
-      </div>
-    </div>
     <div class="card">
-      <div class="card-h"><div><div class="ct">基本信息</div><div class="cs">流程的唯一标识与展示名称</div></div></div>
-      <div class="pv-form" style="padding:2px 2px 16px">
+      <div class="card-h"><div><div class="ct">${esc(t('ed.basic'))}</div></div></div>
+      <div class="pv-form">
         <div class="pv-row2">
-          ${pvf(`流程名（英文小写，唯一） <b class="req">*</b>`,
-            `<input class="pv-input mono" id="plName" placeholder="如 my-pipeline"
+          ${pvf(`${esc(t('ed.name'))} <b class="req">*</b>`,
+            `<input class="pv-input mono" id="plName" placeholder="${esc(t('ed.namePh'))}"
               value="${esc(isNew?(E._draftName||''):E.name)}" ${isNew?'':'disabled'}>`,
-            isNew?pvh('创建后不可改；显示名称随时可改'):'')}
-          ${pvf(`显示名称 <b class="req">*</b>`,
-            `<input class="pv-input" id="plLabel" placeholder="如：我的国赛冲刺流" value="${esc(E.label)}"
-              oninput="plEdit('label',this.value)">`)}
+            isNew?pvh(t('ed.nameHint')):'')}
+          ${pvf(`${esc(t('ed.label'))} <b class="req">*</b>`,
+            `<input class="pv-input" id="plLabel" value="${esc(E.label)}" oninput="plEdit('label',this.value)">`)}
         </div>
-        ${pvf(`流程描述`,
-          `<textarea class="pv-input" id="plDesc" rows="2"
-            placeholder="写清这套流程适合什么场景"
+        ${pvf(esc(t('ed.desc')),
+          `<textarea class="pv-input" id="plDesc" rows="2" placeholder="${esc(t('ed.descPh'))}"
             oninput="plEdit('desc',this.value)">${esc(E.desc||'')}</textarea>`)}
       </div>
     </div>
     <div class="card">
-      <div class="card-h">
-        <div><div class="ct">步骤清单 <span class="muted">（${E.steps.length}）</span></div>
-          <div class="cs">从上到下依次执行，可用右侧按钮调整顺序</div></div>
-        <button class="btn btn-accent" onclick="plAdd()"><span class="btn-plus">＋</span> 添加步骤</button>
-      </div>
-      <div class="pl-steps-body" id="plSteps">${stepsHtml}</div>
-    </div>
-    <div style="height:60px"></div>
+      <div class="card-h"><div><div class="ct">${esc(t('ed.stepsTitle'))} <span class="muted">(${E.steps.length})</span></div>
+        <div class="cs">${esc(t('ed.stepsSub'))}</div></div>
+        <button class="btn btn-accent btn-sm" onclick="plAdd()"><span class="btn-plus">＋</span> ${esc(t('ed.addStep'))}</button></div>
+      <div class="pl-steps-body" id="plSteps">${E.steps.map(stepCard).join('')}</div>
     </div>`;
 }
 
 /* ---------------- 编辑操作 ---------------- */
 window.plEdit = function(k, v){ PL_EDIT[k] = v; };
-window.plSet = function(i, k, v){
-  PL_EDIT.steps[i][k] = (k==='checkpoint') ? !!v : v;
+window.plSet = function(i, k, v){ PL_EDIT.steps[i][k] = (k==='checkpoint') ? !!v : v; };
+/* 就地改：整页重渲染会把「高级配置」折叠回去，选一次引擎就得重新展开 */
+window.plAdvTouch = function(i){
+  const s = PL_EDIT.steps[i]||{}; const el = document.getElementById('advDot-'+i);
+  if(el) el.style.display = (s.model||s.engine||(s.extra_skills||[]).length||s.extra_prompt)?'':'none';
 };
+window.plRole = function(i, v){
+  plSet(i,'role',v);
+  const r = ROLES().find(x=>x.v===v); const el = document.getElementById('roleHint-'+i);
+  if(r && el) el.textContent = r.hint;
+};
+window.plEng = function(i, v){ plSet(i,'engine',v); plAdvTouch(i); };
 window.plExtraAdd = function(i, name){
   if(!name) return;
   const s = PL_EDIT.steps[i];
@@ -526,13 +474,9 @@ window.plExtraAdd = function(i, name){
   if(!s.extra_skills.includes(name)) s.extra_skills.push(name);
   plDrawEditor();
 };
-window.plExtraDel = function(i, xi){
-  PL_EDIT.steps[i].extra_skills.splice(xi,1);
-  plDrawEditor();
-};
+window.plExtraDel = function(i, xi){ PL_EDIT.steps[i].extra_skills.splice(xi,1); plDrawEditor(); };
 window.plAdd = function(){
-  const n = PL_EDIT.steps.length + 1;
-  PL_EDIT.steps.push(plBlankStep(n));
+  PL_EDIT.steps.push(plBlankStep(PL_EDIT.steps.length + 1));
   plDrawEditor();
   requestAnimationFrame(()=>{
     const cards = document.querySelectorAll('.step-card');
@@ -542,9 +486,7 @@ window.plAdd = function(){
 };
 window.plDel = function(i){
   PL_EDIT.steps.splice(i,1);
-  if(!PL_EDIT.steps.length){
-    PL_EDIT.steps.push(plBlankStep(1));
-  }
+  if(!PL_EDIT.steps.length) PL_EDIT.steps.push(plBlankStep(1));
   plDrawEditor();
 };
 window.plMove = function(i, d){
@@ -554,44 +496,91 @@ window.plMove = function(i, d){
   [a[i], a[j]] = [a[j], a[i]];
   plDrawEditor();
 };
+window.renderPipelineEdit = async function(name){
+  window.viewLoading();
+  await Promise.all([plLoad(), stPresets()]);
+  if(name && name !== 'new'){
+    const p = PL_TPLS.find(x=>x.name===name);
+    if(!p){ toast(t('ed.notFound')); nav.go('pipelines'); return; }
+    PL_EDIT = JSON.parse(JSON.stringify(p));
+  }else{
+    PL_EDIT = {name:'', label:'', desc:'', g:'custom', steps:[plBlankStep(1)]};
+  }
+  plDrawEditor();
+};
 
-/* ---------------- 保存 ---------------- */
 window.plSave = async function(){
   const E = PL_EDIT;
   plSyncInputs();
-  let name = E.name || (E._draftName || '').trim() || ($('#plName') && $('#plName').value || '').trim();
-  if(!name){ toast('请填写流程名'); return; }
+  const name = E.name || (E._draftName||'').trim() || ($('#plName') && $('#plName').value || '').trim();
+  if(!name){ toast(t('ed.needName')); return; }
   const label = (($('#plLabel') && $('#plLabel').value) || E.label || '').trim() || name;
-  /* 前端先自检一遍，错误直接点名到第几步 */
   const keys = new Set();
   for(let i=0;i<E.steps.length;i++){
     const s = E.steps[i];
-    const at = `第 ${i+1} 步`;
-    if(!(s.label||'').trim()){ toast(at+'缺步骤名称'); return; }
+    if(!(s.label||'').trim()){ toast(t('ed.needLabel',{n:i+1})); return; }
     const key = (s.key||'').trim();
-    if(!/^[a-z0-9][a-z0-9_-]*$/.test(key)){ toast(at+`key「${key||'空'}」不合法（小写字母/数字/连字符/下划线）`); return; }
-    if(keys.has(key)){ toast(at+`key「${key}」重复`); return; }
+    if(!/^[a-z0-9][a-z0-9_-]*$/.test(key)){ toast(t('ed.needKey',{n:i+1,key})); return; }
+    if(keys.has(key)){ toast(t('ed.needKey',{n:i+1,key})); return; }
     keys.add(key);
-    if(!(s.skill||'').trim()){ toast(at+'「'+(s.label||key)+'」还没有绑定主技能'); return; }
+    if(!(s.skill||'').trim()){ toast(t('ed.needSkill',{n:i+1,label:s.label||key})); return; }
   }
-  const payload = {
-    name, label,
-    desc: E.desc||'', g: E.g||'custom',
+  const payload = { name, label, desc: E.desc||'', g: E.g||'custom',
     steps: E.steps.map(s=>({
       key:(s.key||'').trim(), label:(s.label||'').trim(),
       skill:[(s.skill||'').trim(), ...(s.extra_skills||[])].join(' ').trim(),
       out:(s.out||'').trim(), checkpoint:!!s.checkpoint,
       role:s.role||'executor', model:(s.model||'').trim(),
+      engine:(s.engine||'').trim(), extra_prompt:(s.extra_prompt||'').trim(),
     })),
   };
   const isNew = !E.name;
   const url = isNew ? '/api/pipelines' : `/api/pipelines/${encodeURIComponent(E.name)}`;
-  const r = await (isNew ? _post(url, payload)
-    : _put(url, payload))
-    .catch(e=>({detail:e.message||'保存失败'}));
+  const r = await (isNew ? _post(url, payload) : _put(url, payload)).catch(e=>({detail:e.message}));
   if(r.detail){ toast(r.detail); return; }
-  toast('流程已保存', true);
+  toast(t('ed.saved'), true);
   nav.go('pipelines');
+};
+
+/* ---------------- 提示词预览 ---------------- */
+window.plPreview = async function(i){
+  const E = PL_EDIT;
+  if(!E.name){ toast(t('ed.unsavedPreview')); return; }
+  const raw = prompt(t('ed.previewBriefPh'));
+  if(raw===null) return;
+  const d = await _api(`/api/pipelines/${encodeURIComponent(E.name)}/preview/${i}?brief=`+encodeURIComponent(raw.trim()))
+    .catch(e=>({detail:e.message}));
+  if(d.detail){ toast(d.detail); return; }
+  const mainSkill = String((E.steps[i]||{}).skill||'').trim().split(/\s+/)[0] || '';
+  _lockScroll(true);
+  const root = document.createElement('div');
+  root.id='pvPromptRoot';
+  root.innerHTML = `<div class="modal open" onclick="if(event.target===this)plClosePreview()">
+    <div class="modal-box sk-view-modal">
+      <div class="modal-top"><div class="pv-head"><h3>${esc(t('ed.previewTitle',{n:i+1}))}</h3>
+        <span class="sk-badge">${esc(window.ENGINE_LABEL(d.engine))}</span></div>
+        <button class="modal-x" onclick="plClosePreview()">×</button></div>
+      <div class="sk-view-body">
+        <div class="pp-label">${esc(t('ed.previewSystem'))}</div>
+        <pre class="sk-pre">${esc(d.system)}</pre>
+        <div class="pp-label">${esc(t('ed.previewUser'))}</div>
+        <pre class="sk-pre">${esc(d.user)}</pre>
+      </div>
+      <div class="sk-view-foot">
+        <button class="btn btn-ghost btn-sm" onclick="plClosePreview()">${esc(t('c.close'))}</button>
+        <button class="btn btn-primary btn-sm" onclick="plClosePreview();nav.go('skill-edit/${esc(mainSkill)}')">${esc(t('ed.goSkill'))}</button>
+      </div>
+    </div></div>`;
+  document.body.appendChild(root);
+};
+window.plClosePreview = function(){ const r=document.getElementById('pvPromptRoot'); if(r) r.remove(); _lockScroll(false); };
+
+window.plRestoreFrom = async function(name){
+  if(!confirm(t('list.restoreConfirm',{name}))) return;
+  const r = await _post(`/api/pipelines/${encodeURIComponent(name)}/restore`).catch(e=>({detail:e.message}));
+  if(r.detail){ toast(r.detail); return; }
+  toast(t('list.restoreDone'), true);
+  nav.go('pipeline-edit/'+name);
 };
 
 })();

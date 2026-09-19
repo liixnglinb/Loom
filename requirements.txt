@@ -1,7 +1,11 @@
-# FlowForge 智模流水线 依赖（极简版）
+# Loom 织流 依赖
 fastapi>=0.110
 uvicorn[standard]>=0.29
 python-multipart>=0.0.9
 requests>=2.31
 pydantic>=2.6
+# 只用于「测试 API 预设连通性」，运行正文一律走本机智能体 CLI
 openai>=1.30
+
+# 开发/回归：python -m pytest tests -q
+pytest>=8.0

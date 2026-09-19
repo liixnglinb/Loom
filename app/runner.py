@@ -1,29 +1,39 @@
 # -*- coding: utf-8 -*-
-"""流程执行引擎：按步骤清单依次调用 LLM（流式），产物写入工作区。
+"""流程执行引擎：把每个步骤交给本机智能体 CLI（claude / codex）执行。
 
-设计：
-- 一次运行 = 一个后台线程 + 一个事件队列（SSE 消费）
-- 步骤输入 = 任务指令 + 上一步产物（可达产物摘要）+ 技能规范
+设计要点（沿用旧版的工程纪律，去掉与单一学科绑定的部分）：
+- 一次运行 = 一个后台线程 + 一个事件总线（SSE 消费）
+- 步骤之间**用工作区文件对话**：上一步落盘的文件就是下一步的输入，
+  不在提示词里内联长文（智能体有文件工具，让它自己读）
 - 检查点：步骤完成后 run 转 waiting，等用户 continue
-- 局部修订：挂起/完成后对指定步骤产物发起对话式修改，改完写回工作区
+- 局部修订 / 从此步重跑：都走同一个智能体引擎
 - 取消：置 cancel_flag，步骤间隙退出
 """
 import json
+import re
 import threading
 import time
 import uuid
 from pathlib import Path
 
-from . import db, llm, paths
+from . import agents, db, paths
 
-# run_id -> 队列管理器（内存态；进程重启后 runs 表仍在，但事件流从当前状态重建）
+# run_id -> 事件总线；进程重启后 runs 表仍在，事件流按当前状态重建
 _BUSES: dict = {}
 _BUS_LOCK = threading.Lock()
 _CANCEL: set = set()
 
+# 工作区里不属于「产物」的文件（引擎自己的落盘）
+_INTERNAL = {"AGENTS.md", "_step_system.txt"}
+_ROLE_HINT = {
+    "executor": "你是本步的执行者：按技能规范把任务真做完，产出真实文件。",
+    "reviewer": "你是本步的独立评审：默认前序产出有问题，用证据逐条判定，不动手修。",
+    "editor": "你是本步的修订者：按评审意见逐条修复，改文件本体并复验。",
+}
+_RUN_STATUS = ("pending", "running", "done", "failed", "cancelled", "revising")
+
 
 def _norm_run_id(rid: str) -> str | None:
-    import re
     return rid if (rid and re.fullmatch(r"run-[a-z0-9]{6,40}", rid)) else None
 
 
@@ -46,14 +56,12 @@ class RunBus:
         ev.setdefault("ts", time.time())
         with self.lock:
             self.history.append(ev)
-            # 事件历史限长（流式 delta 很多），全量快照靠 state 事件兜底
             if len(self.history) > 4000:
                 self.history = self.history[-3000:]
             for q in self.subs:
                 q.append(ev)
 
     def subscribe(self) -> list[dict]:
-        """新订阅者只收订阅之后的事件；此前的状态由 snapshot_events 的 state 打底。"""
         q: list[dict] = []
         with self.lock:
             self.subs.append(q)
@@ -65,12 +73,10 @@ class RunBus:
                 self.subs.remove(q)
 
     def snapshot_events(self) -> list[dict]:
-        """把当前状态压成一条 state 事件（SSE 断线重连/晚订阅兜底）。"""
         run = db.get_run(self.run_id)
         if not run:
             return [{"type": "state", "run": None}]
-        arts = read_artifacts(run)
-        return [{"type": "state", "run": run, "artifacts": arts}]
+        return [{"type": "state", "run": run, "artifacts": read_artifacts(run)}]
 
 
 def bus_for(run_id: str) -> RunBus:
@@ -94,23 +100,230 @@ def is_cancelled(run_id: str) -> bool:
 
 
 # ==================== 工作区与产物 ====================
+def _ws_path(run_id: str) -> Path:
+    name = run_id if str(run_id).startswith("run-") else f"run-{run_id}"
+    return paths.WORKSPACES_DIR / name
+
+
 def workspace_dir(run_id: str) -> Path:
-    d = paths.WORKSPACES_DIR / f"run-{run_id}" if not str(run_id).startswith("run-") \
-        else paths.WORKSPACES_DIR / run_id
+    d = _ws_path(run_id)
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def _safe_out_name(out: str) -> str | None:
-    import re
     out = (out or "").strip()
     if not out or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,80}", out):
         return None
     return out
 
 
+_ARTIFACT_SUFFIX = (".md", ".txt", ".json", ".csv", ".tex", ".py", ".html", ".yaml",
+                    ".yml", ".log")
+
+
+def _is_internal(rel: str) -> bool:
+    """整条相对路径任一段以下划线开头就算内部文件 —— 只看文件名会让
+    _turn_logs/xxx.jsonl 这种漏进清单，下一步的提示词里就多了引擎原始转录。"""
+    parts = [p for p in rel.split("/") if p]
+    return any(p in _INTERNAL or p.startswith("_") or p.startswith("AGENTS") for p in parts)
+
+
+def list_workspace(run_id: str) -> list:
+    """工作区文件清单（相对路径 + 字节数 + 改动时间），供提示词与产物面板共用。"""
+    ws = _ws_path(run_id)          # 不建目录：提示词预览也会走这里
+    out = []
+    if not ws.is_dir():
+        return out
+    for f in sorted(ws.rglob("*")):
+        if not f.is_file():
+            continue
+        rel = f.relative_to(ws).as_posix()
+        if _is_internal(rel):
+            continue
+        try:
+            st = f.stat()
+            out.append({"path": rel, "bytes": st.st_size, "mtime": int(st.st_mtime),
+                        "kind": file_kind(rel)})
+        except Exception:
+            continue
+    out.sort(key=lambda x: -x["mtime"])
+    return out
+
+
+_TEXT_EXT = {".md", ".markdown", ".txt", ".json", ".jsonl", ".csv", ".tsv", ".py", ".js", ".ts",
+             ".html", ".css", ".tex", ".bib", ".yaml", ".yml", ".toml", ".ini", ".log", ".r", ".m"}
+_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"}
+_PREVIEW_MAX_BYTES = 400_000
+
+
+def ws_file(run_id: str, rel: str) -> Path:
+    """工作区内的一个真实文件。校验只写这一处 —— 预览和下载共用，
+    才不会一个入口严、一个入口松。"""
+    ws = _ws_path(run_id).resolve()
+    f = (ws / str(rel or "")).resolve()
+    if f == ws or not f.is_relative_to(ws) or not f.is_file():
+        raise FileNotFoundError(str(rel))
+    return f
+
+
+def file_kind(name: str) -> str:
+    ext = Path(name).suffix.lower()
+    if ext in _IMAGE_EXT:
+        return "image"
+    if ext == ".pdf":
+        return "pdf"
+    if ext in _TEXT_EXT:
+        return "text"
+    return "binary"
+
+
+def read_workspace_file(run_id: str, rel: str, max_bytes: int = _PREVIEW_MAX_BYTES) -> dict:
+    """预览一个工作区文件。二进制（pptx / docx / xlsx / 压缩包）只报类型，
+    正文一律不给 —— 前端拿到 kind 自己决定是渲染还是给下载。
+    清单里不出现的内部文件（引擎转录等）这里也不给：一个地方说"不是你的"，
+    另一个地方就不能放行。"""
+    if _is_internal(str(rel or "")):
+        raise FileNotFoundError(str(rel))
+    f = ws_file(run_id, rel)
+    size = f.stat().st_size
+    kind = file_kind(f.name)
+    out = {"path": str(rel), "kind": kind, "bytes": size, "truncated": False, "text": ""}
+    if kind != "text":
+        return out
+    with f.open("rb") as fh:
+        raw = fh.read(max_bytes + 1)
+    out["truncated"] = len(raw) > max_bytes
+    # ignore 而不是 replace：切在多字节中间时 replace 会补出一个 3 字节的 U+FFFD，
+    # 结果"截断后的正文"反而比上限还长。
+    out["text"] = raw[:max_bytes].decode("utf-8", errors="ignore")
+    return out
+
+
+_LOG_DIR = "_turn_logs"
+_LOG_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.jsonl$")
+_LOG_TAIL_BYTES = 400_000
+
+
+def workspace_bytes() -> tuple:
+    """(全部工作区占用字节, 工作区目录数)。设置页「使用统计」用。"""
+    root = paths.WORKSPACES_DIR
+    if not root.is_dir():
+        return 0, 0
+    total, dirs = 0, 0
+    for d in sorted(root.iterdir()):
+        if not d.is_dir():
+            continue
+        dirs += 1
+        for f in d.rglob("*"):
+            try:
+                if f.is_file():
+                    total += f.stat().st_size
+            except Exception:
+                pass
+    return total, dirs
+
+
+def orphan_workspaces() -> list:
+    """有目录但没有对应运行记录的残留工作区 —— 只报，不自动删。
+
+    目录名就是 run id（_ws_path 对已带 run- 前缀的 id 不再加前缀），
+    所以这里绝不能剥前缀再比，否则每条正常的工作区都会被误判成孤儿。
+    """
+    root = paths.WORKSPACES_DIR
+    if not root.is_dir():
+        return []
+    known = {r["id"] for r in db.list_runs(None, 500)}
+    out = []
+    for d in sorted(root.iterdir()):
+        if not d.is_dir():
+            continue
+        if d.name in known or ("run-" + d.name) in known:
+            continue
+        size = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+        out.append({"name": d.name, "bytes": size})
+    return out
+
+
+def usage_stats() -> dict:
+    """把 runs 表里的 step.meta 汇总成看得懂的用量。没有的字段一律按 0 计。"""
+    runs = db.list_runs(None, 500)
+    by_status = {}
+    cost = dur = tools = turns = steps_done = steps_total = 0
+    for r in runs:
+        by_status[r["status"]] = by_status.get(r["status"], 0) + 1
+        for s in (r.get("steps") or []):
+            steps_total += 1
+            if s.get("status") == "done":
+                steps_done += 1
+            m = s.get("meta") or {}
+            cost += float(m.get("cost_usd") or 0)
+            dur += int(m.get("duration_ms") or 0)
+            tools += int(m.get("tools") or 0)
+            turns += int(m.get("turns") or 0)
+    ws_bytes, ws_dirs = workspace_bytes()
+    return {
+        "runs": len(runs),
+        "by_status": by_status,
+        "steps_done": steps_done,
+        "steps_total": steps_total,
+        "tool_calls": tools,
+        "agent_turns": turns,
+        "duration_ms": dur,
+        "cost_usd": round(cost, 4),
+        "workspace_bytes": ws_bytes,
+        "workspaces": ws_dirs,
+        "workflows": len(db.list_pipelines()),
+        "per_workflow": db.run_counts(),
+        "orphans": orphan_workspaces(),
+    }
+
+
+def list_logs(run_id: str) -> list:
+    """智能体原始转录日志（每步每次调用一份 jsonl），失败时唯一的现场证据。"""
+    d = _ws_path(run_id) / _LOG_DIR
+    if not d.is_dir():
+        return []
+    out = []
+    for f in sorted(d.iterdir(), key=lambda p: p.name):
+        if f.suffix != ".jsonl" or not f.is_file():
+            continue
+        try:
+            st = f.stat()
+        except Exception:
+            continue
+        out.append({"name": f.name, "bytes": st.st_size,
+                    "modified": time.strftime("%Y-%m-%d %H:%M:%S",
+                                              time.localtime(st.st_mtime))})
+    return out
+
+
+def read_log(run_id: str, name: str, max_lines: int = 500) -> dict:
+    """读一份转录日志的尾部。只认纯文件名，且解析后必须仍在 _turn_logs 内。"""
+    if not _LOG_NAME_RE.fullmatch(name or ""):
+        raise ValueError("日志名无效")
+    ws = _ws_path(run_id).resolve()
+    f = (ws / _LOG_DIR / name).resolve()
+    if not str(f).startswith(str(ws / _LOG_DIR)) or not f.is_file():
+        raise FileNotFoundError("日志不存在")
+    size = f.stat().st_size
+    truncated = size > _LOG_TAIL_BYTES
+    with open(f, "rb") as fh:
+        if truncated:
+            fh.seek(size - _LOG_TAIL_BYTES)
+        raw = fh.read()
+    lines = raw.decode("utf-8", "replace").splitlines()
+    if truncated:                 # 截断处的第一行是半条，丢掉
+        lines = lines[1:]
+    total = len(lines)
+    keep = max(1, min(max_lines, 2000))
+    tail = lines[-keep:] if lines else []
+    return {"name": name, "bytes": size, "truncated": truncated,
+            "lines": tail, "dropped": total - len(tail)}
+
+
 def read_artifacts(run: dict) -> dict:
-    """读取工作区全部产物文件（步骤 out 与额外文件），返回 {文件名: 内容}。"""
+    """读取工作区可预览产物，返回 {相对路径: 内容}。"""
     out = {}
     ws = workspace_dir(run["id"])
     names = set()
@@ -118,56 +331,51 @@ def read_artifacts(run: dict) -> dict:
         n = _safe_out_name(s.get("out") or "")
         if n:
             names.add(n)
-    for f in sorted(ws.glob("*")):
-        if f.is_file() and f.suffix.lower() in (".md", ".txt", ".json", ".csv", ".tex"):
-            names.add(f.name)
+    for item in list_workspace(run["id"]):
+        p = item["path"]
+        if Path(p).suffix.lower() in _ARTIFACT_SUFFIX and item["bytes"] <= 600_000:
+            names.add(p)
     for n in names:
+        f = ws / n
+        if not f.is_file():
+            continue
         try:
-            out[n] = (ws / n).read_text(encoding="utf-8", errors="replace")
+            out[n] = f.read_text(encoding="utf-8", errors="replace")
         except Exception:
             pass
     return out
-
 
 
 class _Cancelled(Exception):
     pass
 
 
-def _guard_stream(stream, run_id: str):
-    """包一层流：取消时抛 _Cancelled，保证调用方能感知中断。"""
-    for chunk in stream:
-        if is_cancelled(run_id):
-            raise _Cancelled()
-        yield chunk
+# ==================== 技能加载 ====================
+def _skill_dir(name: str) -> Path | None:
+    for base in (paths.USER_SKILLS_DIR, paths.BASE / "skills"):
+        d = base / name
+        if (d / "SKILL.md").is_file():
+            return d
+    return None
 
 
-# ==================== 提示词组装 ====================
-_ROLE_HINT = {
-    "executor": "你是执行者：按技能规范高质量完成本步任务，直接产出结果正文。",
-    "reviewer": "你是检查者：审阅上一步产物，指出问题并给出结构化的修改意见清单（不要重写全文）。",
-    "editor": "你是润色者：在既有产物基础上做编辑改进，输出改进后的完整文稿。",
-}
+def _skill_body(name: str) -> str:
+    d = _skill_dir(name)
+    if not d:
+        return ""
+    try:
+        return (d / "SKILL.md").read_text(encoding="utf-8", errors="replace").strip()
+    except Exception:
+        return ""
 
 
-def _skill_text(skill_name: str) -> str:
-    d = paths.USER_SKILLS_DIR / (skill_name or "")
-    md = d / "SKILL.md"
-    if md.is_file():
-        try:
-            return md.read_text(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
-    return ""
-
-
-def _refs_text(skill_name: str, limit=6000) -> str:
-    """技能附属文件（references/ scripts/）拼成附录，供模型参考。"""
-    d = paths.USER_SKILLS_DIR / (skill_name or "") / "references"
-    if not d.is_dir():
+def _refs_text(d: Path, limit=8000) -> str:
+    """技能附属 references/*.md 拼成附录。"""
+    ref = d / "references"
+    if not ref.is_dir():
         return ""
     parts, total = [], 0
-    for f in sorted(d.rglob("*")):
+    for f in sorted(ref.rglob("*")):
         if not (f.is_file() and f.suffix.lower() in (".md", ".txt")):
             continue
         try:
@@ -175,67 +383,236 @@ def _refs_text(skill_name: str, limit=6000) -> str:
         except Exception:
             continue
         seg = f"\n#### 附属文件 {f.name}\n\n{t}\n"
-        if total + len(seg) > limit:
-            seg = seg[:limit - total] + "\n…(截断)"
-        parts.append(seg)
-        total += len(seg)
         if total >= limit:
             break
+        parts.append(seg[:max(0, limit - total)])
+        total += len(seg)
     return "".join(parts)
 
 
-def build_step_messages(run: dict, step_idx: int, artifacts: dict, extra_instruction: str = "") -> list:
-    """组装一步的对话消息。step_idx 为步骤下标，上游产物取它之前的步骤。"""
-    steps = run.get("steps") or []
-    step = steps[step_idx]
-    prev_out = []
-    for s in steps[:step_idx]:
-        n = _safe_out_name(s.get("out") or "")
-        if n and n in artifacts:
-            body = artifacts[n]
-            if len(body) > 9000:
-                body = body[:9000] + "\n…(前序产物截断)"
-            prev_out.append(f"### 前序产物「{s.get('label') or s.get('key')}」（文件 {n}）\n\n{body}")
-    skill_body = _skill_text(step.get("skill"))
-    refs = _refs_text(step.get("skill"))
-    user_parts = []
-    if run.get("label"):
-        user_parts.append(f"## 任务背景\n本流程：{run['label']}")
-    user_parts.append(f"## 当前步骤（{step.get('label') or step.get('key')}）\n"
-                      f"角色：{_ROLE_HINT.get(step.get('role') or 'executor', _ROLE_HINT['executor'])}")
-    if skill_body:
-        user_parts.append(f"## 技能规范（{step.get('skill')}）\n\n{skill_body[:12000]}")
-    if refs:
-        user_parts.append(f"## 技能附属资料\n{refs}")
-    if prev_out:
-        user_parts.append("## 上游产物\n" + "\n\n".join(prev_out[-2:]))  # 最近两步足够
-    if step.get("out"):
-        user_parts.append(f"## 输出要求\n把最终结果直接写成完整正文，末尾不要附加说明。"
-                          f"正文将保存为文件 {step['out']}。")
-    if extra_instruction:
-        user_parts.append(f"## 补充指令\n{extra_instruction}")
-    return [{"role": "user", "content": "\n\n---\n\n".join(user_parts)}]
+def compose_skill_prompt(skill_field: str) -> tuple:
+    """skill 字段可空格分隔叠多个技能（主技能 + 叠加规范），依次拼接。
+
+    返回 (正文, [实际读到的技能名], [缺失的技能名])。
+    """
+    names = [n for n in re.split(r"\s+", (skill_field or "").strip()) if n]
+    chunks, loaded, missing = [], [], []
+    for n in names:
+        body = _skill_body(n)
+        if not body:
+            missing.append(n)
+            continue
+        d = _skill_dir(n)
+        refs = _refs_text(d) if d else ""
+        chunks.append(f"### 技能「{n}」\n\n{body}" + (f"\n\n{refs}" if refs else ""))
+        loaded.append(n)
+    if not chunks:
+        return "", loaded, missing
+    return "\n\n---\n\n".join(chunks), loaded, missing
 
 
-def _resolve_llm(step: dict):
-    """本步模型：步级预设名 > 默认预设。返回 (provider, base, key, model) 或 None。"""
-    preset = None
-    pname = (step.get("model") or "").strip()
-    if pname:
-        preset = db.get_preset_by_name(pname)
-    if not preset:
+# ==================== 模型与引擎解析 ====================
+def resolve_agent_config(step: dict) -> dict:
+    """本步用哪个引擎、哪个端点与模型。
+
+    引擎：步级 engine > 设置 default_engine > 本机第一个可用的 CLI。
+    端点/模型阶梯：步级 model 是预设名 > 默认预设的 model_map[步骤key] >
+    步级 model 当裸模型名挂在默认预设上 > 默认预设的 fallback_model > 默认预设。
+    全部留空时不注入任何环境变量，沿用 CLI 自身的登录配置。
+    """
+    engine = (step.get("engine") or "").strip().lower()
+    if engine not in agents.ENGINES:
+        engine = (db.get_setting("default_engine") or "").strip().lower()
+    if engine not in agents.ENGINES:
+        engine = next((e for e in agents.ENGINES if agents.resolve_binary(e)), "")
+    if not engine:
+        raise RuntimeError(
+            "本机未检测到任何智能体 CLI（claude / codex）。装好任意一个，"
+            "或在设置页「智能体引擎」里填可执行文件路径。")
+
+    conf = {"engine": engine, "provider": "", "api_base": "", "api_key": "",
+            "model": "", "wire_api": "", "preset": "", "warn": ""}
+    want = (step.get("model") or "").strip()
+    preset = db.get_preset_by_name(want) if want else None
+    raw_model_id = ""
+    if preset:
+        conf["preset"] = preset.get("name") or ""
+    else:
         preset = db.get_default_preset()
+        if want:
+            raw_model_id = want        # 步级填的是裸模型名，端点沿用默认预设
+        if preset:
+            conf["preset"] = preset.get("name") or ""
+            extra = preset.get("extra") or {}
+            mapped = ""
+            if isinstance(extra.get("model_map"), dict):
+                mapped = str(extra.get("model_map").get(step.get("key") or "") or "")
+            conf["model"] = mapped or str(extra.get("fallback_model") or "")
     if not preset:
-        return None
-    return (preset.get("provider") or "openai", preset.get("api_base") or "",
-            preset.get("api_key") or "", preset.get("model") or "")
+        return conf
+    if raw_model_id:
+        conf["model"] = raw_model_id
+    if not agents.protocol_ok(engine, preset.get("provider") or "",
+                              preset.get("api_base") or ""):
+        # 协议对不上：不注入端点，改走该 CLI 自身的登录配置，并把原因留在轨迹里
+        conf["model"] = ""
+        conf["warn"] = (f"默认预设「{preset.get('name')}」协议为 "
+                        f"{preset.get('provider') or 'openai'}，与 {engine} 引擎不兼容 —— "
+                        "本步不注入该端点，改用 CLI 自身登录配置。")
+        return conf
+    conf["provider"] = preset.get("provider") or ""
+    conf["api_base"] = preset.get("api_base") or ""
+    conf["api_key"] = preset.get("api_key") or ""
+    conf["wire_api"] = str((preset.get("extra") or {}).get("wire_api") or "")
+    conf["model"] = conf["model"] or (preset.get("model") or "")
+    return conf
 
 
-# ==================== 执行线程 ====================
+# ==================== 提示词组装 ====================
+def _flow_map(steps: list, idx: int) -> str:
+    parts = []
+    for i, s in enumerate(steps):
+        tag = s.get("label") or s.get("key")
+        parts.append(f"**{tag}**" if i == idx else tag)
+    return " → ".join(parts)
+
+
+def build_step_prompt(run: dict, idx: int) -> tuple:
+    """返回 (system_text, user_text)。system 是技能规范全文，user 是任务与契约。"""
+    steps = run.get("steps") or []
+    step = steps[idx]
+    ws = workspace_dir(run["id"])
+    skill_text, loaded, missing = compose_skill_prompt(step.get("skill"))
+
+    role = step.get("role") or "executor"
+    sys_parts = [
+        "# 你在一条全自动工作流中执行单个步骤",
+        "",
+        f"- 流程：{run.get('label') or run.get('pipeline')}",
+        f"- 当前步骤：第 {idx+1}/{len(steps)} 步 · {step.get('label')}",
+        "",
+        "## 本步角色",
+        _ROLE_HINT.get(role, _ROLE_HINT["executor"]),
+        "",
+        "## 工作区约定",
+        f"- 你的工作目录就是本工作区：`{ws}`",
+        "- 步骤之间靠**工作区文件**传递信息：需要的前序产物请自己 Read，"
+        "不要等别人把全文贴给你。",
+        "- 产出必须**真实写入文件**，只在回答里贴正文不算完成。",
+        "- 只做本步范围内的事，别顺手把后面的步骤也做了。",
+    ]
+    if missing:
+        sys_parts += ["", f"⚠️ 下列技能在工作区里读不到，其规范缺失：{'、'.join(missing)}"]
+    if skill_text:
+        sys_parts += ["", "## 本步执行规范（技能全文，最高优先级）", "", skill_text]
+    system_text = "\n".join(sys_parts)
+
+    files = list_workspace(run["id"])
+    upstream = []
+    for s in steps[:idx]:
+        n = _safe_out_name(s.get("out") or "")
+        if n:
+            upstream.append(n)
+    user = [
+        "# 任务说明（用户原始输入，一切判断的最终依据）",
+        (run.get("brief") or "").strip() or "（用户未填写任务说明，仅给了流程名）",
+        "",
+        "# 本步指令",
+        _ROLE_HINT.get(role, _ROLE_HINT["executor"]),
+        "",
+        "流程位置：" + _flow_map(steps, idx),
+    ]
+    if files:
+        listing = "\n".join(f"- `{f['path']}`（{f['bytes']} 字节）" for f in files[:80])
+        user += ["", "# 工作区现有文件", listing]
+    if upstream:
+        user += ["", "# 上游产物（动手前请先 Read 这些文件）",
+                 "\n".join(f"- `{n}`" for n in upstream)]
+    out = _safe_out_name(step.get("out") or "")
+    if out:
+        user += ["", f"# 输出契约", f"- 本步产出必须写入工作区文件 `{out}`，"
+                                  f"文件结构按上方技能规范里的模板。"]
+    if (step.get("extra_prompt") or "").strip():
+        user += ["", "# 本步补充要求（优先级高于技能规范）", step["extra_prompt"].strip()]
+    user += ["", "现在开始执行本步。"]
+    return system_text, "\n".join(user)
+
+
+# ==================== 执行 ====================
 def _save_step_output(run_id: str, step: dict, text: str):
     n = _safe_out_name(step.get("out") or "")
-    if n:
-        (workspace_dir(run_id) / n).write_text(text, encoding="utf-8")
+    if n and text.strip():
+        (workspace_dir(run_id) / n).write_text(text.rstrip() + "\n", encoding="utf-8")
+
+
+def _run_step(run: dict, idx: int, bus: RunBus, extra_instruction: str = "") -> dict:
+    """跑一个步骤，返回 {ok, text, error, meta}。"""
+    run_id = run["id"]
+    steps = run.get("steps") or []
+    step = steps[idx]
+    conf = resolve_agent_config(step)
+    system_text, user_text = build_step_prompt(run, idx)
+    if extra_instruction:
+        user_text += f"\n\n# 追加指令（用户在本步现场提出）\n{extra_instruction}"
+    ws = workspace_dir(run_id)
+    if conf["engine"] == "codex":
+        (ws / "AGENTS.md").write_text(system_text, encoding="utf-8")
+        sys_arg = ""
+    else:
+        sys_arg = system_text
+
+    step["engine_used"] = conf["engine"]
+    step["model_used"] = conf["model"] or "（沿用 CLI 自身配置）"
+    step["started_at"] = time.strftime("%H:%M:%S")
+    step["trace"] = []
+    if conf.get("warn"):
+        step["trace"].append({"kind": "status", "text": conf["warn"]})
+        bus.publish({"type": "status", "index": idx, "text": conf["warn"]})
+    buf: list = []
+
+    def _emit(ev: dict):
+        kind = ev.get("type")
+        if kind == "delta":
+            text = ev.get("text") or ""
+            buf.append(text)
+            bus.publish({"type": "delta", "index": idx, "text": text})
+            return
+        if kind in ("tool", "status", "note"):
+            line = {"kind": kind, "name": ev.get("name") or "",
+                    "text": (ev.get("preview") or ev.get("text") or "")[:400]}
+            step["trace"].append(line)
+            if len(step["trace"]) > 120:
+                del step["trace"][:60]
+            bus.publish({"type": kind, "index": idx, "text": line["text"],
+                         "name": line["name"]})
+
+    try:
+        res = agents.run_agent(
+            conf["engine"], user_text, ws=ws, system_text=sys_arg,
+            model=conf["model"], api_base=conf["api_base"], api_key=conf["api_key"],
+            wire_api=conf["wire_api"], label=f"{idx+1:02d}_{step.get('key')}",
+            emit=_emit, cancel_check=lambda: is_cancelled(run_id))
+    except agents.AgentCancelled:
+        raise _Cancelled()
+    except agents.AgentError as e:
+        log = Path(e.log).name if getattr(e, "log", "") else ""
+        return {"ok": False, "error": str(e), "text": "".join(buf),
+                "meta": {"log": log} if log else {}}
+
+    out_name = _safe_out_name(step.get("out") or "")
+    if (out_name and not (ws / out_name).is_file() and res["text"].strip()
+            and not res["is_error"]):
+        # 智能体只在回答里写了正文、没落盘 —— 兜底代写，保证下游有输入。
+        # 出错时的 final 往往是 API 报错文本，绝不能当成产物写进去。
+        (ws / out_name).write_text(res["text"].rstrip() + "\n", encoding="utf-8")
+        bus.publish({"type": "note", "index": idx,
+                     "text": f"智能体未落盘 {out_name}，已按最终回答代写"})
+    meta = {"tools": res["tools"], "turns": res["turns"],
+            "duration_ms": res["duration_ms"], "cost_usd": res["cost_usd"],
+            "engine": res["engine"],
+            "log": Path(res["log"]).name if res.get("log") else ""}
+    return {"ok": not res["is_error"], "error": res["error"],
+            "text": res["text"] or "".join(buf), "meta": meta}
 
 
 def _run_thread(run_id: str, start_step: int = 0):
@@ -255,62 +632,72 @@ def _run_thread(run_id: str, start_step: int = 0):
                 return
             step = steps[idx]
             step["status"] = "running"
+            step["chars"] = 0
             db.update_run(run_id, cur_step=idx, steps=steps)
-            bus.publish({"type": "step_start", "index": idx, "step": step})
-            conf = _resolve_llm(step)
-            if not conf:
-                step["status"] = "failed"
-                db.update_run(run_id, status="failed",
-                              error=f"第 {idx+1} 步无法解析模型预设（请到设置页添加 API 预设并设为默认）",
-                              steps=steps)
-                bus.publish({"type": "error", "message": "未找到可用的 API 预设"})
-                bus.publish({"type": "state", "run": db.get_run(run_id)})
-                return
-            provider, base, key, model = conf
-            artifacts = read_artifacts(db.get_run(run_id))
-            messages = build_step_messages(db.get_run(run_id), idx, artifacts)
-            buf = []
+            bus.publish({"type": "step_start", "index": idx, "step": dict(step)})
             try:
-                for delta in _guard_stream(llm.chat_stream(provider, base, key, model, messages,
-                                                           temperature=0.6, max_tokens=8000), run_id):
-                    buf.append(delta)
-                    step["delta"] = (step.get("delta") or "") + delta
-                    bus.publish({"type": "delta", "index": idx, "text": delta})
+                attempts = agents.step_retry() + 1
+                r = None
+                for attempt in range(attempts):
+                    # 传同一个 steps 列表对象：_run_step 里写的 engine_used 等字段才会被持久化
+                    try:
+                        r = _run_step({**run, "steps": steps}, idx, bus)
+                    except _Cancelled:
+                        raise
+                    except Exception as e:
+                        r = {"ok": False, "error": f"第 {idx+1} 步异常：{e}",
+                             "text": "", "meta": {}}
+                    if r["ok"]:
+                        break
+                    if attempt + 1 < attempts:
+                        bus.publish({"type": "status", "index": idx,
+                                     "text": f"本步失败（{(r['error'] or '')[:80]}），"
+                                             f"重试 {attempt+2}/{attempts}"})
             except _Cancelled:
                 step["status"] = "cancelled"
-                partial = "".join(buf)
-                if partial.strip():
-                    _save_step_output(run_id, step, partial + "\n\n(用户中止)")
                 db.update_run(run_id, status="cancelled", steps=steps)
                 bus.publish({"type": "state", "run": db.get_run(run_id)})
                 return
-            except llm.LLMError as e:
+            except Exception as e:
                 step["status"] = "failed"
-                db.update_run(run_id, status="failed", error=f"第 {idx+1} 步：{e}", steps=steps)
+                db.update_run(run_id, status="failed", error=f"第 {idx+1} 步异常：{e}",
+                              steps=steps)
                 bus.publish({"type": "error", "index": idx, "message": str(e)})
                 bus.publish({"type": "state", "run": db.get_run(run_id)})
                 return
-            text = "".join(buf)
-            step["status"] = "done"
-            step["delta"] = text
-            step["chars"] = len(text)
-            _save_step_output(run_id, step, text)
-            db.update_run(run_id, steps=steps)
-            bus.publish({"type": "step_done", "index": idx, "step": step, "chars": len(text)})
-            # 检查点：挂起等确认
+            step["meta"] = r["meta"]
+            step["chars"] = len(r["text"] or "")
+            if r["ok"]:
+                step["status"] = "done"
+                step["msg"] = ""
+                db.update_run(run_id, steps=steps)
+                bus.publish({"type": "step_done", "index": idx, "step": dict(step),
+                             "chars": step["chars"]})
+            else:
+                step["status"] = "failed"
+                step["msg"] = (r["error"] or "执行失败")[:400]
+                db.update_run(run_id, status="failed", steps=steps,
+                              error=f"第 {idx+1} 步：{step['msg']}")
+                bus.publish({"type": "error", "index": idx, "message": step["msg"]})
+                bus.publish({"type": "state", "run": db.get_run(run_id)})
+                return
             if step.get("checkpoint") and idx < len(steps) - 1:
-                db.update_run(run_id, status="waiting", waiting_reason="checkpoint", cur_step=idx + 1)
+                if agents.auto_continue():
+                    bus.publish({"type": "note", "index": idx,
+                                 "text": "全自动模式：已自动越过本步检查点"})
+                    continue
+                db.update_run(run_id, status="waiting", waiting_reason="checkpoint",
+                              cur_step=idx + 1)
                 bus.publish({"type": "checkpoint", "index": idx})
                 bus.publish({"type": "state", "run": db.get_run(run_id)})
                 return
-        run = db.get_run(run_id)
         db.update_run(run_id, status="done", cur_step=len(steps))
         bus.publish({"type": "state", "run": db.get_run(run_id)})
         bus.publish({"type": "done"})
-    except Exception as e:  # 兜底：不让线程静默死掉
+    except Exception as e:
         try:
             db.update_run(run_id, status="failed", error=str(e)[:500])
-            bus.publish({"type": "error", "message": str(e)})
+            bus.publish({"type": "error", "message": str(e)[:500]})
             bus.publish({"type": "state", "run": db.get_run(run_id)})
         except Exception:
             pass
@@ -318,31 +705,69 @@ def _run_thread(run_id: str, start_step: int = 0):
         _CANCEL.discard(run_id)
 
 
-def start_run(pipeline_name: str, label: str = "") -> dict:
-    """创建运行实例并启动线程。返回 run。"""
+def _snapshot_steps(pipeline: dict) -> list:
+    steps = []
+    for s in (pipeline.get("steps") or []):
+        d = dict(s)
+        d["status"] = "pending"
+        d.pop("delta", None)
+        steps.append(d)
+    return steps
+
+
+def start_run(pipeline_name: str, label: str = "", brief: str = "", engine: str = "") -> dict:
     p = db.get_pipeline(pipeline_name)
     if not p:
         raise ValueError(f"流程「{pipeline_name}」不存在")
-    steps = []
-    for s in (p.get("steps") or []):
-        steps.append({**s, "status": "pending"})
-        steps[-1].pop("delta", None)
     run_id = new_run_id()
-    run = db.create_run(run_id, pipeline_name, label or p.get("label") or pipeline_name, steps)
+    steps = _snapshot_steps(p)
+    # 下任务时选的引擎覆盖每一步，留空则沿用步骤自身/全局默认
+    if (engine or "").strip().lower() in agents.ENGINES:
+        for s in steps:
+            s["engine"] = engine.strip().lower()
+    run = db.create_run(run_id, pipeline_name,
+                        label or p.get("label") or pipeline_name,
+                        steps, brief=brief)
     threading.Thread(target=_run_thread, args=(run_id, 0), daemon=True,
                      name=f"ff-run-{run_id}").start()
     return run
 
 
 def resume_run(run_id: str) -> dict:
-    """检查点后继续执行。"""
     run = db.get_run(run_id)
     if not run:
         raise ValueError("运行不存在")
     if run["status"] not in ("waiting",):
         raise ValueError(f"当前状态 {run['status']} 不可继续")
     _CANCEL.discard(run_id)
+    db.update_run(run_id, status="running", waiting_reason="", error="")
+    bus_for(run_id).publish({"type": "state", "run": db.get_run(run_id)})
     threading.Thread(target=_run_thread, args=(run_id, run["cur_step"]), daemon=True,
+                     name=f"ff-run-{run_id}").start()
+    return db.get_run(run_id)
+
+
+def rerun_from(run_id: str, index: int) -> dict:
+    """从第 index 步起重跑：该步及其后全部复位为 pending，产物文件保留（智能体自行覆盖）。"""
+    run = db.get_run(run_id)
+    if not run:
+        raise ValueError("运行不存在")
+    if run["status"] in ("running", "revising"):
+        raise ValueError("运行中不能重跑，请先停止")
+    steps = run.get("steps") or []
+    if index < 0 or index >= len(steps):
+        raise ValueError("步骤序号无效")
+    for s in steps[index:]:
+        s["status"] = "pending"
+        s.pop("msg", None)
+        s.pop("meta", None)
+        s["chars"] = 0
+    db.update_run(run_id, status="pending", error="", waiting_reason="",
+                  cur_step=index, steps=steps)
+    _CANCEL.discard(run_id)
+    bus = bus_for(run_id)
+    bus.publish({"type": "state", "run": db.get_run(run_id)})
+    threading.Thread(target=_run_thread, args=(run_id, index), daemon=True,
                      name=f"ff-run-{run_id}").start()
     return db.get_run(run_id)
 
@@ -360,13 +785,9 @@ def cancel_run(run_id: str) -> dict:
     return db.get_run(run_id)
 
 
-# ==================== 局部修订（对话式改指定产物） ====================
-def revise_step(run_id: str, index: int, instruction: str, sync: bool = False) -> dict:
-    """对第 index 步产物发起对话式局部修改。
-
-    sync=True 时同步执行（阻塞返回新全文）；False 时走事件流（revision_start/delta/done）。
-    修改结果直接写回工作区产物文件。
-    """
+# ==================== 局部修订（让智能体就地改产物文件） ====================
+def revise_step(run_id: str, index: int, instruction: str) -> dict:
+    """对第 index 步的产物发起对话式修改：仍走该步配置的引擎。"""
     run = db.get_run(run_id)
     if not run:
         raise ValueError("运行不存在")
@@ -375,78 +796,84 @@ def revise_step(run_id: str, index: int, instruction: str, sync: bool = False) -
         raise ValueError("步骤序号无效")
     step = steps[index]
     out_name = _safe_out_name(step.get("out") or "")
-    ws = workspace_dir(run_id)
-    old_text = (ws / out_name).read_text(encoding="utf-8", errors="replace") if out_name and (ws / out_name).exists() else ""
-    conf = _resolve_llm(step)
-    if not conf:
-        raise llm.LLMError("未找到可用的 API 预设")
-    provider, base, key, model = conf
-    messages = [
-        {"role": "system", "content":
-            "你是文档修改助手。用户会给出一篇文档全文和修改要求，"
-            "你输出修改后的【完整文档全文】，不要输出解释、对比或代码块包裹。"
-            "保持未提及部分原样，只改用户要求的位置。"},
-        {"role": "user", "content":
-            f"# 文档全文\n\n{old_text or '（该步骤暂无产物）'}\n\n---\n\n# 修改要求\n\n{instruction}"},
-    ]
+    if not out_name:
+        raise ValueError("该步骤没有产物文件，无法修订（可改用「从此步重跑」）")
     bus = bus_for(run_id)
-
-    def _emit_status():
-        db.update_run(run_id, steps=steps)
-        bus.publish({"type": "state", "run": db.get_run(run_id)})
-
     step["status"] = "revising"
-    _emit_status()
+    db.update_run(run_id, steps=steps)
+    bus.publish({"type": "state", "run": db.get_run(run_id)})
 
     def _thread():
         try:
-            buf = []
-            for delta in _guard_stream(llm.chat_stream(provider, base, key, model, messages,
-                                                       temperature=0.4, max_tokens=8000), run_id):
-                buf.append(delta)
-                bus.publish({"type": "revise_delta", "index": index, "text": delta})
-            text = "".join(buf).strip()
-            if text.startswith("```"):
-                text = text.strip("`")
-                if text.lower().startswith("markdown"):
-                    text = text[8:]
-                text = text.lstrip("\n")
-            if out_name:
-                (ws / out_name).write_text(text, encoding="utf-8")
-            step["status"] = "done"
-            step["delta"] = text
-            step["chars"] = len(text)
-            step.pop("revising", None)
+            conf = resolve_agent_config(step)
+            system_text = (
+                "# 产物修订\n"
+                f"你在修订工作区文件 `{out_name}`。只改用户要求的位置，其余保持原样；"
+                "改完直接把同一文件写回，不要新建文件、不要输出解释。")
+            ws = workspace_dir(run_id)
+            if conf["engine"] == "codex":
+                (ws / "AGENTS.md").write_text(system_text, encoding="utf-8")
+                sys_arg = ""
+            else:
+                sys_arg = system_text
+            prompt = (f"# 修订目标\n工作区文件 `{out_name}`\n\n"
+                      f"# 修改要求\n{instruction}\n\n"
+                      f"# 步骤上下文\n本步：{step.get('label')}（第 {index+1} 步）\n"
+                      "请先读该文件，按要求修改后原地写回同一个文件。")
+
+            def _emit(ev):
+                kind = ev.get("type")
+                if kind == "delta":
+                    bus.publish({"type": "revise_delta", "index": index,
+                                 "text": ev.get("text") or ""})
+                elif kind in ("tool", "status", "note"):
+                    bus.publish({**ev, "index": index})
+
+            res = agents.run_agent(conf["engine"], prompt, ws=ws, system_text=sys_arg,
+                                   model=conf["model"], api_base=conf["api_base"],
+                                   api_key=conf["api_key"], wire_api=conf["wire_api"],
+                                   label=f"rev{index+1:02d}_{step.get('key')}",
+                                   emit=_emit,
+                                   cancel_check=lambda: is_cancelled(run_id))
+            try:
+                new_text = (ws / out_name).read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                new_text = res["text"] or ""
+                if new_text.strip():
+                    (ws / out_name).write_text(new_text, encoding="utf-8")
+            step["status"] = "done" if new_text.strip() else "failed"
+            step["chars"] = len(new_text)
+            if res["is_error"] and not new_text.strip():
+                step["status"] = "failed"
+                step["msg"] = res["error"][:400]
             db.update_run(run_id, steps=steps)
-            bus.publish({"type": "revise_done", "index": index, "chars": len(text)})
+            bus.publish({"type": "revise_done", "index": index, "chars": len(new_text),
+                         "ok": step["status"] == "done"})
             bus.publish({"type": "state", "run": db.get_run(run_id)})
         except _Cancelled:
             step["status"] = "cancelled"
-            step.pop("revising", None)
             db.update_run(run_id, steps=steps)
             bus.publish({"type": "state", "run": db.get_run(run_id)})
         except Exception as e:
-            step["status"] = "failed" if step.get("status") == "revising" else step.get("status")
-            step.pop("revising", None)
+            step["status"] = "failed"
+            step["msg"] = str(e)[:400]
             db.update_run(run_id, steps=steps)
-            bus.publish({"type": "error", "index": index, "message": str(e)})
+            bus.publish({"type": "error", "index": index, "message": str(e)[:400]})
             bus.publish({"type": "state", "run": db.get_run(run_id)})
-
-    if sync:
-        buf = []
-        for delta in llm.chat_stream(provider, base, key, model, messages,
-                                     temperature=0.4, max_tokens=8000):
-            buf.append(delta)
-        text = "".join(buf).strip()
-        if out_name:
-            (ws / out_name).write_text(text, encoding="utf-8")
-        step["status"] = "done"
-        step["delta"] = text
-        step["chars"] = len(text)
-        db.update_run(run_id, steps=steps)
-        bus.publish({"type": "revise_done", "index": index, "chars": len(text)})
-        bus.publish({"type": "state", "run": db.get_run(run_id)})
-        return {"ok": True, "chars": len(text)}
 
     threading.Thread(target=_thread, daemon=True, name=f"ff-rev-{run_id}").start()
     return {"ok": True}
+
+
+# ==================== 提示词预览（编排页「看看这一步实际发什么」） ====================
+def preview_step_prompt(pipeline_name: str, index: int, brief: str = "") -> dict:
+    p = db.get_pipeline(pipeline_name)
+    if not p:
+        raise ValueError("流程不存在")
+    run = {"id": "run-preview0000", "label": p.get("label") or pipeline_name,
+           "pipeline": pipeline_name, "brief": brief,
+           "steps": _snapshot_steps(p)}
+    system_text, user_text = build_step_prompt(run, index)
+    return {"system": system_text, "user": user_text,
+            "engine": (p["steps"][index].get("engine")
+                       or db.get_setting("default_engine") or "")}
