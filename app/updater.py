@@ -1,13 +1,19 @@
 # -*- coding: utf-8 -*-
-"""自动更新：查 GitHub Releases 最新版，流式下载并回报进度。
+"""自动更新：读 COS 上的 latest.json 清单，流式下载安装包、核对 sha256，再静默装上。
 
-仓库写在 settings 的 update_repo（形如 owner/name）。没配置时一切接口都
-明确回 "not-configured"，不去猜地址、也不静默失败。
+清单地址写在 settings 的 update_url，留空走 DEFAULT_UPDATE_URL。
+下载页和软件内更新器读的是同一份 latest.json —— 页面下到的版本
+和软件里报的版本必须永远一致，所以只留这一个源。
 
-只做到「下载完成 + 字节数核对」。替换自身真正装上去要等打包形态定了再做，
-这里不留半成品安装逻辑。
+装自身的做法：把 setup.exe 交给一个脱离本进程的批处理去跑，
+安装器会自己关掉正在运行的 Loom，装完再由用户重启。源码运行时
+没有"自身"可换，这条路直接明确报错，不假装成功。
 """
+import hashlib
+import os
 import re
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -16,6 +22,8 @@ import requests
 
 from . import db, paths
 from .version import APP_VERSION
+
+DEFAULT_UPDATE_URL = "https://modelflow-1447874637.cos.ap-guangzhou.myqcloud.com/latest.json"
 
 _LOCK = threading.Lock()
 _DL = {}          # 下载线程句柄，防重入
@@ -26,16 +34,23 @@ STATE = {
     "notes": "",
     "url": "",
     "asset": "",
+    "sha256": "",
     "size": 0,
     "got": 0,
     "path": "",
     "error": "",
     "checked_at": "",
+    "frozen": bool(getattr(sys, "frozen", False)),
 }
 
 
-def repo() -> str:
-    return (db.get_setting("update_repo") or "").strip()
+def update_url() -> str:
+    return (db.get_setting("update_url") or "").strip() or DEFAULT_UPDATE_URL
+
+
+def manifest_url() -> str:
+    """清单地址。STATE["url"] 存的是安装包地址，两个别混。"""
+    return update_url()
 
 
 def updates_dir() -> Path:
@@ -57,8 +72,9 @@ def is_newer(latest: str, local: str = APP_VERSION) -> bool:
 def snapshot() -> dict:
     with _LOCK:
         out = dict(STATE)
-    out["repo"] = repo()
-    out["configured"] = bool(out["repo"])
+    out["update_url"] = update_url()
+    out["configured"] = True
+    out["default_url"] = DEFAULT_UPDATE_URL
     return out
 
 
@@ -73,44 +89,40 @@ def norm_tag(s: str) -> str:
 
 
 def check(force: bool = False) -> dict:
-    """问一次 GitHub。已经拿到结果且不是 force 就直接回缓存，避免每次轮询打网络。"""
-    r = repo()
-    if not r:
-        _set(phase="idle", error="", latest="", url="", size=0, got=0)
-        return snapshot()
+    """问一次清单。已经拿到结果且不是 force 就直接回缓存，避免每次轮询打网络。"""
     with _LOCK:
         cached = STATE["phase"] in ("available", "current") and STATE["url"] and not force
     if cached:
         return snapshot()
     _set(phase="checking", error="")
     try:
-        resp = requests.get(f"https://api.github.com/repos/{r}/releases/latest",
-                            headers={"User-Agent": "loom-updater", "Accept": "application/vnd.github+json"},
-                            timeout=(8, 15))
+        resp = requests.get(update_url(), timeout=(8, 15),
+                            headers={"User-Agent": "loom-updater"})
         if resp.status_code != 200:
-            raise RuntimeError(f"GitHub 返回 {resp.status_code}")
-        rel = resp.json()
-        latest = norm_tag(rel.get("tag_name") or rel.get("name") or "")
+            raise RuntimeError(f"更新清单返回 {resp.status_code}")
+        m = resp.json()
+        latest = norm_tag(str(m.get("version") or ""))
         if not latest:
-            raise RuntimeError("最新发布没有版本号")
-        assets = [a for a in (rel.get("assets") or []) if a.get("browser_download_url")]
-        want = (db.get_setting("update_asset") or "").strip()
-        hit = next((a for a in assets if want and want in a.get("name", "")), assets[0] if assets else None)
-        if not hit:
-            raise RuntimeError("这个 release 里没有可下载的文件")
-        _set(phase="available" if is_newer(latest) else "current",
-             latest=latest, notes=(rel.get("body") or "")[:2000],
-             url=hit["browser_download_url"] if is_newer(latest) else "",
-             asset=hit.get("name") or "",
-             size=int(hit.get("size") or 0), got=0, path="",
+            raise RuntimeError("清单里没有 version 字段")
+        url = str(m.get("url") or "")
+        if not url.startswith("https://"):
+            raise RuntimeError("清单里的下载地址不是 https")
+        newer = is_newer(latest)
+        _set(phase="available" if newer else "current",
+             latest=latest, notes=str(m.get("notes") or "")[:2000],
+             url=url if newer else "",
+             asset=str(m.get("file") or Path(url).name),
+             sha256=str(m.get("sha256") or ""),
+             size=int(m.get("size") or 0), got=0, path="",
              checked_at=time.strftime("%Y-%m-%d %H:%M:%S"))
     except Exception as e:
         _set(phase="error", error=str(e)[:300])
     return snapshot()
 
 
-def _download(url: str, dest: Path, expect: int):
+def _download(url: str, dest: Path, expect: int, want_sha: str):
     got = 0
+    h = hashlib.sha256()
     try:
         with requests.get(url, stream=True, timeout=(15, 120),
                           headers={"User-Agent": "loom-updater"}) as r:
@@ -120,10 +132,13 @@ def _download(url: str, dest: Path, expect: int):
                     if not chunk:
                         continue
                     f.write(chunk)
+                    h.update(chunk)
                     got += len(chunk)
                     _set(got=got)
         if expect and got != expect:
             raise RuntimeError(f"字节数对不上：收到 {got}，应为 {expect}")
+        if want_sha and h.hexdigest().lower() != want_sha.lower():
+            raise RuntimeError("sha256 校验不通过，安装包可能不完整")
         _set(phase="ready", got=got, path=str(dest))
     except Exception as e:
         try:
@@ -144,10 +159,45 @@ def start_download() -> dict:
         alive = _DL.get("t")
         if alive and alive.is_alive():
             return dict(STATE)
-    dest = updates_dir() / (s["asset"] or "update.bin")
+    dest = updates_dir() / (s["asset"] or "update.exe")
     _set(phase="downloading", got=0, error="", path=str(dest))
-    t = threading.Thread(target=_download, args=(s["url"], dest, s["size"]),
+    t = threading.Thread(target=_download,
+                         args=(s["url"], dest, s["size"], s["sha256"]),
                          daemon=True, name="loom-update")
     _DL["t"] = t
     t.start()
     return snapshot()
+
+
+BAT_TMPL = """@echo off
+rem Loom 更新脚本：等主进程退出 -> 静默安装 -> 装完自删
+timeout /t 3 /nobreak >nul
+start "" /wait "{setup}" /SILENT /NORESTART /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS
+if %errorlevel% equ 0 del "%~f0"
+"""
+
+
+def apply_update() -> dict:
+    """交给一个脱离本进程的批处理去跑安装器，然后我们自己退出。
+
+    只在打包态可用：源码运行没有"被替换的 exe"，这里返回错误而不是演一遍。
+    """
+    s = snapshot()
+    if not s["frozen"]:
+        return {"ok": False, "detail": "源码运行没有可替换的程序，请用安装包装新版本"}
+    if s["phase"] != "ready" or not s["path"] or not Path(s["path"]).is_file():
+        return {"ok": False, "detail": "还没有下载完成的安装包"}
+    exe = Path(sys.executable)
+    bat = updates_dir() / "update.bat"
+    bat.write_text(BAT_TMPL.format(setup=str(s["path"]).replace('"', "")), encoding="mbcs")
+    flags = 0
+    if os.name == "nt":
+        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+        flags = 0x00000008 | 0x00000200 | 0x08000000
+    try:
+        subprocess.Popen(["cmd", "/C", str(bat)], creationflags=flags,
+                         close_fds=True, cwd=str(paths.DATA_DIR))
+    except Exception as e:
+        return {"ok": False, "detail": f"启动安装程序失败：{e}"}
+    threading.Timer(0.8, lambda: os._exit(0)).start()
+    return {"ok": True, "detail": f"正在安装并退出，稍后从 {exe.name} 重新启动即可"}

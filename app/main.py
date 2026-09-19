@@ -807,9 +807,8 @@ def usage_stats():
 
 
 # ---------- 自动更新 ----------
-class RepoIn(BaseModel):
-    repo: str = ""
-    asset: str = ""
+class UpdateUrlIn(BaseModel):
+    url: str = ""
 
 
 @app.get("/api/update")
@@ -819,15 +818,26 @@ def update_state():
     return s
 
 
-@app.post("/api/update/repo")
-def update_set_repo(b: RepoIn):
-    """只收 owner/name；填错比不填更糟，所以这里必须校验。"""
-    r = (b.repo or "").strip().strip("/")
-    if r and not re.fullmatch(r"[\w.-]+/[\w.-]+", r):
-        return JSONResponse({"detail": "仓库要写成 owner/name 的形式"}, 400)
-    db.set_setting("update_repo", r)
-    db.set_setting("update_asset", (b.asset or "").strip())
+@app.post("/api/update/url")
+def update_set_url(b: UpdateUrlIn):
+    """更新清单地址。留空 = 用内置的 COS 地址；填错比不填更糟，所以校验协议。"""
+    u = (b.url or "").strip()
+    if u and not u.startswith("https://"):
+        return JSONResponse({"detail": "更新清单地址必须是 https"}, 400)
+    db.set_setting("update_url", u)
     return updater.check(force=True) | {"active_runs": db.count_active_runs()}
+
+
+@app.post("/api/update/apply")
+def update_apply():
+    """装上已下载好的安装包并退出。在跑的任务由前端先弹确认，这里再兜一道。"""
+    busy = db.count_active_runs()
+    if busy:
+        return JSONResponse({"detail": f"还有 {busy} 个任务在跑或停在检查点，先处理完再更新"}, 409)
+    r = updater.apply_update()
+    if not r.get("ok"):
+        return JSONResponse({"detail": r.get("detail") or "更新未能开始"}, 400)
+    return r
 
 
 @app.post("/api/update/check")

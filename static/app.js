@@ -393,19 +393,30 @@ window.sbUpdateClick = async function(e){
   if(UP.phase === 'error'){
     UP = await post('/api/update/check').catch(()=>UP); paintUpdate(); return;
   }
-  if(UP.phase === 'ready'){ toast(t('up.readyAt', {p: UP.path || ''}), true); return; }
+  if(UP.phase === 'ready'){
+    if(!confirm(t('up.applyGo', {v: UP.latest || ''}))) return;
+    const n = UP.active_runs || 0;
+    if(n > 0 && !confirm(t('up.busyConfirm', {n}))) return;
+    const r = await post('/api/update/apply').catch(e=>({detail:String(e)}));
+    if(r && r.detail){ toast(r.detail); return; }
+    toast(t('up.applyStarted'), true);
+    return;
+  }
   if(UP.phase === 'downloading'){ toast(t('up.downloading')); }
 };
 
 async function upInit(){
   const s = await api('/api/update').catch(()=>null);
   if(!s || !s.configured) return;
-  UP = s; paintUpdate();
+  UP = s;
   if(s.phase === 'idle' || s.phase === 'error'){
-    UP = await post('/api/update/check').catch(()=>UP); paintUpdate();
-  } else {
-    upPoll();
+    UP = await post('/api/update/check').catch(()=>UP);
+    /* 开机自动检查失败不该在左下角挂一个红胶囊骂人：
+       用户没问的时候保持安静，设置页里照样能看到具体错在哪。 */
+    if(UP && UP.phase === 'error'){ UP = Object.assign({}, UP, {phase:'idle'}); }
   }
+  paintUpdate();
+  if(UP && UP.phase === 'downloading') upPoll();
 }
 window.upInit = upInit;
 window.paintUpdate = paintUpdate;
@@ -725,7 +736,6 @@ function secShortcuts(){
 
 function upStatusText(s){
   if(!s) return t('up.unknown');
-  if(!s.configured) return t('up.notConfigured');
   const m = {checking:t('up.checking'), available:t('up.hasNew',{v:s.latest}),
              current:t('up.isCurrent',{v:s.local}), downloading:t('up.downloadingPct',
                {p: s.size?Math.floor((s.got||0)*100/s.size):0}),
@@ -735,22 +745,30 @@ function upStatusText(s){
 
 function secUpdate(){
   const u = ST.update || {};
+  const apply = u.frozen
+    ? `<button class="st-btn" onclick="applyUpdate()" ${u.phase==='ready'?'':'disabled'}>${esc(t('up.apply'))}</button>`
+    : `<span class="st-state no"><i></i>${esc(t('up.applyNo'))}</span>`;
   return spanel(
-      srow(t('up.repo'), t('up.repoD'),
-        `<input class="pv-input mono" style="width:250px" id="upRepo" value="${esc(u.repo||'')}"
-          placeholder="owner/name">
-         <input class="pv-input mono" style="width:130px" id="upAsset" value="${esc(u.asset||'')}"
-          placeholder="${esc(t('up.assetPh'))}">
-         <button class="st-btn" onclick="saveRepo()">${esc(t('c.save'))}</button>`,
-        'update github repo release asset')
+      srow(t('up.url'), t('up.urlD'),
+        `<input class="pv-input mono" style="width:340px" id="upUrl" value="${esc(u.update_url===u.default_url?'':(u.update_url||''))}"
+          placeholder="${esc(t('up.urlPh'))}">
+         <button class="st-btn" onclick="saveUpdUrl()">${esc(t('c.save'))}</button>`,
+        'update manifest url cos')
     + srow(t('up.status'), t('up.statusD',{v:u.local||''}),
         `<span class="st-val">${esc(upStatusText(u))}</span>
          <button class="st-btn" onclick="checkNow()">${ico('refresh')}${esc(t('up.check'))}</button>`,
         'update check version status')
-    + srow(t('up.apply'), t('up.applyD'),
-        `<span class="st-state no"><i></i>${esc(t('up.applyNo'))}</span>`, 'update install apply'),
+    + srow(t('up.apply'), t('up.applyD'), apply, 'update install apply'),
     t('up.grp'));
 }
+
+window.applyUpdate = async function(){
+  const u = ST.update || {};
+  if(!confirm(t('up.applyGo', {v: u.latest || ''}))) return;
+  const r = await post('/api/update/apply').catch(e=>({detail:String(e)}));
+  if(r && r.detail){ toast(r.detail); return; }
+  toast(t('up.applyStarted'), true);
+};
 
 const MB1024 = 1048576;
 const fmtBytes = n => n >= MB1024 ? (n/MB1024).toFixed(1)+' MB'
@@ -810,21 +828,19 @@ function secAbout(){
     t('about.grpInfo'));
 }
 
-window.saveRepo = async function(){
-  const repo = ((document.getElementById('upRepo')||{}).value||'').trim();
-  const asset = ((document.getElementById('upAsset')||{}).value||'').trim();
-  const r = await post('/api/update/repo', {repo, asset}).catch(e=>({detail:String(e)}));
+window.saveUpdUrl = async function(){
+  const url = ((document.getElementById('upUrl')||{}).value||'').trim();
+  const r = await post('/api/update/url', {url}).catch(e=>({detail:String(e)}));
   if(r.detail){ toast(r.detail); return; }
   ST.update = r; UP = r; paintUpdate();
-  toast(r.configured ? t('up.savedCheck',{v:r.latest||'—'}) : t('up.savedClear'), true);
+  toast(t('up.saved', {v: r.latest || '—'}), true);
   renderSettings(SET_SECTION);
 };
 window.checkNow = async function(){
   const r = await post('/api/update/check').catch(()=>null);
   if(!r){ toast(t('up.reqFail')); return; }
   ST.update = r; UP = r; paintUpdate();
-  if(!r.configured){ toast(t('up.needRepo')); }
-  else if(r.phase==='error'){ toast(r.error||t('up.failed')); }
+  if(r.phase==='error'){ toast(r.error||t('up.failed')); }
   else { toast(t('up.checked',{s:upStatusText(r)}), true); }
   renderSettings(SET_SECTION);
 };
