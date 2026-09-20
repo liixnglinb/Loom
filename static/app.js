@@ -602,14 +602,23 @@ const spanel = (rows, label='', actions='') => `
       ${label ? `<div class="st-label">${esc(label)}</div>` : '<span></span>'}
       ${actions ? `<div class="st-label-acts">${actions}</div>` : ''}</div>` : ''}
     <div class="st-panel">${rows}</div></div>`;
+/* 标题带说明在上、输入框整行铺开在卡片内；宽度归容器，不用内联 style 凑 */
+const stIn = (title, desc, id, val, ph, saveFn, extra='', mono=true, acts='') => `
+  <div class="st-row" data-k="${esc(((title||'')+' '+(desc||'')+' '+extra).toLowerCase())}">
+    <div class="st-row-main"><div class="st-t">${title}</div>
+      ${desc?`<div class="st-d">${desc}</div>`:''}</div>
+    <div class="st-ctl"><button class="st-btn" onclick="${saveFn}">${esc(t('c.save'))}</button>${acts}</div>
+  </div>
+  <div class="st-rowsub"><input class="st-input${mono?' mono':''}" id="${id}"
+    placeholder="${esc(ph||'')}" value="${esc(val||'')}"></div>`;
 /* 一整块控件（磁贴 / 色板）放不下右侧的，就自己占一行铺在标题下面 */
 const sblk = (title, desc, body, extra='') => `
   <div class="st-row st-row-col" data-k="${esc(((title||'')+' '+(desc||'')+' '+extra).toLowerCase())}">
     <div class="st-row-main"><div class="st-t">${title}</div>
       ${desc?`<div class="st-d">${desc}</div>`:''}</div>${body}</div>`;
-/* 设置页的「多选一」统一用胶囊下拉：一个当前值 + 箭头，展开时不整页重渲染，所以不闪 */
+/* 设置页的「多选一」：跟 ssel 同一个盒子形状，只是还能带一个参数（语言/引擎按行切换） */
 const sseg = (opts, cur, fn, arg) => ffSelect(opts.map(([v,l])=>({v, label:l})), cur,
-  {cls:'ff-pill', onChange:(v)=>{ const f=window[fn]; if(f){ if(arg) f(arg,v); else f(v); } }});
+  {onChange:(v)=>{ const f=window[fn]; if(f){ if(arg) f(arg,v); else f(v); } }});
 const ssel = (opts, cur, fn) => ffSelect(opts.map(([v,l])=>({v,label:l})), cur, {onChange:fn});
 const ssw = (on, fn) => `<label class="switch"><input type="checkbox" ${on?'checked':''}
   onchange="swPick(this,'${fn}')"><span class="slider"></span></label>`;
@@ -728,11 +737,9 @@ function secEngines(){
     const cur = a.engine==='claude'?(ST.claudeCli||''):(ST.codexCli||'');
     const title = esc(t('eng.pathFor',{e:t('eng.'+a.engine)}));
     if(PATH_EDIT===a.engine){
-      return srow(title, t('eng.pathD'),
-        `<input class="pv-input mono" style="width:340px" id="path_${a.engine}"
-           placeholder="${esc(t('eng.pathPh'))}" value="${esc(cur)}">
-         <button class="st-btn" onclick="savePath('${a.engine}')">${esc(t('c.save'))}</button>
-         <button class="st-btn" onclick="cancelPath()">${esc(t('c.cancel'))}</button>`, a.engine+' path binary');
+      return stIn(title, t('eng.pathD'), 'path_'+a.engine, cur, t('eng.pathPh'),
+                  "savePath('"+a.engine+"')", a.engine+' path binary', true,
+                  `<button class="st-btn" onclick="cancelPath()">${esc(t('c.cancel'))}</button>`);
     }
     return srow(title, t('eng.pathD'),
       `<span class="st-val">${esc(cur || a.bin || t('eng.auto'))}</span>
@@ -882,11 +889,9 @@ function secUpdate(){
     : (u.phase==='downloading' && u.size) ? Math.floor((u.got||0)*100/u.size) : -1;
   const bar = pct < 0 ? '' : `<div class="st-prog"><i style="width:${pct}%"></i></div>`;
   return spanel(
-      srow(t('up.url'), t('up.urlD'),
-        `<input class="pv-input mono" style="width:340px" id="upUrl" value="${esc(u.update_url===u.default_url?'':(u.update_url||''))}"
-          placeholder="${esc(t('up.urlPh'))}">
-         <button class="st-btn" onclick="saveUpdUrl()">${esc(t('c.save'))}</button>`,
-        'update manifest url cos')
+      stIn(t('up.url'), t('up.urlD'), 'upUrl',
+        (u.update_url===u.default_url ? '' : (u.update_url||'')), t('up.urlPh'),
+        'saveUpdUrl()', 'update manifest url cos')
     + srow(t('up.status'), t('up.statusD',{v:u.local||''}),
         `<span class="st-val">${esc(upStatusText(u))}</span>${bar}
          <button class="st-btn" onclick="checkNow()">${ico('refresh')}${esc(t('up.check'))}</button>`,

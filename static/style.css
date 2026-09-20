@@ -907,6 +907,17 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .st-d2{font-size:var(--fs-meta);color:var(--ink-4);line-height:1.5;margin-top:3px}
 .st-d .lk{color:var(--accent);cursor:pointer}
 .st-rowsub{padding:0 18px 15px}
+/* 标签行和它自己的输入框属于同一项设置，中间不画分隔线 */
+.st-row:has(+ .st-rowsub .st-input){border-bottom:none;padding-bottom:11px}
+/* 整行铺开的设置输入框：宽度归容器，不靠内联 style 凑 */
+.st-input{display:block;width:100%;height:32px;padding:0 11px;
+  border:1px solid var(--line);border-radius:var(--r-2);background:var(--bg-sunken);
+  color:var(--ink);font-family:var(--font-ui);font-size:var(--fs-sub);
+  transition:border-color var(--slide),box-shadow var(--slide)}
+.st-input:hover{border-color:var(--line-strong)}
+.st-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.st-input::placeholder{color:var(--ink-4)}
+.st-input.mono{font-family:var(--font-mono);letter-spacing:.01em}
 .st-chips{display:flex;flex-wrap:wrap;gap:6px}
 .st-chip{font-family:var(--font-mono);font-size:var(--fs-meta);letter-spacing:.01em;color:var(--ink-3);background:var(--bg-sunken);
   border:1px solid var(--line-soft);border-radius:var(--r-pill);padding:3px 9px;white-space:nowrap}
