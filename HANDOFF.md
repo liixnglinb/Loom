@@ -58,6 +58,11 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
 2. **要不要下线旧授权后端**。`functions/modelflow/*`、D1 `mflic`、`/modelflow/admin/` 还在部署、还能打开，但已无任何页面引用。下线不可逆（历史授权码数据会没）。
 3. **COS 保留策略**。`upload_cos.py` 现在**只列不删**（桶刚被清空过一次，删线上包必须是显式动作）。攒到两个版本以上再谈"留最近两个"。
 4. **代码签名**。安装包没签名（`installer.iss` 里没有 SignTool），Windows SmartScreen 会拦"未知发布者"。买证书是花钱的决定，要用户定。
+5. **软件侧要不要跟 tabbit 的工艺（不含配色）**。2026-09-20 用户拍的是"不改软件里面的配色"，所以下面这些**只提了没做**，要做得排进一次发版（改了源码但不出包，就和线上 1.0.0 漂移）：
+   圆角按 tabbit 节奏抬（`--r-4` 14→16、`--r-5` 18→24）、阴影改大模糊低透明度分层 + 同色投影、`--ease` 换成实测主控曲线
+   `cubic-bezier(.4,0,.2,1)`、以及**离线打包 Montserrat 给西文用**（用户当时点了这条，但和上面一起冻住了；
+   注意 `test_font_faces_declare_one_standard_weight_each` 要求全站 @font-face 的字重集合**正好**是 400/500/600/700，
+   可变字体轴 `100 900` 会直接判失败）。
 
 ---
 
@@ -65,6 +70,9 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
 
 - **`apply_update()` 的打包态分支没真跑过。** 只验证了源码态明确拒绝、以及有任务在跑时返回 409。真自装要装两个版本互演，且会改本机程序 —— 上一任没敢擅自做。改这块时注意：批处理用 `encoding="mbcs"` 写（中文用户名路径 + cmd 代码页），以及 `DETACHED_PROCESS` 起 cmd 后 `os._exit(0)` 的时序。
 - **下载页的兜底版本号/体积要人工同步。** 页面正常运行时从 `latest.json` 现拉，拉不到才用写死的 `1.0.0` / `36 MB`。发新版时**记得改** `D:\Voyra 个人网站\public\modelflow\index.html` 里那两处（第 5 节 SOP 里也写了）。想彻底根治：让按钮在 fetch 成功前禁用，而不是显示一个可能说谎的兜底值。
+- **下载页里还写死了「130 条回归测试」这个数字**（FAQ 最后一条，2026-09-20 从过时的 122 改成实测值）。加测试时要连带改这里 —— 它和 `pytest -q` 的真实条数没有自动绑定，飘了没人报。
+- **下载页的配色基准是软件，不是任何外部参考站。** 那张页的令牌逐值等于本仓库 `static/style.css`：页面 chrome 对 `:root`（浅色），页内那张产品图对 `html[data-theme="dark"]`（`#181818/#202020/#232323/#353535`、描边 `#323232`、外圆角 `--r-5` 18px）。**改软件配色 = 要同步改它**；反过来照抄第三方站的色相是明确不要的（用户 2026-09-20 纠正过一次）。它仿 tabbit.com 仿的是**工艺**：滚动揭示、`perspective` + `rotateX` 的 hero 抬起、大模糊低透明度阴影、圆角节奏、字距纪律。
+- **这张页被砍过一次，别再砍。** `9c53b61`（2026-09-19）把它从 64KB 删到 25.8KB，交互动效、区块、mock 窗口的精细度全没了；`a28065e`（2026-09-20）按软件真实结构重做到 63.7KB。改它之前先 `git show` 对比一下字节数，掉一档就是又在删东西。
 - **没有 CI。** `liixnglinb/Loom` 里连 `.github/` 都没有，130 条测试只在本地跑。公开仓库加一条 `python -m pytest -q` 的 workflow 成本很低，但会引入"CI 绿了才发版"的新约定，先问。
 - **`update_repo` / `update_asset` 是废弃设置项**，值还留在用户机器的 settings 表里、`/api/settings` 也还回得出来。代码已不读它们。清理要连带迁移，别顺手删一半。
 - **只有 Windows 安装包。** macOS/Linux 靠源码跑（README 里这么写的，没撒谎）。
@@ -91,7 +99,9 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
   静态文件不用重启，但浏览器侧还有一层缓存 —— 改 `static/` 后要升 `index.html` 里的 `?v=` 令牌。
 - `db.get_setting` 有**进程内缓存**：绕过 API 直接改库，正在跑的服务看不见。
 - Git Bash 里 `taskkill` 要写 `taskkill //PID xxx //F`（双斜杠）。
-- **D 盘那些单行压缩 HTML（各下载页）用 Edit/Write 工具会 Native execution failed**，必须用 Python 脚本做字符串替换 + 计数断言。普通 `.jsx` / `.css` 文件不受影响。
+- **D 盘那些仍是单行压缩的 HTML（部分下载页）用 Edit/Write 工具会 Native execution failed**，必须用 Python 脚本做字符串替换 + **计数断言**（不断言就会静默漏替换）。
+  `public/modelflow/index.html` 现在已经换成多行可读版，Edit/Write 正常 —— 但批量改色值/文案时照样推荐脚本 + `assert s.count(old) == n`，
+  2026-09-20 就是这么抓到"以为只有一处、实际有两处"的。普通 `.jsx` / `.css` 文件不受影响。
 - 内嵌的 in-app 浏览器经常 `visibilityState: hidden`，CSS `:hover` 的 computed style 量不到；JS 驱动的提示（`data-tip`）可以用 `dispatchEvent(new PointerEvent('pointerover'))` 触发。截图工具基本用不了（`NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`）。
 - **隐藏标签页里 CSS transition 不走**：切完主题立刻 `getComputedStyle` 会量到上一套主题的颜色，看起来像暗色令牌漏进浅色。多等两秒或先重渲染再量，别急着改 CSS。
 - 想在浏览器里验一个只有真下载才会出现的状态：临时 `window.fetch = (u,o)=> String(u).includes('/api/update')&&… ? Promise.resolve(new Response(JSON.stringify(假状态))) : real(u,o)`，再 `await renderSettings('update')`。**验完必须把 fetch 换回去并重渲染**，否则页面留着一个不存在的下载进度。
