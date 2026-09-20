@@ -840,23 +840,59 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .st-btn:disabled{opacity:.42;cursor:not-allowed}
 .st-btn-danger{color:var(--bad)}
 .st-btn-danger:hover{border-color:var(--bad)}
-/* ---------- 运行台：右上角进程卡 ---------- */
+/* ---------- 运行台：右上角进程面板 ----------
+   两态：展开是卡片，收起是一枚自适应宽度的胶囊（不是缩小的卡片）。
+   图标按钮静止只有图标，指针落到那个按钮上才把文字标签撑开 —— 每个按钮各自展开，
+   所以同一时刻只会有一个标签可见。 */
 .proc-card{position:fixed;z-index:40;top:calc(var(--topbar-h) + 16px);right:22px;width:266px;
   background:var(--bg-float);border:1px solid var(--line-strong);border-radius:var(--r-4);
   box-shadow:var(--shadow-pop);overflow:hidden}
+.proc-card.pill{width:auto;max-width:min(420px,calc(100vw - 44px));display:flex;align-items:center;
+  gap:4px;padding:5px 12px 5px 5px;border-radius:var(--r-pill)}
 .pc-head{display:flex;align-items:center;gap:8px;padding:9px 8px 9px 13px;
   border-bottom:1px solid var(--line-soft)}
-.proc-card.min .pc-head{border-bottom:none}
 .pc-title{font-size:var(--fs-sub);font-weight:600;color:var(--ink-2)}
 .pc-count{font-family:var(--font-mono);font-size:var(--fs-meta);font-weight:700;color:var(--accent);
   font-variant-numeric:tabular-nums}
-.pc-head .spacer{flex:1}
-.pc-x{width:24px;height:24px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;
-  border:none;border-radius:var(--r-1);background:transparent;color:var(--ink-4);cursor:pointer;
+.pc-acts{display:flex;align-items:center;gap:2px;margin-left:auto}
+.pc-btn{display:inline-flex;align-items:center;height:24px;padding:0;border:none;
+  border-radius:var(--r-1);background:transparent;color:var(--ink-4);font-family:inherit;
+  font-size:var(--fs-meta);cursor:pointer;overflow:hidden;
   transition:background var(--slide),color var(--slide)}
-.pc-x:hover{background:var(--bg-hover);color:var(--ink)}
+.pc-btn:hover,.pc-btn:focus-visible{background:var(--bg-hover);color:var(--ink)}
+.pc-glyph{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;flex-shrink:0}
+.pc-glyph .ic{width:1rem;height:1rem}
+/* 标签靠 max-width 收放：0 宽 + opacity 双管，收起时不留一丝空隙也不会挤到旁边的图标 */
+.pc-lbl{display:inline-block;max-width:0;padding-left:0;overflow:hidden;white-space:nowrap;opacity:0;
+  transition:max-width .22s var(--ease),padding-left .22s var(--ease),opacity .14s var(--ease)}
+.pc-btn:hover .pc-lbl,.pc-btn:focus-visible .pc-lbl{max-width:12em;padding-left:8px;opacity:1}
+.proc-card.pill:hover .pp-act .pc-lbl,.pp-act:hover .pc-lbl,.pp-act:focus-visible .pc-lbl{
+  max-width:12em;padding-left:8px;opacity:1}
+/* 静止时标签 max-width:0，但按钮自身还有 1px 描边会露出两像素空框 —— 所以描边默认透明，
+   和标签一起亮起来 */
+.pp-act{height:22px;padding-right:2px;border:1px solid transparent;border-radius:var(--r-pill);
+  background:transparent;color:var(--ink-3);
+  transition:background var(--slide),color var(--slide),border-color var(--slide)}
+.pp-act:hover,.pp-act:focus-visible{border-color:var(--line);background:var(--bg-ctl);color:var(--ink-2)}
+.pp-state{display:inline-flex;flex-shrink:0;color:var(--ink-4)}
+.pp-state .ic{width:1.0625rem;height:1.0625rem}
+.pp-state.ok{color:var(--good)}
+.pp-state.live{color:var(--accent)}
+.pp-state.live .ic{animation:spin .9s linear infinite}
+.pp-state.wait{color:var(--warn)}
+.pp-state.bad{color:var(--bad)}
+.pp-t{font-size:var(--fs-sub);color:var(--ink-2);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;min-width:0}
+.pc-menu{position:fixed;z-index:80;min-width:186px;padding:5px;background:var(--bg-float);
+  border:1px solid var(--line-strong);border-radius:var(--r-4);box-shadow:var(--shadow-pop)}
+.pcm-item{display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;border:none;
+  border-radius:var(--r-2);background:transparent;color:var(--ink-2);font-family:inherit;
+  font-size:var(--fs-body);text-align:left;cursor:pointer;transition:background var(--slide)}
+.pcm-item:hover{background:var(--bg-hover);color:var(--ink)}
+.pcm-item span{flex:1;min-width:0}
+.pcm-item .ic{width:1rem;height:1rem;color:var(--accent);visibility:hidden;flex-shrink:0}
+.pcm-item.on .ic{visibility:visible}
 .pc-list{max-height:min(52vh,420px);overflow-y:auto;padding:5px}
-.proc-card.min .pc-list{display:none}
 .pc-row{display:flex;align-items:center;gap:8px;width:100%;padding:5px 8px;border:none;
   border-radius:var(--r-2);background:transparent;color:var(--ink-2);font-family:inherit;
   font-size:var(--fs-sub);text-align:left;cursor:pointer;transition:background var(--slide)}

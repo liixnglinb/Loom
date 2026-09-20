@@ -257,7 +257,32 @@ const PROC_ICON = {
   cancelled: {ic:'circle',      cls:'dim'},
   pending:   {ic:'circle',      cls:'dim'},
 };
-let PROC_OPEN = true;
+let PROC_USER = null;      // 用户手动切过就临时以它为准，运行状态一跳变就交还给策略
+let _procLive = null, _procShape = '';
+const PROC_POLICIES = ['always', 'idle', 'pill'];
+
+function procPolicy(){
+  const p = (window.APP && window.APP.procPanel) || 'idle';
+  return PROC_POLICIES.includes(p) ? p : 'idle';
+}
+function runIsLive(){
+  return ((RUN && RUN.steps) || []).some(s => ['running','revising','waiting'].includes(s.status));
+}
+/* 「跑完收成胶囊」是默认档：还在跑就摊开给人盯，跑完就收起来让位给正文 */
+function procOpen(){
+  if(PROC_USER !== null) return PROC_USER;
+  const p = procPolicy();
+  if(p === 'always') return true;
+  if(p === 'pill') return false;
+  return runIsLive();
+}
+function procLatest(){
+  const steps = (RUN && RUN.steps) || [];
+  for(let i = steps.length - 1; i >= 0; i--){
+    if((steps[i].status || 'pending') !== 'pending') return steps[i];
+  }
+  return steps[steps.length - 1] || null;
+}
 
 function procRows(){
   const steps = (RUN && RUN.steps) || [];
@@ -274,39 +299,95 @@ function procRows(){
   }).join('');
 }
 
+/* 图标按钮静止时只有图标，指针进来才把文字标签撑开 —— 所以 aria-label 才是可访问名，
+   不再叠一层 tooltip，否则同一个按钮会同时飘出两套说明。 */
+function procActs(open){
+  return `<span class="pc-acts">
+    <button class="pc-btn" aria-label="${esc(t('run.procPolicy'))}" onclick="procPolicyMenu(event)">
+      <i class="pc-lbl">${esc(t('run.procPolicy'))}</i><span class="pc-glyph">${ico('more')}</span></button>
+    <button class="pc-btn" aria-label="${esc(t('run.procToggle'))}" onclick="procToggle()">
+      <i class="pc-lbl">${esc(t(open?'run.procCollapse':'run.procExpand'))}</i>
+      <span class="pc-glyph">${ico(open?'collapse':'expand')}</span></button>
+  </span>`;
+}
+
 function procCard(){
   const steps = (RUN && RUN.steps) || [];
   if(!steps.length) return '';
   const done = steps.filter(s=>s.status==='done').length;
-  return `<aside class="proc-card${PROC_OPEN?'':' min'}" id="procCard">
+  if(!procOpen()){
+    const last = procLatest();
+    const m = PROC_ICON[(last && last.status) || 'pending'] || PROC_ICON.pending;
+    return `<aside class="proc-card pill" id="procCard">
+      <button class="pc-btn pp-act" aria-label="${esc(t('run.procExpand'))}" onclick="procToggle()">
+        <i class="pc-lbl">${esc(t('run.procExpand'))}</i></button>
+      <span class="pp-state ${m.cls}${m.cls==='live'?' sp':''}">${ico(m.ic)}</span>
+      <span class="pp-t">${esc((last && (last.label||last.key)) || '')}</span>
+    </aside>`;
+  }
+  return `<aside class="proc-card" id="procCard">
     <div class="pc-head">
       <span class="pc-title">${esc(t('run.proc'))}</span>
       <span class="pc-count">${done}/${steps.length}</span>
-      <span class="spacer"></span>
-      <button class="pc-x" onclick="procToggle()" title="${esc(t('run.procToggle'))}">${ico(PROC_OPEN?'chevronUp':'chevronDown')}</button>
+      ${procActs(true)}
     </div>
     <div class="pc-list">${procRows()}</div></aside>`;
 }
 
+function procShapeKey(){
+  return (procOpen()?'o':'c') + '|' + doneCount() + '|' +
+    ((RUN && RUN.steps) || []).map(s=>s.status).join(',');
+}
+function doneCount(){ return ((RUN && RUN.steps) || []).filter(s=>s.status==='done').length; }
+
 function paintProc(){
-  const card = document.getElementById('procCard');
-  if(!card){ return; }
-  const steps = (RUN && RUN.steps) || [];
-  const done = steps.filter(s=>s.status==='done').length;
-  card.classList.toggle('min', !PROC_OPEN);
-  card.querySelector('.pc-count').textContent = done+'/'+steps.length;
-  card.querySelector('.pc-x').innerHTML = ico(PROC_OPEN?'chevronUp':'chevronDown');
-  const list = card.querySelector('.pc-list');
-  if(PROC_OPEN) list.innerHTML = procRows();
+  const live = runIsLive();
+  if(live !== _procLive){ _procLive = live; PROC_USER = null; }   // 状态跳变，交还给展开策略
+  const host = document.getElementById('procCard');
+  if(!host) return;
+  const k = procShapeKey();
+  if(k !== _procShape){ host.outerHTML = procCard(); _procShape = k; return; }
+  const list = document.querySelector('#procCard .pc-list');
+  if(list) list.innerHTML = procRows();
+  const cnt = document.querySelector('#procCard .pc-count');
+  if(cnt) cnt.textContent = doneCount()+'/'+(((RUN&&RUN.steps)||[]).length);
 }
 
 window.procToggle = function(){
-  PROC_OPEN = !PROC_OPEN;
-  const card = document.getElementById('procCard');
-  if(!card) return;
-  card.classList.toggle('min', !PROC_OPEN);
-  card.querySelector('.pc-x').innerHTML = ico(PROC_OPEN?'chevronUp':'chevronDown');
-  card.querySelector('.pc-list').innerHTML = PROC_OPEN ? procRows() : '';
+  PROC_USER = !procOpen();
+  _procShape = '';
+  paintProc();
+};
+
+window.procPolicyMenu = function(ev){
+  ev.stopPropagation();
+  const old = document.getElementById('pcMenu');
+  if(old){ procCloseMenu(); return; }
+  const r = ev.currentTarget.getBoundingClientRect();
+  const cur = procPolicy();
+  const el = document.createElement('div');
+  el.className = 'pc-menu'; el.id = 'pcMenu';
+  el.setAttribute('role', 'menu');
+  el.innerHTML = PROC_POLICIES.map(p =>
+    `<button role="menuitemradio" aria-checked="${p===cur?'true':'false'}" class="pcm-item${p===cur?' on':''}" onclick="procSetPolicy('${p}')">
+      <span>${esc(t('run.policy.'+p))}</span>${ico('check')}</button>`).join('');
+  document.body.appendChild(el);
+  el.style.top = (r.bottom + 6) + 'px';
+  el.style.left = Math.max(8, r.right - el.offsetWidth) + 'px';
+  document.addEventListener('click', procCloseMenu);
+};
+function procCloseMenu(){
+  const m = document.getElementById('pcMenu');
+  if(m) m.remove();
+  document.removeEventListener('click', procCloseMenu);
+}
+window.procSetPolicy = function(p){
+  if(!PROC_POLICIES.includes(p)) return;
+  if(window.apSet) window.apSet('procPanel', p);
+  else if(window.APP) window.APP.procPanel = p;
+  PROC_USER = null; _procShape = '';
+  procCloseMenu();
+  paintProc();
 };
 window.procJump = function(i){
   ACTIVE_STEP = i;                  // 点进程卡就是"我要看这一步"，已展开的也要跟过来

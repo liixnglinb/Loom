@@ -68,6 +68,8 @@ const DICT = {
     'run.runningOn': '正在执行：{label}', 'run.composerPh': '输入修改要求，回车发送…',
     'run.log': '日志', 'run.logHint': '打开本步智能体的原始转录',
     'run.proc': '进程', 'run.procToggle': '收起 / 展开进程列表',
+    'run.procPolicy': '状态面板展开策略', 'run.procCollapse': '收起为胶囊', 'run.procExpand': '展开状态',
+    'run.policy.always': '始终展开', 'run.policy.idle': '跑完收成胶囊', 'run.policy.pill': '始终收成胶囊',
     'run.lgTitle': '智能体转录', 'run.lgLoading': '读取中…', 'run.lgEmpty': '这份日志是空的',
     'run.lgMeta': '尾部', 'run.lgLines': '行', 'run.lgTrunc': '大文件已截断',
     'run.lgCopy': '复制原文', 'run.lgCopied': '原始转录已复制', 'run.lgCopyFail': '复制失败，请手动选择',
@@ -300,6 +302,8 @@ const DICT = {
     'run.runningOn': 'Running: {label}', 'run.composerPh': 'Describe the change, Enter to send…',
     'run.log': 'Log', 'run.logHint': 'Open this step’s raw agent transcript',
     'run.proc': 'Progress', 'run.procToggle': 'Collapse / expand the step list',
+    'run.procPolicy': 'Panel expansion policy', 'run.procCollapse': 'Collapse to pill', 'run.procExpand': 'Expand',
+    'run.policy.always': 'Always expanded', 'run.policy.idle': 'Collapse when the run finishes', 'run.policy.pill': 'Always a pill',
     'run.lgTitle': 'Agent transcript', 'run.lgLoading': 'Loading…', 'run.lgEmpty': 'This log is empty',
     'run.lgMeta': 'Tail', 'run.lgLines': 'lines', 'run.lgTrunc': 'large file truncated',
     'run.lgCopy': 'Copy raw', 'run.lgCopied': 'Raw transcript copied', 'run.lgCopyFail': 'Copy failed — select manually',
@@ -513,6 +517,8 @@ const ICONS = {
   external: '<path d="M14 4.4h5.6V10M19.6 4.4 11.4 12.6M17.4 13.2v5.2a1.8 1.8 0 0 1-1.8 1.8H5.6a1.8 1.8 0 0 1-1.8-1.8V8.2a1.8 1.8 0 0 1 1.8-1.8h5.2"/>',
   terminal: '<rect x="2.6" y="4" width="18.8" height="16" rx="2.6"/><path d="M6.6 9.6 10.4 13l-3.8 3.4M12.8 16.6h5"/>',
   more:     '<path d="M5.6 12h.01M12 12h.01M18.4 12h.01"/>',
+  expand:   '<path d="M14 5h5v5M19 5l-6.6 6.6M10 19H5v-5M5 19l6.6-6.6"/>',
+  collapse: '<path d="M19.4 9.6h-5v-5M14.4 4.6l5 5M4.6 14.4h5v5M9.6 19.4l-5-5"/>',
   share:    '<circle cx="17.6" cy="5.8" r="2.5"/><circle cx="6.4" cy="12" r="2.5"/><circle cx="17.6" cy="18.2" r="2.5"/><path d="M8.6 10.8 15.4 7M8.6 13.2l6.8 3.8"/>',
   panel:    '<rect x="3.2" y="4.6" width="17.6" height="14.8" rx="2.6"/><path d="M14.6 4.6v14.8"/>',
   save:     '<path d="M5.6 4.4h9.6l4.4 4.4v10a1.8 1.8 0 0 1-1.8 1.8H5.6a1.8 1.8 0 0 1-1.8-1.8V6.2a1.8 1.8 0 0 1 1.8-1.8z"/><path d="M8 4.4v5h6.4v-5M8 20.6v-5.4h8v5.4"/>',
@@ -585,6 +591,7 @@ const WIDTHS = { narrow: '900px', medium: '1180px', wide: '1440px', full: 'none'
 const APP = {
   lang: 'zh', theme: 'dark', font: 'default', accent: 'blue',
   textSize: 'm', uiZoom: '100%', contentWidth: 'medium', sidebar: 'expanded',
+  procPanel: 'idle',
 };
 
 function applyAppearance() {
@@ -636,7 +643,7 @@ function loadAppearance() {
     });
   }
   return fetch('/api/settings').then(r => r.ok ? r.json() : {}).then(s => {
-    ['lang', 'theme', 'font', 'textSize', 'uiZoom', 'contentWidth', 'sidebar'].forEach(k => {
+    ['lang', 'theme', 'font', 'textSize', 'uiZoom', 'contentWidth', 'sidebar', 'procPanel'].forEach(k => {
       if (s['ui_' + k]) APP[k] = s['ui_' + k];
     });
     applyAppearance();
