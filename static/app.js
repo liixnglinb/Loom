@@ -83,9 +83,12 @@ function renderNav(active){
     {id:'skills',    icon:'skill',    label:t('nav.skills')},
     {id:'runs',      icon:'runs',     label:t('nav.runs')},
   ];
+  /* 用真 href 而不是 onclick：无 href 的 <a> 拿不到键盘焦点，Tab 直接跳过整条主导航。
+     aria-label 是因为折叠轨道会把 <span> 整个 display:none 掉，折上就没了可访问名。 */
   const html = items.map(n=>
-    `<a class="sb-item ${n.id===active?'active':''}" data-v="${n.id}" data-tip="${esc(n.label)}"
-       onclick="nav.go('${n.id}')">
+    `<a class="sb-item ${n.id===active?'active':''}" href="#/${n.id}" data-v="${n.id}"
+       data-tip="${esc(n.label)}" aria-label="${esc(n.label)}"
+       ${n.id===active?'aria-current="page"':''}>
       ${ico(n.icon)}<span>${esc(n.label)}</span></a>`).join('');
   const box = $('#mainNav');
   if(box && box.dataset.sig !== html){ box.innerHTML = html; box.dataset.sig = html; }
@@ -184,8 +187,9 @@ async function renderSidebarLists(){
         aria-label="${esc(t('sb.newFlow'))}"
         onclick="nav.go('pipeline-edit/new')">${ico('plus')}</button></div>`
     + (flows.length ? flows.map(p=>`<a class="sb-run ${('pipeline-edit/'+p.name)===cur?'active':''}"
-        data-tip="${esc(p.label||p.name)}"
-        onclick="nav.go('pipeline-edit/${esc(p.name)}')">
+        href="#/pipeline-edit/${esc(p.name)}" data-tip="${esc(p.label||p.name)}"
+        aria-label="${esc(p.label||p.name)}"
+        ${('pipeline-edit/'+p.name)===cur?'aria-current="page"':''}>
         <span class="sb-rico">${ico(p.builtin?'flow':'branch')}</span>
         <span class="sb-rname">${esc(p.label||p.name)}</span>
         <span class="sb-rtag">${esc(t(p.builtin?'sb.tagBuiltin':'sb.tagMine'))}</span></a>`).join('')
@@ -196,7 +200,8 @@ async function renderSidebarLists(){
     + (runs.length ? runs.map(u=>{
         const m = RUN_ICON[u.status] || RUN_ICON.pending;
         return `<a class="sb-run ${u.id===cur?'active':''}" data-tip="${esc(u.label||u.pipeline)}"
-          onclick="nav.go('run/${esc(u.id)}')">
+          href="#/run/${esc(u.id)}" aria-label="${esc(u.label||u.pipeline)}"
+          ${u.id===cur?'aria-current="page"':''}>
           <span class="sb-rico ${m.cls}">${m.ic?(m.sp?ico(m.ic,'sp'):ico(m.ic)):'&nbsp;'}</span>
           <span class="sb-rname">${esc(u.label||u.pipeline)}</span>
           <span class="sb-rtag">${esc(RUN_ST()[u.status]||u.status)}</span></a>`;
@@ -310,6 +315,7 @@ window.footMenu = function(e){
   if(!pop.hidden){ closeFootMenu(); return; }
   pop.innerHTML = footRows();
   pop.hidden = false;
+  document.getElementById('sbMe').setAttribute('aria-expanded', 'true');
   const r = document.getElementById('sbMe').getBoundingClientRect();
   pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
   pop.style.bottom = (window.innerHeight - r.top + 6) + 'px';
@@ -317,6 +323,8 @@ window.footMenu = function(e){
 window.closeFootMenu = function(){
   const pop = document.getElementById('sbPop');
   if(pop){ pop.hidden = true; pop.innerHTML=''; }
+  const me = document.getElementById('sbMe');
+  if(me) me.setAttribute('aria-expanded', 'false');
 };
 window.footCycle = async function(key){
   const A = window.APP;
@@ -453,6 +461,8 @@ window.viewLoading = viewLoading;
 
 const nav = {
   go(id, extra){
+    // editor.js 注册的未保存守卫；没有编辑器在场时它永远返回 true
+    if(window.navGuardAsk && !window.navGuardAsk()) return;
     let hash = '#/'+id;
     if(extra) hash += '/'+extra;
     if(location.hash === hash){ nav.resolve(); return; }
@@ -1508,13 +1518,17 @@ window.ffActionMenu = function(e, items){
 const isTyping = (el) => !!el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.isContentEditable);
 
 document.addEventListener('keydown', (e)=>{
+  if(e.repeat) return;   // 长按 Ctrl B 原来会一路连发，每次都打一次 setAppearance POST
   const mod = e.ctrlKey || e.metaKey;
   const inSettings = ()=>{ const a=document.getElementById('app'); return !!(a && a.dataset.shell==='settings'); };
-  if(mod && !e.shiftKey && !e.altKey){
+  if(mod && !e.altKey){
     const k = (e.key||'').toLowerCase();
+    /* Ctrl K / Ctrl B 在浏览器形态下会被 Chrome/Edge 抢走（聚焦地址栏、切书签栏），
+       preventDefault 拦不住 —— 所以带不带 Shift 都认，浏览器里用 Ctrl+Shift+K 这条。
+       打包成桌面壳后没有这个竞争，两种按法都通。逗号那条浏览器不抢，维持原样。 */
     if(k==='k'){ e.preventDefault(); window.taskModal(); return; }
     if(k==='b'){ e.preventDefault(); window.sbToggle(); return; }
-    if(k===','){ e.preventDefault(); nav.go('settings'); return; }
+    if(k===',' && !e.shiftKey){ e.preventDefault(); nav.go('settings'); return; }
   }
   if(e.key==='Escape'){
     const fd = document.getElementById('sbFind');

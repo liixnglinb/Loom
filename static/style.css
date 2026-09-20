@@ -40,7 +40,7 @@
   --accent-soft:#EAF1FD;
   --accent-line:rgba(47,111,228,.34);
   --on-accent:#FFFFFF;
-  --on-solid:#FFFFFF;   /* 实色填充（报错 / 成功）上的文字，两套主题都用白 */
+  --on-solid:#FFFFFF;   /* 实色填充（报错 / 成功）上的文字；暗色那套另给近黑，见下 */
 
   --good:#1A8B4C;   --good-soft:#E9F5EE;
   --bad:#CC3B33;    --bad-soft:#FBECEA;
@@ -120,7 +120,7 @@ html[data-theme="dark"]{
   --accent-soft:rgba(77,139,247,.15);
   --accent-line:rgba(77,139,247,.45);
   --on-accent:#0A1425;
-  --on-solid:#FFFFFF;
+  --on-solid:#0E1512;   /* 暗色这套 good/bad 偏亮，白字只有 2.5:1；改近黑后 7.4 / 5.8 */
 
   --good:#4EB77C;   --good-soft:rgba(78,183,124,.13);
   --bad:#E8695F;    --bad-soft:rgba(232,105,95,.13);
@@ -156,7 +156,7 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 .tk-card{width:100%;background:var(--bg-panel);border:1px solid var(--line);border-radius:var(--r-5);
   box-shadow:var(--shadow-composer);overflow:hidden}
 .tk-top{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line-soft)}
-.tk-meta{margin-left:auto;font-size:var(--fs-meta);color:var(--ink-4);white-space:nowrap}
+.tk-meta{margin-left:auto;font-size:var(--fs-meta);color:var(--ink-3);white-space:nowrap}
 .tk-field{padding:8px 10px 2px}
 .tk-input{width:100%;border:1px solid var(--line-soft);border-radius:var(--r-3);background:var(--bg-sunken);
   padding:9px 11px;font-family:inherit;font-size:var(--fs-body);color:var(--ink);resize:none;line-height:1.6}
@@ -167,9 +167,9 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
   font-size:var(--fs-sub);padding:6px 8px;border-radius:var(--r-2)}
 .tk-name:focus{outline:none;background:var(--bg-hover)}
 .tk-name::placeholder{color:var(--ink-4)}
-.tk-hint{font-size:var(--fs-meta);color:var(--ink-4);padding:8px 4px 0;line-height:1.55}
+.tk-hint{font-size:var(--fs-meta);color:var(--ink-3);padding:8px 4px 0;line-height:1.55}
 .tk-sugs{width:100%;margin-top:18px}
-.tk-sug-head{display:flex;align-items:center;gap:6px;padding:0 4px 8px;font-size:var(--fs-meta);color:var(--ink-4)}
+.tk-sug-head{display:flex;align-items:center;gap:6px;padding:0 4px 8px;font-size:var(--fs-meta);color:var(--ink-3)}
 .tk-sug-head .spacer{flex:1}
 .tk-op{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border:none;
   border-radius:var(--r-1);background:transparent;color:var(--ink-4);font-family:inherit;
@@ -190,7 +190,7 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 .sc-tr:last-child{border-bottom:none}
 .sc-tr:not(.sc-thead):hover{background:var(--bg-hover)}
 .sc-thead{background:var(--bg-inset);border-bottom:1px solid var(--line)}
-.sc-thead .sc-td{font-size:var(--fs-meta);font-weight:600;color:var(--ink-4);letter-spacing:.02em}
+.sc-thead .sc-td{font-size:var(--fs-meta);font-weight:600;color:var(--ink-3);letter-spacing:.02em}
 .sc-td{min-width:0}
 .sc-td-k{text-align:center}
 .sc-td-s{text-align:right}
@@ -221,7 +221,7 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 .hm-l3{background:color-mix(in srgb, var(--accent) 54%, transparent)}
 .hm-l4{background:color-mix(in srgb, var(--accent) 80%, transparent)}
 .hm-axis{display:flex;gap:3px;margin-top:6px}
-.hm-mo{width:11px;flex-shrink:0;font-size:var(--fs-micro);color:var(--ink-4);white-space:nowrap}
+.hm-mo{width:11px;flex-shrink:0;font-size:var(--fs-micro);color:var(--ink-3);white-space:nowrap}
 .hm-legend{display:flex;align-items:center;justify-content:flex-end;gap:4px;margin-top:8px;
   font-size:var(--fs-micro);color:var(--ink-4)}
 .hm-legend .hm-cell{width:9px;height:9px}
@@ -323,7 +323,7 @@ code{font-family:var(--font-mono);font-size:.92em}
   color:var(--ink-4)}
 .sb-rico .ic{width:1.125rem;height:1.125rem}
 .sb-rname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
-.sb-rtag{flex-shrink:0;font-family:var(--font-mono);font-size:var(--fs-micro);letter-spacing:.015em;color:var(--ink-4);
+.sb-rtag{flex-shrink:0;font-family:var(--font-mono);font-size:var(--fs-micro);letter-spacing:.015em;color:var(--ink-3);
   max-width:64px;overflow:hidden;text-overflow:ellipsis}
 .sb-run:hover .sb-rtag{color:var(--ink-3)}
 .sb-live{color:var(--accent)}
@@ -331,8 +331,8 @@ code{font-family:var(--font-mono);font-size:.92em}
 @keyframes spin{to{transform:rotate(360deg)}}
 .sb-wait{color:var(--warn)}
 .sb-bad{color:var(--bad)}
-.sb-idle{color:var(--ink-4)}
-.sb-empty{padding:6px 9px;font-size:var(--fs-sub);color:var(--ink-4)}
+.sb-idle{color:var(--ink-3)}
+.sb-empty{padding:6px 9px;font-size:var(--fs-sub);color:var(--ink-3)}
 
 .sb-foot{display:flex;align-items:center;gap:6px;padding:8px 6px 2px;margin-top:6px;
   border-top:1px solid var(--line-soft);font-size:var(--fs-meta);color:var(--ink-3)}
@@ -368,13 +368,15 @@ code{font-family:var(--font-mono);font-size:.92em}
 .sb-fbox{display:flex;align-items:center;gap:8px;padding:0 11px;height:38px;border-bottom:1px solid var(--line)}
 .sb-fbox .ic{color:var(--ink-4);width:1.125rem;height:1.125rem;flex-shrink:0}
 .sb-fbox input{flex:1;min-width:0;border:none;background:transparent;outline:none;font-size:var(--fs-body);color:var(--ink)}
+/* 输入框自己抹了 outline，那就由外框来当焦点环，否则键盘根本看不见焦点在哪 */
+.sb-fbox:focus-within{box-shadow:inset 0 0 0 2px var(--accent)}
 .sb-fres{max-height:302px;overflow-y:auto;padding:5px}
 .sb-fi{display:flex;align-items:center;gap:9px;width:100%;padding:7px 8px;border:none;border-radius:var(--r-2);
   background:transparent;color:var(--ink);cursor:pointer;text-align:left;transition:background var(--slide)}
 .sb-fi:hover{background:var(--bg-active)}
 .sb-fmain{display:flex;flex-direction:column;min-width:0;flex:1}
 .sb-fmain b{font-size:var(--fs-sub);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sb-fmain i{font-style:normal;font-family:var(--font-mono);font-size:var(--fs-micro);color:var(--ink-4);
+.sb-fmain i{font-style:normal;font-family:var(--font-mono);font-size:var(--fs-micro);color:var(--ink-3);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sb-fres .sb-empty{padding:14px 10px;text-align:center}
 
@@ -490,7 +492,7 @@ code{font-family:var(--font-mono);font-size:.92em}
 .card-h{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
   padding:11px 14px;border-bottom:1px solid var(--line-soft)}
 .ct{font-size:var(--fs-body);font-weight:600;color:var(--ink)}
-.cs{font-size:var(--fs-meta);color:var(--ink-4);margin-top:1px}
+.cs{font-size:var(--fs-meta);color:var(--ink-3);margin-top:1px}
 /* 卡片头下面的内容统一吃这一份 padding。曾经这里还叠了两条同样取值的规则
    （一条点名 .set-row/.pv-form/…，一条 :not() 反向排除），三条互相盖，
    净效果和本条一模一样，只会让人以为改其中一条有用。 */
@@ -510,8 +512,8 @@ code{font-family:var(--font-mono);font-size:.92em}
 .pl-row-main{flex:1;min-width:0}
 .pl-row-title{display:flex;align-items:baseline;gap:8px;min-width:0}
 .pl-row-name{font-size:var(--fs-body);font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pl-row-title code{font-family:var(--font-mono);font-size:var(--fs-meta);color:var(--ink-4)}
-.pl-row-meta{display:flex;align-items:center;gap:10px;margin-top:2px;font-size:var(--fs-meta);color:var(--ink-4);flex-wrap:wrap}
+.pl-row-title code{font-family:var(--font-mono);font-size:var(--fs-meta);color:var(--ink-3)}
+.pl-row-meta{display:flex;align-items:center;gap:10px;margin-top:2px;font-size:var(--fs-meta);color:var(--ink-3);flex-wrap:wrap}
 .pl-row-ops{display:flex;align-items:center;gap:4px;flex-shrink:0;opacity:0;transition:opacity var(--slide)}
 /* 键盘走到行内任何一个按钮都要能看见操作，光靠 hover 等于对键盘隐藏 */
 .pl-card-row:hover .pl-row-ops,.pl-card-row:focus-within .pl-row-ops{opacity:1}
@@ -532,7 +534,7 @@ code{font-family:var(--font-mono);font-size:.92em}
 .pf-op-more .ic{width:1rem;height:1rem}
 .pf-empty{padding:22px 14px;text-align:center;border:1px dashed var(--line);border-radius:var(--r-2);
   color:var(--ink-4);font-size:var(--fs-sub)}
-.empty{padding:30px 14px;text-align:center;border:1px dashed var(--line);border-radius:var(--r-3);color:var(--ink-4)}
+.empty{padding:30px 14px;text-align:center;border:1px dashed var(--line);border-radius:var(--r-3);color:var(--ink-3)}
 .em{font-size:var(--fs-h2);display:block;margin-bottom:6px;opacity:.5}
 
 /* ---------- 徽标 ---------- */
@@ -544,7 +546,7 @@ code{font-family:var(--font-mono);font-size:.92em}
 .rb-running,.rb-revising{background:var(--accent-soft);color:var(--accent)}
 .rb-failed{background:var(--bad-soft);color:var(--bad)}
 .rb-waiting{background:var(--accent-soft);color:var(--accent-deep)}
-.rb-pending,.rb-cancelled{background:var(--bg-pill);color:var(--ink-4)}
+.rb-pending,.rb-cancelled{background:var(--bg-pill);color:var(--ink-3)}
 .sk-badge{background:var(--bg-pill);color:var(--ink-3)}
 .sk-badge-user{background:var(--accent-soft);color:var(--accent-deep)}
 .ff-tag{background:var(--accent-soft);color:var(--accent-deep)}
@@ -566,7 +568,7 @@ textarea.pv-input{resize:vertical;line-height:1.6;min-height:60px}
 select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a8a8a' stroke-width='2' stroke-linecap='round'><path d='M6 9l6 6 6-6'/></svg>");
   background-repeat:no-repeat;background-position:right 8px center;background-size:13px}
-.pv-foot-hint,.pv-fhint,.sk-hint{font-size:var(--fs-meta);color:var(--ink-4);line-height:1.55}
+.pv-foot-hint,.pv-fhint,.sk-hint{font-size:var(--fs-meta);color:var(--ink-3);line-height:1.55}
 .pv-divider{height:1px;background:var(--line-soft);margin:4px 0}
 .fld-err{border-color:var(--bad) !important}
 .fld-err-t{font-size:var(--fs-meta);color:var(--bad)}
@@ -583,7 +585,7 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
 .pl-check-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 11px;
   border:1px solid var(--line-soft);border-radius:var(--r-2);background:var(--bg-sunken)}
 .pl-check-row .k{font-size:var(--fs-sub);font-weight:600;color:var(--ink)}
-.cs2{font-size:var(--fs-meta);color:var(--ink-4);margin-top:1px}
+.cs2{font-size:var(--fs-meta);color:var(--ink-3);margin-top:1px}
 
 /* ---------- 编排器 ---------- */
 .pl-steps-body{display:flex;flex-direction:column;gap:8px;padding:12px 14px}
@@ -640,7 +642,7 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
 .ts-step.is-waiting .ts-ico{background:var(--accent-soft);color:var(--accent-deep)}
 .ts-name{font-size:var(--fs-body);font-weight:600;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}
-.ts-meta{display:flex;align-items:center;gap:8px;font-size:var(--fs-meta);color:var(--ink-4);flex-shrink:0}
+.ts-meta{display:flex;align-items:center;gap:8px;font-size:var(--fs-meta);color:var(--ink-3);flex-shrink:0}
 .ts-body{padding:2px 8px 10px 29px;display:none}
 .ts-step.open .ts-body{display:block}
 .ts-line{display:flex;gap:7px;align-items:baseline;font-size:var(--fs-sub);line-height:1.7;color:var(--ink-3);
@@ -648,7 +650,7 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
 .ts-line .ic{color:var(--ink-4);width:1.0625rem;height:1.0625rem;stroke-width:1.8;margin-top:.2em}
 .ts-line b{font-weight:600;color:var(--ink-2);font-family:var(--font-mono);font-size:var(--fs-meta)}
 .ts-line.tool{color:var(--ink-2)}
-.ts-line.note{color:var(--ink-4)}
+.ts-line.note{color:var(--ink-3)}
 /* 轨迹折叠行：这一步真的展开得动，所以是按钮而不是句提示文字 */
 .ts-more{width:100%;text-align:left;border:none;background:transparent;cursor:pointer;
   font-family:inherit;color:var(--accent);border-radius:var(--r-1);padding:2px 6px;margin:2px 0}
@@ -686,7 +688,7 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
 .convo-list{display:flex;flex-direction:column;gap:6px;padding:8px 12px;border-top:1px solid var(--line-soft);
   max-height:200px;overflow-y:auto}
 .convo-msg{display:flex;gap:8px;align-items:baseline}
-.cm-role{font-family:var(--font-mono);font-size:var(--fs-meta);letter-spacing:.02em;color:var(--ink-4);flex-shrink:0}
+.cm-role{font-family:var(--font-mono);font-size:var(--fs-meta);letter-spacing:.02em;color:var(--ink-2);flex-shrink:0}
 .cm-text{font-size:var(--fs-sub);line-height:1.6;color:var(--ink-2);white-space:pre-wrap;word-break:break-word}
 
 /* ---------- 技能编辑器 ---------- */
@@ -744,7 +746,7 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
 .ws-md th{background:var(--bg-sunken);font-weight:600}
 
 /* ---------- 转录日志（诊断） ---------- */
-.lg-name{font-family:var(--font-mono);font-size:var(--fs-micro);color:var(--ink-4);font-weight:400;
+.lg-name{font-family:var(--font-mono);font-size:var(--fs-micro);color:var(--ink-3);font-weight:400;
   min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lg-bar{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:10px;
   padding:9px 16px;font-size:var(--fs-meta);color:var(--ink-4);
@@ -762,15 +764,15 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
 .lg-tool{border-left-color:var(--line-strong)}
 .lg-tool .lg-k{color:var(--accent)}
 .lg-out .lg-t{color:var(--ink)}
-.lg-ret .lg-t{color:var(--ink-4)}
+.lg-ret .lg-t{color:var(--ink-3)}
 .lg-err{background:var(--bad-soft);border-left-color:var(--bad)}
 .lg-err .lg-k,.lg-err .lg-t{color:var(--bad)}
 .lg-end{margin-top:4px;padding-top:6px;border-top:1px solid var(--line-soft)}
 .lg-end .lg-k{color:var(--good)}
-.lg-empty{display:flex;align-items:center;gap:8px;padding:26px 16px;font-size:var(--fs-meta);color:var(--ink-4)}
+.lg-empty{display:flex;align-items:center;gap:8px;padding:26px 16px;font-size:var(--fs-meta);color:var(--ink-3)}
 
 /* ---------- 预设 / 供应商 ---------- */
-.pf-url{font-family:var(--font-mono);font-size:var(--fs-meta);color:var(--ink-4);white-space:nowrap;overflow:hidden;
+.pf-url{font-family:var(--font-mono);font-size:var(--fs-meta);color:var(--ink-3);white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis;max-width:340px}
 .pv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:6px}
 .pv-item{display:flex;align-items:center;gap:7px;padding:8px;border-radius:var(--r-2);cursor:pointer;
@@ -876,7 +878,7 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .st-search .ic{color:var(--ink-4);width:1.125rem;height:1.125rem;stroke-width:1.8}
 .st-search input{flex:1;min-width:0;border:none;background:transparent;font-size:var(--fs-body)}
 .st-search input:focus{outline:none}
-.st-grp{padding:18px 11px 6px;font-size:var(--fs-meta);font-weight:600;color:var(--ink-4);letter-spacing:.03em}
+.st-grp{padding:18px 11px 6px;font-size:var(--fs-meta);font-weight:600;color:var(--ink-3);letter-spacing:.03em}
 .st-item{display:flex;align-items:center;gap:10px;width:100%;height:30px;padding:0 11px;
   border:none;border-radius:var(--r-3);background:transparent;
   font:inherit;font-size:var(--fs-body);color:var(--ink-2);cursor:pointer;text-align:left;white-space:nowrap;
@@ -909,7 +911,7 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .st-row-main{flex:1;min-width:0}
 .st-t{font-size:var(--fs-body);font-weight:600;color:var(--ink);letter-spacing:-.006em}
 .st-d{font-size:var(--fs-meta);color:var(--ink-3);line-height:1.55;margin-top:3px}
-.st-d2{font-size:var(--fs-meta);color:var(--ink-4);line-height:1.5;margin-top:3px}
+.st-d2{font-size:var(--fs-meta);color:var(--ink-3);line-height:1.5;margin-top:3px}
 .st-d .lk{color:var(--accent);cursor:pointer}
 .st-rowsub{padding:0 18px 15px}
 /* 标签行和它自己的输入框属于同一项设置，中间不画分隔线 */

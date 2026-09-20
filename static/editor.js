@@ -29,6 +29,60 @@ let PL_EDIT = null;
 let SK_EDIT = null;
 let _ST_PRESETS = null;
 
+/* ---------------- 未保存离开保护 ----------------
+   两个编辑器原来一点保护都没有：改完步骤直接按取消、点侧栏、按 Ctrl K 就静默丢。
+   守卫按 location.hash 自判归属，离开编辑器就自动不报脏，所以不需要谁去反注册。 */
+const NAV_GUARDS = [];
+function navIsDirty(){
+  return NAV_GUARDS.some(f => { try { return !!f(); } catch (e) { return false; } });
+}
+// nav.go 与真 href 的锚点点击都问这一个口子（app.js / 下面的点击捕获）
+window.navGuardAsk = () => !navIsDirty() || !!confirm(t('ed.unsavedLeave'));
+
+let PL_BASE = '';
+function plSnap(E){
+  return JSON.stringify({n:E.name||'', l:E.label||'', d:E.desc||'', g:E.g||'',
+    s:(E.steps||[]).map(x=>[(x.key||'').trim(),(x.label||'').trim(),
+      [(x.skill||'').trim(), ...(x.extra_skills||[])].join(' ').trim(),(x.out||'').trim(),
+      x.checkpoint?1:0, x.role||'', (x.model||'').trim(), (x.engine||'').trim(),
+      (x.extra_prompt||'').trim()])});
+}
+function plDirty(){
+  if(!PL_EDIT || !location.hash.startsWith('#/pipeline-edit')) return false;
+  plSyncInputs();
+  return plSnap(PL_EDIT) !== PL_BASE;
+}
+let SK_BASE = '';
+function skSnap(o){
+  return JSON.stringify({n:o.n||'', c:o.c||'', nw:o.nw?1:0});
+}
+function skDirty(){
+  if(!SK_EDIT || !location.hash.startsWith('#/skill-edit')) return false;
+  const el = document.getElementById('skContent'), nm = document.getElementById('skName');
+  return skSnap({n: nm ? nm.value : SK_EDIT.name,
+                 c: el ? el.value : SK_EDIT.content,
+                 nw: SK_EDIT.isNew}) !== SK_BASE;
+}
+NAV_GUARDS.push(plDirty); NAV_GUARDS.push(skDirty);
+/* 存盘成功即视为不脏：否则 plSave 末尾那句 nav.go 会把自己拦下来问一遍 */
+window.markSavedClean = function(which){
+  if(which === 'pl' && PL_EDIT){ plSyncInputs(); PL_BASE = plSnap(PL_EDIT); }
+  if(which === 'sk' && SK_EDIT){
+    const el = document.getElementById('skContent'), nm = document.getElementById('skName');
+    SK_EDIT.content = el ? el.value : SK_EDIT.content;
+    if(nm) SK_EDIT.name = nm.value;
+    SK_BASE = skSnap({n:SK_EDIT.name, c:SK_EDIT.content, nw:SK_EDIT.isNew});
+  }
+};
+window.addEventListener('beforeunload', (e)=>{
+  if(navIsDirty()){ e.preventDefault(); e.returnValue = ''; }
+});
+// 主导航和侧栏条目现在是真 href，浏览器默认直接改 hash，nav.go 拦不到，只能在这儿接
+document.addEventListener('click', (e)=>{
+  const a = e.target && e.target.closest ? e.target.closest('a[href^="#/"]') : null;
+  if(a && !window.navGuardAsk()) e.preventDefault();
+}, true);
+
 async function plLoad(){
   const [pips, sks] = await Promise.all([
     _api('/api/pipelines').catch(()=>({pipelines:[]})),
@@ -149,6 +203,7 @@ window.renderSkillEdit = async function(name){
     SK_EDIT = {name:'', content:'', editable:true, isNew:true};
   }
   skDrawEditor();
+  SK_BASE = skSnap({n:SK_EDIT.name, c:SK_EDIT.content, nw:SK_EDIT.isNew});
 };
 
 function skDrawEditor(){
@@ -193,12 +248,12 @@ window.skSave = async function(){
     if(!name){ toast(t('sk.needName')); return; }
     const r = await _post('/api/skills', {name, content}).catch(e=>({detail:e.message}));
     if(r.detail){ toast(r.detail); return; }
-    toast(t('sk.created'), true); nav.go('skills');
+    toast(t('sk.created'), true); window.markSavedClean('sk'); nav.go('skills');
   }else{
     const r = await _put('/api/skills/'+encodeURIComponent(E.name), {name:E.name, content})
       .catch(e=>({detail:e.message}));
     if(r.detail){ toast(r.detail); return; }
-    toast(t('sk.saved'), true); nav.go('skills');
+    toast(t('sk.saved'), true); window.markSavedClean('sk'); nav.go('skills');
   }
 };
 
@@ -507,6 +562,7 @@ window.renderPipelineEdit = async function(name){
     PL_EDIT = {name:'', label:'', desc:'', g:'custom', steps:[plBlankStep(1)]};
   }
   plDrawEditor();
+  PL_BASE = plSnap(PL_EDIT);   // 刚渲染完就是"已保存"的基准
 };
 
 window.plSave = async function(){
@@ -539,6 +595,7 @@ window.plSave = async function(){
   const r = await (isNew ? _post(url, payload) : _put(url, payload)).catch(e=>({detail:e.message}));
   if(r.detail){ toast(r.detail); return; }
   toast(t('ed.saved'), true);
+  window.markSavedClean('pl');
   nav.go('pipelines');
 };
 
