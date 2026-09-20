@@ -842,7 +842,13 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .st-main{flex:1;min-width:0;overflow-y:auto;padding:38px 30px 96px}
 .st-inner{max-width:780px;margin:0 auto}
 .st-h1{font-size:var(--fs-h1);font-weight:600;letter-spacing:-.028em;line-height:1.2;margin:0 0 6px;color:var(--ink)}
-.st-hsub{color:var(--ink-3);font-size:var(--fs-sub);line-height:1.55;margin-bottom:28px}
+/* 页头元信息容器：chip 报当前生效值，副标题报这一屏是干什么的，二者共用一处下边距，
+   免得各自带 margin 叠出两种间距 */
+.st-hmeta{margin-bottom:28px}
+.st-hchip{display:inline-flex;align-items:center;height:24px;padding:0 10px;
+  margin-bottom:10px;border-radius:var(--r-2);background:var(--bg-pill);
+  color:var(--ink-2);font-size:var(--fs-meta);font-weight:500}
+.st-hmeta .st-hsub{margin-bottom:0}
 .st-block{margin-bottom:28px}
 .st-block:last-child{margin-bottom:0}
 .st-label{font-size:var(--fs-body);font-weight:600;color:var(--ink);margin:0 0 10px}

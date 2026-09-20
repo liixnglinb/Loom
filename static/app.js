@@ -968,6 +968,15 @@ const SEC_RENDER = {appearance:secAppearance, engines:secEngines, presets:secPre
                     runtime:secRuntime, library:secLibrary, dirs:secDirs,
                     shortcuts:secShortcuts, stats:secStats, update:secUpdate, about:secAbout};
 const SEC_FLAT = () => SET_SECTIONS.flatMap(g=>g.items);
+/* 页头那枚 chip 只报"这一屏现在生效的是什么"，且只挂有真实数据源的分区 ——
+   没数据可报的分区就不挂，免得造一个永远不变的装饰。 */
+const SEC_CHIP = {
+  appearance: () => t('ap.theme.'+(window.APP.theme || 'dark')),
+  engines: () => { const a = ST.agents || []; const f = a.filter(x=>x.found).length;
+                   return f ? t('set.chipEngines',{n:f}) : t('set.chipNone'); },
+  update: () => ST.version ? 'v' + ST.version : '',
+  about:  () => ST.version ? 'v' + ST.version : '',
+};
 const secTitle = id => { const s = SEC_FLAT().find(x=>x[0]===id); return s? t(s[1]) : ''; };
 
 function settingsMain(){
@@ -978,8 +987,12 @@ function settingsMain(){
           `<div data-sec="${id}"><div class="st-h2">${esc(secTitle(id))}</div>${sectionBody(id)}</div>`).join('');
   }
   const sub = t('set.'+SET_SECTION+'D');
+  const chip = (SEC_CHIP[SET_SECTION] || (() => ''))();
+  const meta = (chip || sub) ? `<div class="st-hmeta">
+      ${chip?`<span class="st-hchip">${esc(chip)}</span>`:''}
+      ${sub?`<div class="st-hsub">${esc(sub)}</div>`:''}</div>` : '';
   return `<div class="st-h1">${esc(secTitle(SET_SECTION))}</div>
-    ${sub?`<div class="st-hsub">${esc(sub)}</div>`:''}${sectionBody(SET_SECTION)}`;
+    ${meta}${sectionBody(SET_SECTION)}`;
 }
 function sectionBody(id){ return (SEC_RENDER[id]||secAppearance)(); }
 

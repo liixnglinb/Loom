@@ -146,6 +146,9 @@ const DICT = {
     'set.dirsD': '全部数据都留在本机，没有云端副本。',
     'set.aboutD': '',
     'set.shortcutsD': '全局键盘操作，输入框聚焦时同样有效。',
+    'set.chipEngines': '{n} 个引擎可用', 'set.chipNone': '未检测到可用引擎',
+    'set.statsD': '每次运行的耗时、工具调用与累计费用都在这里。',
+    'set.updateD': '检查更新、下载安装包，并核对文件的校验和。',
 
     'ap.language': '语言', 'ap.languageD': '界面文案语言；技能正文与提示词不受影响。',
     'ap.theme': '明暗模式', 'ap.themeD': '跟随系统会实时响应 Windows 的深浅色切换。',
@@ -385,6 +388,9 @@ const DICT = {
     'set.dirsD': 'Everything stays on this machine; there is no cloud copy.',
     'set.aboutD': '',
     'set.shortcutsD': 'Global keys, active even while a text field has focus.',
+    'set.chipEngines': '{n} engines available', 'set.chipNone': 'No engine detected',
+    'set.statsD': 'Time, tool calls and cumulative cost for every run live here.',
+    'set.updateD': 'Checks for updates, downloads the installer and verifies its checksum.',
 
     'ap.language': 'Language', 'ap.languageD': 'UI copy only; skill bodies and prompts stay as written.',
     'ap.theme': 'Theme', 'ap.themeD': 'System follows the Windows light/dark setting live.',

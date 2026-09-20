@@ -232,6 +232,18 @@ def test_router_highlights_the_matching_nav_item():
     assert stray == set(), f"高亮键指向了不存在的导航项：{sorted(stray)}"
 
 
+def test_every_settings_section_has_a_subtitle_key():
+    """页头副标题走的是 t('set.'+id+'D') 这种拼接键 —— 宽前缀让
+    test_every_used_key_exists 恒过（'set.' 当然有 key），缺哪一条就只会
+    在界面上把原始键名印出来。这里按分区清单逐个点名，堵住这个口径。"""
+    zh, en = _dict_block("zh"), _dict_block("en")
+    ids = re.findall(r"\['([\w-]+)',\s*'set\.", APP_JS)
+    assert ids, "没从 SET_SECTIONS 里解析出分区 id"
+    for i in sorted(set(ids)):
+        assert f"'set.{i}D'" in zh, f"分区 {i} 没有 set.{i}D，页头会印出原始键名"
+        assert f"'set.{i}D'" in en, f"分区 {i} 的英文副标题缺失"
+
+
 def test_settings_is_not_duplicated_in_the_main_nav():
     """设置只有一个入口：左下角那一行弹层里的「设置」。外层齿轮按钮已撤，
     同一格现在归更新胶囊。"""
