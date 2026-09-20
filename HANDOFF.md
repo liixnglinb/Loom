@@ -70,7 +70,7 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
 
 - **`apply_update()` 的打包态分支没真跑过。** 只验证了源码态明确拒绝、以及有任务在跑时返回 409。真自装要装两个版本互演，且会改本机程序 —— 上一任没敢擅自做。改这块时注意：批处理用 `encoding="mbcs"` 写（中文用户名路径 + cmd 代码页），以及 `DETACHED_PROCESS` 起 cmd 后 `os._exit(0)` 的时序。
 - **下载页的兜底版本号/体积要人工同步。** 页面正常运行时从 `latest.json` 现拉，拉不到才用写死的 `1.0.0` / `36 MB`。发新版时**记得改** `D:\Voyra 个人网站\public\modelflow\index.html` 里那两处（第 5 节 SOP 里也写了）。想彻底根治：让按钮在 fetch 成功前禁用，而不是显示一个可能说谎的兜底值。
-- **下载页 FAQ 最后一条写死了测试条数**（当卖点用）。它和 `pytest -q` 的真实条数没有自动绑定，飘了没人报 —— 加测试那一次必须顺手改这里。以 2026-09-20 的 145 为准。
+- 下载页 FAQ 里以前写死过测试条数，几天里飘了三次（122→130→145）。2026-09-20 改成不报数、只说"看守哪些契约"，这条同步义务到此为止 —— 别再往页里塞具体条数。
 - **下载页的配色基准是软件，不是任何外部参考站。** 那张页的令牌逐值等于本仓库 `static/style.css`：页面 chrome 对 `:root`（浅色），页内那张产品图对 `html[data-theme="dark"]`（`#181818/#202020/#232323/#353535`、描边 `#323232`、外圆角 `--r-5` 18px）。**改软件配色 = 要同步改它**；反过来照抄第三方站的色相是明确不要的（用户 2026-09-20 纠正过一次）。它仿 tabbit.com 仿的是**工艺**：滚动揭示、`perspective` + `rotateX` 的 hero 抬起、大模糊低透明度阴影、圆角节奏、字距纪律。
 - **这张页被砍过一次，别再砍。** `9c53b61`（2026-09-19）把它从 64KB 删到 25.8KB，交互动效、区块、mock 窗口的精细度全没了；`a28065e`（2026-09-20）按软件真实结构重做到 63.7KB。改它之前先 `git show` 对比一下字节数，掉一档就是又在删东西。
 - **没有 CI。** `liixnglinb/Loom` 里连 `.github/` 都没有，测试只在本地跑。公开仓库加一条 `python -m pytest -q` 的 workflow 成本很低，但会引入"CI 绿了才发版"的新约定，先问。
@@ -134,7 +134,11 @@ loom.spec              PyInstaller。**excludes 里那串重库别删**，见 ma
 installer.iss          Inno。装 {localappdata}\Programs\Loom，卸载保留 data\
 make_release.py        一键出 setup.exe + latest.json；拒绝把开发机 data/ 打进包
 upload_cos.py          上传 + 设公有读 + 匿名回读验证（签名成功 ≠ 公网能下）
-make_icon.py           PIL 画图标（本机无 SVG 渲染器），产物在 assets/
+make_icon.py           PIL 画图标（本机无 SVG 渲染器）。大档走矢量几何，16/20/24/32/40
+                       走 SMALL 表按目标像素网格各画一遍 —— 别改回"画 1024 再缩放"，
+                       眼距 9/120 缩到 16px 只剩 1 列，任务栏上就是一团糊的。
+                       产物除 assets/（ico + 各档 PNG）外还写 static/logo-sm.svg 与
+                       static/favicon-{16,32}.png，侧边栏和标签页用的是这两份小尺寸变体。
 ```
 
 ---
