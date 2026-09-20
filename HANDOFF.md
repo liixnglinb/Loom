@@ -31,13 +31,14 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
 
 | 项 | 值 | 怎么复核 |
 |---|---|---|
-| 本地 HEAD | `d5cf27a` 设置页吸收 Codex 形态 | `git rev-parse --short HEAD` |
-| 线上 main | `fd4b7f5` —— **`d5cf27a` 还没推**，本地领先 1 个提交 | `gh api repos/liixnglinb/Loom/commits/main --jq .sha[0:7]` |
+| 线上 main | 停在 `fd4b7f5`（2026-09-19 的 upload 修复） | `gh api repos/liixnglinb/Loom/commits/main --jq .sha[0:7]` |
+| 未推提交 | **有** —— 至少含「设置页吸收 Codex 形态」和本文档这次改动 | `git log --oneline origin/main..HEAD` |
 | 工作区 | 干净，130 条测试全过 | `git status --short` |
 | 本地服务 | 8000 端口有一个源码态实例在跑（数据在 `modex-data/`） | `curl -s localhost:8000/api/health` |
 
-要推：`unset GITHUB_TOKEN GH_TOKEN`，再走第 3 节那条 `http.curloptResolve` 命令；
-推完线上 sha 应以 `d5cf27a` 开头才算真上去（本地 `origin/main` 引用会滞后，别信它）。
+要推：`unset GITHUB_TOKEN GH_TOKEN`，再走第 3 节那条 `http.curloptResolve` 命令。推完再跑一次上面
+那条 `gh api`，**线上 sha 真变了才算上去**（本地 `origin/main` 引用会滞后，别拿它当线上状态；
+本文档也故意不写死本地 HEAD 的 sha —— 改它自己就会多出一个提交）。
 
 **上一轮（2026-09-20）做完并已验，别重复做**：设置页换成 Codex 那套形态 ——
 明暗预览磁贴、字号/缩放/内容宽度三条带数字读数的滑块、卡片头部动作位（挂「恢复默认外观」）、
