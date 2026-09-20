@@ -283,7 +283,7 @@ def usage_stats() -> dict:
             dur += int(m.get("duration_ms") or 0)
             tools += int(m.get("tools") or 0)
             turns += int(m.get("turns") or 0)
-    tok = {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, "reason": 0}
+    tok = {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, "reason": 0, "total": 0}
     daily: dict = {}
     peak_dur = 0
     for r in runs:
@@ -291,12 +291,16 @@ def usage_stats() -> dict:
             m = st.get("meta") or {}
             t = m.get("tokens") or {}
             day = m.get("day") or (r.get("created_at") or "")[:10]
-            n = 0
-            for k in tok:
+            for k in ("in", "out", "cache_read", "cache_write", "reason"):
                 v = t.get(k)
                 if isinstance(v, int):
                     tok[k] += v
-                    n += v
+            n = t.get("total")
+            if not isinstance(n, int):
+                # 老数据里没有 total，按四项不相交的明细补一份（reason 不在此列）
+                n = sum(v for k in ("in", "out", "cache_read", "cache_write")
+                        if isinstance((v := t.get(k)), int))
+            tok["total"] += n
             if day:
                 d = daily.setdefault(day, {"tokens": 0, "steps": 0})
                 d["tokens"] += n
@@ -314,7 +318,7 @@ def usage_stats() -> dict:
         "duration_ms": dur,
         "cost_usd": round(cost, 4),
         "tokens": tok,
-        "tokens_total": sum(tok.values()),
+        "tokens_total": tok["total"],
         "peak_step_ms": peak_dur,
         "daily": dict(sorted(daily.items())),
         "peak_day": max(daily.items(), key=lambda kv: kv[1]["tokens"])[0] if daily else "",

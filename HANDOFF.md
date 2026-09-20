@@ -33,7 +33,7 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
 |---|---|---|
 | 线上 main | 停在 `fd4b7f5`（2026-09-19 的 upload 修复） | `gh api repos/liixnglinb/Loom/commits/main --jq .sha[0:7]` |
 | 未推提交 | **有** —— 至少含「设置页吸收 Codex 形态」和本文档这次改动 | `git log --oneline origin/main..HEAD` |
-| 工作区 | 干净，130 条测试全过 | `git status --short` |
+| 工作区 | 测试全过（条数以 `pytest -q` 末行为准，别抄这里） | `git status --short` |
 | 本地服务 | 8000 端口有一个源码态实例在跑（数据在 `modex-data/`） | `curl -s localhost:8000/api/health` |
 
 要推：`unset GITHUB_TOKEN GH_TOKEN`，再走第 3 节那条 `http.curloptResolve` 命令。推完再跑一次上面
@@ -70,10 +70,10 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
 
 - **`apply_update()` 的打包态分支没真跑过。** 只验证了源码态明确拒绝、以及有任务在跑时返回 409。真自装要装两个版本互演，且会改本机程序 —— 上一任没敢擅自做。改这块时注意：批处理用 `encoding="mbcs"` 写（中文用户名路径 + cmd 代码页），以及 `DETACHED_PROCESS` 起 cmd 后 `os._exit(0)` 的时序。
 - **下载页的兜底版本号/体积要人工同步。** 页面正常运行时从 `latest.json` 现拉，拉不到才用写死的 `1.0.0` / `36 MB`。发新版时**记得改** `D:\Voyra 个人网站\public\modelflow\index.html` 里那两处（第 5 节 SOP 里也写了）。想彻底根治：让按钮在 fetch 成功前禁用，而不是显示一个可能说谎的兜底值。
-- **下载页里还写死了「130 条回归测试」这个数字**（FAQ 最后一条，2026-09-20 从过时的 122 改成实测值）。加测试时要连带改这里 —— 它和 `pytest -q` 的真实条数没有自动绑定，飘了没人报。
+- **下载页 FAQ 最后一条写死了测试条数**（当卖点用）。它和 `pytest -q` 的真实条数没有自动绑定，飘了没人报 —— 加测试那一次必须顺手改这里。以 2026-09-20 的 145 为准。
 - **下载页的配色基准是软件，不是任何外部参考站。** 那张页的令牌逐值等于本仓库 `static/style.css`：页面 chrome 对 `:root`（浅色），页内那张产品图对 `html[data-theme="dark"]`（`#181818/#202020/#232323/#353535`、描边 `#323232`、外圆角 `--r-5` 18px）。**改软件配色 = 要同步改它**；反过来照抄第三方站的色相是明确不要的（用户 2026-09-20 纠正过一次）。它仿 tabbit.com 仿的是**工艺**：滚动揭示、`perspective` + `rotateX` 的 hero 抬起、大模糊低透明度阴影、圆角节奏、字距纪律。
 - **这张页被砍过一次，别再砍。** `9c53b61`（2026-09-19）把它从 64KB 删到 25.8KB，交互动效、区块、mock 窗口的精细度全没了；`a28065e`（2026-09-20）按软件真实结构重做到 63.7KB。改它之前先 `git show` 对比一下字节数，掉一档就是又在删东西。
-- **没有 CI。** `liixnglinb/Loom` 里连 `.github/` 都没有，130 条测试只在本地跑。公开仓库加一条 `python -m pytest -q` 的 workflow 成本很低，但会引入"CI 绿了才发版"的新约定，先问。
+- **没有 CI。** `liixnglinb/Loom` 里连 `.github/` 都没有，测试只在本地跑。公开仓库加一条 `python -m pytest -q` 的 workflow 成本很低，但会引入"CI 绿了才发版"的新约定，先问。
 - **`update_repo` / `update_asset` 是废弃设置项**，值还留在用户机器的 settings 表里、`/api/settings` 也还回得出来。代码已不读它们。清理要连带迁移，别顺手删一半。
 - **只有 Windows 安装包。** macOS/Linux 靠源码跑（README 里这么写的，没撒谎）。
 - **组件图鉴里有一行 mock 数据写着 `modelflow`**（`src/pages/UIKit.jsx` 的演示表格）。是组件示例不是产品入口，上一任故意没改。
@@ -128,7 +128,7 @@ static/run.js          运行台：转录、进程卡、工作区实时面板、
 static/style.css       设计令牌。圆角只准 --r-1…--r-5/--r-pill；字号只准 --fs-* 七档
   └ --sw-lite-*/--sw-dark-*/--sw-acc-*  明暗磁贴与色板要显示「另一个主题长什么样」，
      故意固定在 :root 里，不随 html[data-theme] 走 —— 别顺手把它们搬进主题块
-tests/                 130 条。test_static_contract.py 是静态资产契约（见第 6 节）
+tests/                 契约与回归（条数以 pytest -q 为准）。test_static_contract.py 是静态资产契约（见第 6 节）
 loom_launch.py         打包态入口（pywebview 窗口 → 失败退回浏览器）
 loom.spec              PyInstaller。**excludes 里那串重库别删**，见 make_release 注释
 installer.iss          Inno。装 {localappdata}\Programs\Loom，卸载保留 data\
@@ -172,7 +172,7 @@ PYTHONUTF8=1 "$PY" upload_cos.py
 ## 6. 每次改完跑什么
 
 ```bash
-PYTHONUTF8=1 "<python>" -m pytest -q          # 130 条，不需网络
+PYTHONUTF8=1 "<python>" -m pytest -q          # 全绿即可，不需网络
 ```
 
 契约测试会替你看住这些事，报错时**先怀疑自己改错了，别急着放宽断言**：

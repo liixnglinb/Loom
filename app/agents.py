@@ -28,15 +28,39 @@ SANDBOXES = ("read-only", "workspace-write", "danger-full-access")
 
 
 def _tok_add(dst: dict, usage: dict) -> dict:
-    """把两家 CLI 的 usage 字段归到同一套键上。缺哪个就按 0 计，绝不猜。"""
-    for src, key in (("input_tokens", "in"), ("output_tokens", "out"),
-                     ("cache_read_input_tokens", "cache_read"),
-                     ("cached_input_tokens", "cache_read"),
-                     ("cache_creation_input_tokens", "cache_write"),
-                     ("reasoning_output_tokens", "reason")):
-        v = (usage or {}).get(src)
-        if isinstance(v, (int, float)):
-            dst[key] = dst.get(key, 0) + int(v)
+    """把两家 CLI 的 usage 归到一套互不重叠的键上，缺哪个跳过哪个。
+
+    字段名和包含关系是从本机装好的 CLI 里抠出来的，不是照文档猜的：
+      codex  TokenUsage = input_tokens, cached_input_tokens, cache_write_input_tokens,
+             output_tokens, reasoning_output_tokens, total_tokens
+             —— input_tokens 已经含 cached，另有一个 net_new_input_tokens 表示净增。
+      claude result.usage = input_tokens, output_tokens, cache_read_input_tokens,
+             cache_creation_input_tokens —— 这四段彼此不相交，事件里没有 total。
+    所以只有 codex 要把缓存从输入里减掉，否则 total 会把缓存算两遍。
+    reason 永远是 output 的一段，只做明细，不进 total。
+    """
+    u = usage or {}
+
+    def num(key: str) -> int:
+        v = u.get(key)
+        return int(v) if isinstance(v, (int, float)) else 0
+
+    cached = num("cached_input_tokens") or num("cache_read_input_tokens")
+    inp = num("input_tokens")
+    if "cached_input_tokens" in u:
+        inp = max(0, inp - cached)
+    parts = {
+        "in": inp,
+        "out": num("output_tokens"),
+        "cache_read": cached,
+        "cache_write": num("cache_creation_input_tokens") or num("cache_write_input_tokens"),
+        "reason": num("reasoning_output_tokens"),
+    }
+    for k, v in parts.items():
+        if v:
+            dst[k] = dst.get(k, 0) + v
+    dst["total"] = (dst.get("in", 0) + dst.get("out", 0)
+                    + dst.get("cache_read", 0) + dst.get("cache_write", 0))
     return dst
 
 
