@@ -14,6 +14,7 @@ import re
 import threading
 import time
 import uuid
+from datetime import date
 from pathlib import Path
 
 from . import agents, db, paths
@@ -245,6 +246,27 @@ def orphan_workspaces() -> list:
     return out
 
 
+def _streaks(daily: dict) -> tuple:
+    """连续天数只数有活动的日子。当前连续以「今天或昨天」为锚 —— 隔了两天没开就归零，
+    否则几天不用也会一直显示一个大数，那是自欺。"""
+    days = sorted(d for d, v in daily.items() if v.get("tokens") or v.get("steps"))
+    if not days:
+        return 0, 0
+    ds = [date.fromisoformat(x) for x in days]
+    best = cur = 1
+    for a, b in zip(ds, ds[1:]):
+        cur = cur + 1 if (b - a).days == 1 else 1
+        best = max(best, cur)
+    if (date.today() - ds[-1]).days > 1:
+        return 0, best
+    now = 1
+    for a, b in zip(reversed(ds[1:]), reversed(ds[:-1])):
+        if (a - b).days != 1:
+            break
+        now += 1
+    return now, best
+
+
 def usage_stats() -> dict:
     """把 runs 表里的 step.meta 汇总成看得懂的用量。没有的字段一律按 0 计。"""
     runs = db.list_runs(None, 500)
@@ -261,6 +283,26 @@ def usage_stats() -> dict:
             dur += int(m.get("duration_ms") or 0)
             tools += int(m.get("tools") or 0)
             turns += int(m.get("turns") or 0)
+    tok = {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, "reason": 0}
+    daily: dict = {}
+    peak_dur = 0
+    for r in runs:
+        for st in (r.get("steps") or []):
+            m = st.get("meta") or {}
+            t = m.get("tokens") or {}
+            day = m.get("day") or (r.get("created_at") or "")[:10]
+            n = 0
+            for k in tok:
+                v = t.get(k)
+                if isinstance(v, int):
+                    tok[k] += v
+                    n += v
+            if day:
+                d = daily.setdefault(day, {"tokens": 0, "steps": 0})
+                d["tokens"] += n
+                d["steps"] += 1
+            peak_dur = max(peak_dur, int(m.get("duration_ms") or 0))
+    streak_now, streak_best = _streaks(daily)
     ws_bytes, ws_dirs = workspace_bytes()
     return {
         "runs": len(runs),
@@ -271,6 +313,14 @@ def usage_stats() -> dict:
         "agent_turns": turns,
         "duration_ms": dur,
         "cost_usd": round(cost, 4),
+        "tokens": tok,
+        "tokens_total": sum(tok.values()),
+        "peak_step_ms": peak_dur,
+        "daily": dict(sorted(daily.items())),
+        "peak_day": max(daily.items(), key=lambda kv: kv[1]["tokens"])[0] if daily else "",
+        "peak_day_tokens": max((d["tokens"] for d in daily.values()), default=0),
+        "streak_now": streak_now,
+        "streak_best": streak_best,
         "workspace_bytes": ws_bytes,
         "workspaces": ws_dirs,
         "workflows": len(db.list_pipelines()),
@@ -610,6 +660,8 @@ def _run_step(run: dict, idx: int, bus: RunBus, extra_instruction: str = "") -> 
     meta = {"tools": res["tools"], "turns": res["turns"],
             "duration_ms": res["duration_ms"], "cost_usd": res["cost_usd"],
             "engine": res["engine"],
+            "tokens": res.get("tokens") or {},
+            "day": time.strftime("%Y-%m-%d"),
             "log": Path(res["log"]).name if res.get("log") else ""}
     return {"ok": not res["is_error"], "error": res["error"],
             "text": res["text"] or "".join(buf), "meta": meta}

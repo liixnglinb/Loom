@@ -912,13 +912,78 @@ function fmtDur(ms){
   const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
   return h ? h+'h '+m+'m' : m+'m '+(s%60)+'s';
 }
+/* 亿/万只在中文用，英文走 K/M —— 直接写死一套单位会在另一语言里读不通 */
+function fmtTok(n){
+  n = n || 0;
+  const zh = (window.APP && window.APP.lang) !== 'en';
+  if (zh) {
+    if (n >= 1e8) return (n/1e8).toFixed(1) + ' ' + t('unit.yi');
+    if (n >= 1e4) return (n/1e4).toFixed(1) + ' ' + t('unit.wan');
+    return String(n);
+  }
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
+  return String(n);
+}
+/* 热力图：一格一天，按列铺、每列 7 格。起始补空格把日期对齐到周日，
+   否则格子会随数据量左右错位，看不出周节律。 */
+function tokenHeat(daily){
+  const DAYS = 182, rows = [];
+  const today = new Date(); today.setHours(0,0,0,0);
+  const start = new Date(today); start.setDate(start.getDate() - (DAYS - 1));
+  start.setDate(start.getDate() - start.getDay());
+  const vals = Object.values(daily||{}).map(d=>d.tokens||0).filter(v=>v>0).sort((a,b)=>a-b);
+  const q = f => vals.length ? vals[Math.min(vals.length-1, Math.floor(vals.length*f))] : 0;
+  const t1 = q(.25), t2 = q(.5), t3 = q(.75), mx = vals[vals.length-1] || 0;
+  const lvl = v => !v ? 0 : v<=t1 ? 1 : v<=t2 ? 2 : v<=t3 ? 3 : 4;
+  let months = '', lastM = -1;
+  for (let d = new Date(start); d <= today; d.setDate(d.getDate()+1)){
+    const iso = d.toISOString().slice(0,10);
+    const rec = (daily||{})[iso];
+    const v = rec ? (rec.tokens||0) : 0;
+    if (d.getDay() === 0){
+      const m = d.getMonth();
+      if (m !== lastM){ months += `<span class="hm-mo">${esc(t('mon.'+m))}</span>`; lastM = m; }
+      else months += '<span class="hm-mo"></span>';
+    }
+  }
+  for (let w = 0; w*7 < DAYS + 7; w++){
+    let cells = '';
+    for (let i = 0; i < 7; i++){
+      const d = new Date(start); d.setDate(d.getDate() + w*7 + i);
+      if (d > today){ cells += '<i class="hm-cell hm-out"></i>'; continue; }
+      const iso = d.toISOString().slice(0,10);
+      const rec = (daily||{})[iso];
+      const v = rec ? (rec.tokens||0) : 0;
+      cells += `<i class="hm-cell ${'hm-l' + lvl(v)}" title="${esc(iso)} · ${fmtTok(v)}"></i>`;
+    }
+    rows.push(`<div class="hm-col">${cells}</div>`);
+  }
+  return `<div class="hm-grid">${rows.join('')}</div>
+    <div class="hm-axis">${months}</div>
+    <div class="hm-legend"><span>${esc(t('st.less'))}</span>
+      ${[0,1,2,3,4].map(i=>`<i class="hm-cell ${'hm-l'+i}"></i>`).join('')}
+      <span>${esc(t('st.more'))}</span></div>`;
+}
+
 function secStats(){
   const s = ST.stats || {};
   const bs = s.by_status || {};
   const pw = Object.entries(s.per_workflow || {}).sort((a,b)=>b[1]-a[1]);
   const orphans = s.orphans || [];
   const orphanBytes = orphans.reduce((a,o)=>a+(o.bytes||0), 0);
-  return spanel(
+  const tk = s.tokens || {};
+  const strip = `<div class="st-strip">
+    <div><b>${esc(fmtTok(s.tokens_total))}</b><span>${esc(t('st.tokTotal'))}</span></div>
+    <div><b>${esc(fmtTok(s.peak_day_tokens))}</b><span>${esc(t('st.peakDay'))}</span></div>
+    <div><b>${esc(fmtDur(s.peak_step_ms))}</b><span>${esc(t('st.peakStep'))}</span></div>
+    <div><b>${s.streak_now||0}</b><span>${esc(t('st.streakNow'))}</span></div>
+    <div><b>${s.streak_best||0}</b><span>${esc(t('st.streakBest'))}</span></div>
+  </div>`;
+  const heat = spanel(
+      `<div class="hm-title">${esc(t('st.heat'))}</div>` + tokenHeat(s.daily || {}),
+    t('st.heatGrp'));
+  return strip + heat + spanel(
       srow(t('st.runs'), t('st.runsD',{done:bs.done||0, failed:bs.failed||0,
           running:(bs.running||0)+(bs.revising||0), waiting:bs.waiting||0,
           cancelled:bs.cancelled||0}),
@@ -931,6 +996,14 @@ function secStats(){
         `<span class="st-val">${esc(fmtDur(s.duration_ms))}</span>`, 'stats duration time')
     + srow(t('st.cost'), t('st.costD'),
         `<span class="st-val">${(s.cost_usd||0).toFixed(4)}</span>`, 'stats cost usd money')
+    + srow(t('st.tokens'), t('st.tokensD'),
+        `<span class="st-val">${esc(fmtTok(s.tokens_total))}</span>`, 'stats token tokens usage')
+    + srow(t('st.tokIO'), t('st.tokIOD'),
+        `<span class="st-val">${esc(fmtTok(tk.in))} / ${esc(fmtTok(tk.out))}</span>`, 'token input output')
+    + srow(t('st.tokCache'), t('st.tokCacheD'),
+        `<span class="st-val">${esc(fmtTok(tk.cache_read))}</span>`, 'token cache read')
+    + srow(t('st.tokReason'), t('st.tokReasonD'),
+        `<span class="st-val">${esc(fmtTok(tk.reason))}</span>`, 'token reasoning thought')
     + srow(t('st.disk'), t('st.diskD',{n:s.workspaces||0}),
         `<span class="st-val">${esc(fmtBytes(s.workspace_bytes))}</span>`, 'stats disk bytes workspace')
     , t('st.grpUsage'))

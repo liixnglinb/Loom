@@ -27,6 +27,19 @@ DEFAULT_TIMEOUT = int(os.environ.get("FLOWFORGE_AGENT_TIMEOUT", "2700"))
 SANDBOXES = ("read-only", "workspace-write", "danger-full-access")
 
 
+def _tok_add(dst: dict, usage: dict) -> dict:
+    """把两家 CLI 的 usage 字段归到同一套键上。缺哪个就按 0 计，绝不猜。"""
+    for src, key in (("input_tokens", "in"), ("output_tokens", "out"),
+                     ("cache_read_input_tokens", "cache_read"),
+                     ("cached_input_tokens", "cache_read"),
+                     ("cache_creation_input_tokens", "cache_write"),
+                     ("reasoning_output_tokens", "reason")):
+        v = (usage or {}).get(src)
+        if isinstance(v, (int, float)):
+            dst[key] = dst.get(key, 0) + int(v)
+    return dst
+
+
 def _setting(key: str, default: str = "") -> str:
     try:
         from . import db
@@ -291,6 +304,8 @@ def _claude_events(ev: dict, emit, state: dict):
         state["turns"] = ev.get("num_turns") or state["turns"]
         state["duration_ms"] = ev.get("duration_ms")
         state["cost_usd"] = ev.get("total_cost_usd")
+        if isinstance(ev.get("usage"), dict):
+            state["tok_total"] = _tok_add({}, ev["usage"])
         if state["is_error"]:
             state["error"] = (str(ev.get("result") or "").strip()
                               or str(ev.get("terminal_reason") or "")
@@ -370,8 +385,15 @@ def _codex_events(ev: dict, emit, state: dict):
             if txt:
                 _emit(emit, {"type": "note", "text": txt[:300]})
         return
+    if kind == "token_count":
+        info = ev.get("info") or {}
+        tot = info.get("total_token_usage")
+        if isinstance(tot, dict):
+            state["tok_total"] = _tok_add({}, tot)
+        return
     if kind == "turn.completed":
         usage = ev.get("usage") or {}
+        _tok_add(state["tok"], usage)
         state["turns"] = (state["turns"] or 0) + 1
         _emit(emit, {"type": "status",
                      "text": f"Codex 回合结束 · in={usage.get('input_tokens', 0)} "
@@ -440,7 +462,7 @@ def run_agent(engine: str, prompt: str, *, ws: Path, system_text: str = "",
 
     state = {"texts": [], "final": "", "tools": 0, "turns": 0, "is_error": False,
              "duration_ms": None, "cost_usd": None, "error": "", "errors": 0,
-             "abort": False}
+             "abort": False, "tok": {}, "tok_total": None}
     log_dir = ws / "_turn_logs"
     log_dir.mkdir(exist_ok=True)
     log_path = log_dir / f"{(label or engine)}_{time.strftime('%H%M%S')}.jsonl"
@@ -543,6 +565,7 @@ def run_agent(engine: str, prompt: str, *, ws: Path, system_text: str = "",
     result = {"text": text, "engine": engine, "rc": rc, "tools": state["tools"],
               "turns": state["turns"], "duration_ms": state["duration_ms"],
               "cost_usd": state["cost_usd"], "log": str(log_path),
+              "tokens": state["tok_total"] or state["tok"],
               "is_error": state["is_error"] or timed_out,
               "error": state["error"] or ""}
     if timed_out:
