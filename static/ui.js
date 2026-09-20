@@ -209,7 +209,9 @@ const DICT = {
     'dir.open': '打开',
     'dir.runs': '运行记录', 'dir.runsD': '本机累计 {n} 次运行，删除记录不会影响已生成的产物文件。',
 
-    'sc.grpGlobal': '键位', 'sc.searchPh': '搜索键位…', 'sc.noHit': '没有匹配的键位',
+    'sc.searchPh': '搜索键位…', 'sc.noHit': '没有匹配的键位',
+    'sc.colKey': '按键绑定', 'sc.colCmd': '命令', 'sc.colScope': '作用域',
+    'sc.scope.g': '全局', 'sc.scope.s': '设置页', 'sc.scope.i': '输入框',
     'sc.newTask': '新建任务', 'sc.settings': '打开设置', 'sc.close': '关闭弹窗 / 退出设置',
     'sc.search': '聚焦设置搜索框', 'sc.send': '运行台发送修订',
     'sc.toggleSb': '折叠 / 展开侧边栏',
@@ -451,7 +453,9 @@ const DICT = {
     'dir.open': 'Open',
     'dir.runs': 'Run history', 'dir.runsD': '{n} runs on this machine; deleting a record never touches its artifacts.',
 
-    'sc.grpGlobal': 'Keys', 'sc.searchPh': 'Search shortcuts…', 'sc.noHit': 'No matching shortcuts',
+    'sc.searchPh': 'Search shortcuts…', 'sc.noHit': 'No matching shortcuts',
+    'sc.colKey': 'Binding', 'sc.colCmd': 'Command', 'sc.colScope': 'Scope',
+    'sc.scope.g': 'Global', 'sc.scope.s': 'Settings', 'sc.scope.i': 'Text field',
     'sc.newTask': 'New task', 'sc.settings': 'Open settings', 'sc.close': 'Close dialog / leave settings',
     'sc.search': 'Focus settings search', 'sc.send': 'Send a revision from the run console',
     'sc.toggleSb': 'Collapse / expand the sidebar',

@@ -819,19 +819,33 @@ function secDirs(){
 }
 
 function secShortcuts(){
+  /* 作用域是真实差异，不是装饰：Ctrl K/B/, 和 Esc 在哪都能按，/ 只在设置页生效，
+     Enter 只在输入框里有意义。以前混成一张表，得读说明文字才知道作用范围。
+     没有做「操作」列 —— 键位是 app.js 里硬编码的，不能重绑，放假按钮没意义。 */
   const rows = [
-    ['Ctrl K', t('sc.newTask'), t('sc.newTaskD'), 'shortcut new task'],
-    ['Ctrl B', t('sc.toggleSb'), t('sc.toggleSbD'), 'shortcut sidebar toggle'],
-    ['Ctrl ,', t('sc.settings'), t('sc.settingsD'), 'shortcut settings'],
-    ['Esc', t('sc.close'), t('sc.closeD'), 'shortcut close escape'],
-    ['/', t('sc.search'), t('sc.searchD'), 'shortcut search focus'],
-    ['Enter', t('sc.send'), t('sc.sendD'), 'shortcut send enter revise'],
-  ].map(([k,tt,d,x])=>srow(esc(tt), esc(d),
-      `<span class="st-keys">${k.split(' ').map(skey).join('')}</span>`, x)).join('');
+    ['Ctrl K', t('sc.newTask'), t('sc.newTaskD'), 'g', 'shortcut new task'],
+    ['Ctrl B', t('sc.toggleSb'), t('sc.toggleSbD'), 'g', 'shortcut sidebar toggle'],
+    ['Ctrl ,', t('sc.settings'), t('sc.settingsD'), 'g', 'shortcut settings'],
+    ['Esc', t('sc.close'), t('sc.closeD'), 'g', 'shortcut close escape'],
+    ['/', t('sc.search'), t('sc.searchD'), 's', 'shortcut search focus'],
+    ['Enter', t('sc.send'), t('sc.sendD'), 'i', 'shortcut send enter revise'],
+  ].map(([k,tt,d,sc,x])=>`<div class="sc-tr" data-k="${esc((tt+' '+k+' '+x+' '+t('sc.scope.'+sc)).toLowerCase())}">
+      <div class="sc-td"><span class="sc-name">${esc(tt)}</span>
+        <span class="sc-desc">${esc(d)}</span></div>
+      <div class="sc-td sc-td-k"><span class="st-keys">${k.split(' ').map(skey).join('')}</span></div>
+      <div class="sc-td sc-td-s"><span class="sc-scope sc-scope-${sc}">${esc(t('sc.scope.'+sc))}</span></div>
+    </div>`).join('');
   return `<div id="scBox">
     <div class="st-scq">${ico('search')}
       <input id="scQ" placeholder="${esc(t('sc.searchPh'))}" oninput="scFilter(this.value)"></div>
-    ${spanel(rows, t('sc.grpGlobal'))}
+    <div class="sc-card">
+      <div class="sc-tr sc-thead">
+        <div class="sc-td">${esc(t('sc.colCmd'))}</div>
+        <div class="sc-td sc-td-k">${esc(t('sc.colKey'))}</div>
+        <div class="sc-td sc-td-s">${esc(t('sc.colScope'))}</div>
+      </div>
+      ${rows}
+    </div>
     <div class="st-empty st-hidden">${esc(t('sc.noHit'))}</div></div>`;
 }
 /* 键位页自己的过滤器：整页搜索会把别的分区一起摊开，找一个 Esc 不该看六张卡 */
@@ -840,7 +854,7 @@ window.scFilter = function(q){
   if(!box) return;
   const s = (q||'').trim().toLowerCase();
   let n = 0;
-  box.querySelectorAll('.st-row').forEach(r=>{
+  box.querySelectorAll('.sc-tr:not(.sc-thead)').forEach(r=>{
     const on = !s || (r.dataset.k||'').includes(s);
     r.classList.toggle('st-hidden', !on);
     if(on) n++;
