@@ -649,6 +649,11 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
 .ts-line b{font-weight:600;color:var(--ink-2);font-family:var(--font-mono);font-size:var(--fs-meta)}
 .ts-line.tool{color:var(--ink-2)}
 .ts-line.note{color:var(--ink-4)}
+/* 轨迹折叠行：这一步真的展开得动，所以是按钮而不是句提示文字 */
+.ts-more{width:100%;text-align:left;border:none;background:transparent;cursor:pointer;
+  font-family:inherit;color:var(--accent);border-radius:var(--r-1);padding:2px 6px;margin:2px 0}
+.ts-more:hover{background:var(--bg-hover)}
+.ts-more .ic{color:currentColor}
 .ts-line.err{color:var(--bad)}
 .ts-art{display:flex;align-items:center;gap:8px;font-size:var(--fs-meta);color:var(--ink-3);margin-top:4px}
 .ts-art code{background:var(--bg-pill);padding:1px 6px;border-radius:var(--r-1);color:var(--ink-2)}

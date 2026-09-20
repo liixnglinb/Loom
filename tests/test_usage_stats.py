@@ -31,19 +31,21 @@ def test_tok_add_maps_both_vendors_onto_one_key_set():
                                  "output_tokens": 900,
                                  "reasoning_output_tokens": 300,
                                  "total_tokens": 5900})
-    # 4000 的缓存已含在 5000 输入里，减出来才不重叠；50 是新增的写缓存
-    assert codex == {"in": 1000, "out": 900, "cache_read": 4000,
-                     "cache_write": 50, "reason": 300, "total": 5950}
+    # 5000 输入里含着 4000 读缓存和 50 写缓存，两头都要减出来才不重叠
+    assert codex == {"in": 950, "out": 900, "cache_read": 4000,
+                     "cache_write": 50, "reason": 300, "total": 5900}
 
 
 def test_codex_total_matches_its_own_reported_total():
-    """codex 自己会算 total_tokens。归一化后的四项相加必须等于它，
-    这条不是装饰：只要包含关系理解错一次，两边就会差出缓存那一段。"""
+    """codex 自己会算 total_tokens。归一后的四项相加必须等于它，
+    这条不是装饰：包含关系理解错一次（比如漏减写缓存），两边就会差出那一截。
+    缓存值故意给非零 —— 全给 0 的话这条永远查不出问题。"""
     raw = {"input_tokens": 48000, "cached_input_tokens": 45000,
-           "cache_write_input_tokens": 0, "output_tokens": 1200,
+           "cache_write_input_tokens": 700, "output_tokens": 1200,
            "reasoning_output_tokens": 700}
     got = agents._tok_add({}, raw)
     assert got["total"] == raw["input_tokens"] + raw["output_tokens"]
+    assert got["in"] == 48000 - 45000 - 700
 
 
 def test_tok_add_never_double_counts_reason():

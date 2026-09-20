@@ -201,3 +201,37 @@ def test_retry_loop_gives_up_after_configured_attempts(stub_cli, dbsession, monk
     assert calls["n"] == 3, f"step_retry=2 应该一共 3 次，实际 {calls['n']}"
     db.set_setting("step_retry", "0")
     dbsession.delete_pipeline("flaky")
+
+
+# ==================== 局部修订的并发守卫 ====================
+# 这三条都必须在真的起线程之前就 raise，所以用例故意让它们在守卫处返回。
+
+def _run_with(dbsession, run_id, steps, status="done"):
+    dbsession.create_run(run_id, "auto-workflow", "t", steps)
+    dbsession.update_run(run_id, status=status, steps=steps)
+
+
+def test_revise_refuses_while_the_pipeline_is_running(dbsession):
+    """修订线程和流水线线程各持一份 steps 整体回写同一行 JSON，
+    同跑一步就是后写覆盖前写；codex 那路还要抢工作区的 AGENTS.md。"""
+    _run_with(dbsession, "run-rev-run", [{"key": "a", "label": "A", "status": "pending", "out": "a.md"}], status="running")
+    with pytest.raises(ValueError):
+        runner.revise_step("run-rev-run", 0, "改一下")
+
+
+def test_revise_refuses_a_second_concurrent_revision(dbsession):
+    _run_with(dbsession, "run-rev-two", [
+        {"key": "a", "label": "A", "status": "revising", "out": "a.md"},
+        {"key": "b", "label": "B", "status": "done", "out": "b.md"}])
+    with pytest.raises(ValueError):
+        runner.revise_step("run-rev-two", 1, "改一下")
+
+
+def test_revise_clears_a_stale_cancel_flag(dbsession):
+    """cancel_run 只往 _CANCEL 里加，清它的活儿原先只在 _run_thread 的 finally。
+    取消过一次再从那条 run 上发起修订，agents 一进来就当被取消，之后每次都秒失败。"""
+    _run_with(dbsession, "run-rev-cancel", [{"key": "a", "label": "A", "status": "done", "out": ""}])
+    runner._CANCEL.add("run-rev-cancel")
+    with pytest.raises(ValueError):
+        runner.revise_step("run-rev-cancel", 0, "改一下")
+    assert "run-rev-cancel" not in runner._CANCEL

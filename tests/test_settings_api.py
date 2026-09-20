@@ -125,3 +125,56 @@ def test_reveal_rejects_arbitrary_path(client, monkeypatch):
     assert client.post("/api/reveal", params={"which": "../../windows"}).status_code == 400
     assert client.post("/api/reveal", params={"which": "data"}).status_code == 200
     assert len(opened) == 1
+
+
+SECRET = "sk-NEVER-ECHO-9f3a2b"
+
+
+def _mk_preset(client, name):
+    r = client.post("/api/providers", json={"name": name, "provider": "openai",
+                                            "api_base": "http://127.0.0.1:9/v1",
+                                            "api_key": SECRET, "model": "m1"})
+    assert r.status_code == 200, r.text
+    return r.json()["id"]
+
+
+def test_preset_list_never_echoes_the_key(client):
+    """清单曾经是 SELECT * 原样回吐，等于每开一次设置页密钥就上一遍网络，
+    前端再把它回传给 /test 和 /models/list。现在只准回 has_key / key_hint。"""
+    _mk_preset(client, "gate-mask-1")
+    d = client.get("/api/providers").json()
+    hits = [p for p in d["presets"] if p["name"] == "gate-mask-1"]
+    assert hits, "预设没建出来，这条测试就什么也没守住"
+    assert "api_key" not in hits[0]
+    assert hits[0]["has_key"] is True
+    assert SECRET not in client.get("/api/providers").text
+
+
+def test_preset_mutations_also_mask(client):
+    pid = _mk_preset(client, "gate-mask-2")
+    assert SECRET not in client.post(f"/api/providers/{pid}/default").text
+    assert SECRET not in client.put(f"/api/providers/{pid}",
+                                    json={"name": "gate-mask-2", "model": "m2"}).text
+
+
+def test_provider_test_resolves_key_server_side(client, monkeypatch):
+    """按 id 让服务端自己取密钥：前端不再持有它，也就无从回传。"""
+    from app import llm
+    seen = {}
+    monkeypatch.setattr(llm, "test_connection",
+                        lambda provider, api_base, api_key, model="":
+                        seen.update(api_key=api_key, api_base=api_base) or (True, "ok"))
+    pid = _mk_preset(client, "gate-mask-3")
+    r = client.post("/api/providers/test", json={"id": pid, "provider": "openai"})
+    assert r.status_code == 200 and r.json()["ok"]
+    assert seen.get("api_key") == SECRET, "服务端没按 id 把密钥取出来"
+
+
+def test_error_text_from_upstream_is_redacted(client, monkeypatch):
+    """上游网关的 4xx body 会被原样回吐，里面可能带我们发出去的 Authorization。"""
+    from app import llm
+    monkeypatch.setattr(llm, "test_connection",
+                        lambda *a, **k: (False, f"401 bad key {a[2]}"))
+    pid = _mk_preset(client, "gate-mask-4")
+    msg = client.post("/api/providers/test", json={"id": pid}).json()["msg"]
+    assert SECRET not in msg and "[REDACTED]" in msg

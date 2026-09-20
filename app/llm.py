@@ -85,97 +85,13 @@ def _chat_anthropic(api_base, api_key, model, messages, temperature, max_tokens)
 
 
 def chat(provider, api_base, api_key, model, messages, temperature=0.7, max_tokens=64):
-    """按 provider 路由到 OpenAI 兼容或 Anthropic。provider 缺省视为 openai。"""
+    """唯一的直连出口，只给 test_connection 做连通性探测用。
+    流水线正文一律走 agents.run_agent 交给本机 CLI —— 想拿这里生成内容，
+    先要绕过下面这个硬顶，也就一定会在 diff 里露出来。"""
+    max_tokens = min(int(max_tokens or 0), 64)
     provider = (provider or "openai").lower().strip()
     if provider == "anthropic":
-        return _chat_anthropic(api_base, api_key, model, messages, temperature, max_tokens)
-    return _chat_openai(api_base, api_key, model, messages, temperature, max_tokens)
-
-
-def _stream_openai(api_base, api_key, model, messages, temperature, max_tokens):
-    from openai import OpenAI
-    client = OpenAI(base_url=_openai_base(api_base), api_key=api_key, timeout=300)
-    try:
-        resp = client.chat.completions.create(
-            model=model or "gpt-4o-mini",
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
-        )
-        for chunk in resp:
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta
-            text = getattr(delta, "content", None)
-            if text:
-                yield text
-    except Exception as e:
-        raise LLMError(f"LLM 流式调用失败: {e}")
-
-
-def _stream_anthropic(api_base, api_key, model, messages, temperature, max_tokens):
-    if not api_key:
-        raise LLMError("未配置 API Key")
-    url = anthropic_url(api_base)
-    if not url:
-        raise LLMError("未配置 API Base 地址")
-    system = "\n".join((m.get("content") or "") for m in messages if m.get("role") == "system")
-    msgs = [{"role": m["role"], "content": m["content"]}
-            for m in messages if m.get("role") in ("user", "assistant")]
-    if not msgs:
-        msgs = [{"role": "user", "content": "请开始"}]
-    headers = {
-        "x-api-key": api_key,
-        "Authorization": f"Bearer {api_key}",
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-    }
-    body = {
-        "model": model or "claude-sonnet-4-5",
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "messages": msgs,
-        "stream": True,
-    }
-    if system:
-        body["system"] = system
-    try:
-        resp = requests.post(url, json=body, headers=headers, timeout=300, stream=True)
-    except Exception as e:
-        raise LLMError(f"LLM 流式调用失败: {e}")
-    if resp.status_code != 200:
-        raise LLMError(f"LLM 调用失败 HTTP {resp.status_code}: {resp.text[:300]}")
-    try:
-        for raw in resp.iter_lines(decode_unicode=True):
-            if not raw or not raw.startswith("data:"):
-                continue
-            payload = raw[5:].strip()
-            if payload == "[DONE]":
-                break
-            import json as _json
-            try:
-                ev = _json.loads(payload)
-            except Exception:
-                continue
-            if ev.get("type") == "content_block_delta":
-                delta = ev.get("delta") or {}
-                text = delta.get("text") or ""
-                if text:
-                    yield text
-            elif ev.get("type") == "error":
-                raise LLMError(f"LLM 流错误: {ev}")
-    except LLMError:
-        raise
-    except Exception as e:
-        raise LLMError(f"LLM 流式读取失败: {e}")
-
-
-def chat_stream(provider, api_base, api_key, model, messages, temperature=0.7, max_tokens=4096):
-    """流式对话：逐段 yield 文本增量。"""
-    provider = (provider or "openai").lower().strip()
-    if provider == "anthropic":
-        return _stream_anthropic(api_base, api_key, model, messages, temperature, max_tokens)
+        return _chat_anthropic(api_base, api_key, model, messages, teerature, max_tokens)
     return _stream_openai(api_base, api_key, model, messages, temperature, max_tokens)
 
 

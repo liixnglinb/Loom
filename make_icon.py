@@ -158,6 +158,10 @@ def main() -> int:
     for n in (16, 32):
         render(n).save(static / f"favicon-{n}.png")
     (static / "logo-sm.svg").write_text(svg_snapped(20), encoding="utf-8")
+    # favicon.svg 以前是手写的母版几何，不在这条流水线里 —— 于是标签页上一直是
+    # 眼距 9/120 那张糊脸（Chromium 优先用 SVG，PNG 兜底根本轮不到）。
+    # 现在由同一张 SMALL 表生成，改图标只需要改一处。
+    (static / "favicon.svg").write_text(svg_snapped(16), encoding="utf-8")
 
     frames = [render(n) for n in ICO_SIZES]
     head = struct.pack("<HHH", 0, 1, len(frames))

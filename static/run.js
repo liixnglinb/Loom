@@ -198,10 +198,17 @@ function traceLines(s, i){
   const all = rows.map(x=>`<div class="ts-line ${esc(x.kind||'status')}">${ico(KIND_ICON[x.kind]||'tool')}
     ${x.name?`<b>${esc(x.name)}</b>`:''}<span>${esc(x.text||'')}</span></div>`).join('');
   if(rows.length<=10 || FOLD[i]) return all;
-  return `<div class="ts-line">${ico('chevron')}<span>${rows.length-10} ${esc(t('run.moreLines')||'')}</span></div>`
+  return `<button type="button" class="ts-line ts-more" onclick="runFold(${i})">${ico('chevron')}<span>${esc(t('run.moreLines',{n:rows.length-10}))}</span></button>`
     + rows.slice(-10).map(x=>`<div class="ts-line ${esc(x.kind||'status')}">${ico(KIND_ICON[x.kind]||'tool')}
         ${x.name?`<b>${esc(x.name)}</b>`:''}<span>${esc(x.text||'')}</span></div>`).join('');
 }
+
+/* 轨迹折叠行是真的按钮，不是提示文字：点了就地展开这一步的全部轨迹。
+   以前这行写着"点标题栏展开"但没人接 —— 标题栏只管整步开合，展开不到轨迹。 */
+window.runFold = function(i){
+  FOLD[i] = true;
+  refreshTranscript();
+};
 
 function stepLog(s, i){
   if(s.meta && s.meta.log) return s.meta.log;
@@ -492,7 +499,11 @@ function handleEvent(ev, runId){
   }
   else if(ev.type==='revise_done'){
     REVISER[ev.index] = false;
-    CONVO.push({_run:RUN.id, role:'assistant', text:t('run.reviseDone',{label:(RUN.steps[ev.index]||{}).label||''})});
+    // ev.ok 必须判：后端把改不动的情况标成 failed 发回来了，
+    // 以前不分叉，失败的修订也照样说一句「已按要求改写」
+    const lbl = (RUN.steps[ev.index]||{}).label||'';
+    CONVO.push({_run:RUN.id, role:'assistant',
+      text: t(ev.ok ? 'run.reviseDone' : 'run.reviseFail', {label: lbl})});
     redraw();
     runRefreshArts(true);
   }

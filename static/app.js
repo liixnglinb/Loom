@@ -51,7 +51,7 @@ function relDate(str){
 window.ffRelDate = relDate;
 
 /* ---------------- 状态 ---------------- */
-const ST = { presets:[], defaultPreset:null, agents:[], defaultEngine:'',
+const ST = { agents:[], defaultEngine:'',
              claudeCli:'', codexCli:'', libVersion:'', paths:{}, sandboxOptions:[],
              agentTimeout:'2700', codexSandbox:'workspace-write', effortOptions:['auto'],
              reasoningEffort:'auto', stepRetry:'0', autoContinue:'0', bundledSkills:[],
@@ -753,6 +753,7 @@ function secPresets(){
     const disp = (p.extra&&p.extra.display_name)||p.name;
     const prov = (p.provider||'openai')==='anthropic'?'Anthropic':'OpenAI';
     const bits = [prov, p.api_base||'—']; if(p.model) bits.push(p.model);
+    if(p.key_hint) bits.push(p.key_hint);   // 清单里不再有 api_key，只回末四位
     return srow(esc(disp), esc(bits.join(' · ')),
       `${p.is_default?`<span class="sk-badge sk-badge-user">${esc(t('pr.inUse'))}</span>`
         :`<button class="st-btn" onclick="pfSetDefault(${p.id})">${esc(t('eng.setDefault'))}</button>`}
@@ -859,6 +860,7 @@ function secShortcuts(){
 window.scFilter = function(q){
   const box = document.getElementById('scBox');
   if(!box) return;
+  if(SET_Q.trim()) return;   // 全局搜索已经在管这张表了，两个过滤器别抢同一批行
   const s = (q||'').trim().toLowerCase();
   let n = 0;
   box.querySelectorAll('.sc-tr:not(.sc-thead)').forEach(r=>{
@@ -903,9 +905,10 @@ function secUpdate(){
 window.applyUpdate = async function(){
   const u = ST.update || {};
   if(!confirm(t('up.applyGo', {v: u.latest || ''}))) return;
-  const r = await post('/api/update/apply').catch(e=>({detail:String(e)}));
-  if(r && r.detail){ toast(r.detail); return; }
-  toast(t('up.applyStarted'), true);
+  const r = await post('/api/update/apply').catch(e=>({ok:false, detail:String(e)}));
+  // 成功时后端也带 detail（"正在安装并退出…"），所以只能按 ok 判，不能按有没有 detail 判
+  if(r && r.ok === false){ toast(r.detail, false); return; }
+  toast((r && r.detail) || t('up.applyStarted'), true);
 };
 
 const MB1024 = 1048576;
@@ -942,10 +945,10 @@ function tokenHeat(daily){
   const t1 = q(.25), t2 = q(.5), t3 = q(.75), mx = vals[vals.length-1] || 0;
   const lvl = v => !v ? 0 : v<=t1 ? 1 : v<=t2 ? 2 : v<=t3 ? 3 : 4;
   let months = '', lastM = -1;
+  // 后端按本地日期入库（time.strftime("%Y-%m-%d")），这里绝不能用 toISOString ——
+  // 那是 UTC，UTC+8 下每格都会读成前一天，"今天"永远是空的。
+  const dkey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   for (let d = new Date(start); d <= today; d.setDate(d.getDate()+1)){
-    const iso = d.toISOString().slice(0,10);
-    const rec = (daily||{})[iso];
-    const v = rec ? (rec.tokens||0) : 0;
     if (d.getDay() === 0){
       const m = d.getMonth();
       if (m !== lastM){ months += `<span class="hm-mo">${esc(t('mon.'+m))}</span>`; lastM = m; }
@@ -957,7 +960,7 @@ function tokenHeat(daily){
     for (let i = 0; i < 7; i++){
       const d = new Date(start); d.setDate(d.getDate() + w*7 + i);
       if (d > today){ cells += '<i class="hm-cell hm-out"></i>'; continue; }
-      const iso = d.toISOString().slice(0,10);
+      const iso = dkey(d);
       const rec = (daily||{})[iso];
       const v = rec ? (rec.tokens||0) : 0;
       cells += `<i class="hm-cell ${'hm-l' + lvl(v)}" title="${esc(iso)} · ${fmtTok(v)}"></i>`;
@@ -1103,7 +1106,7 @@ window.renderSettings = async function(section){
     api('/api/stats').catch(()=>null),
   ]);
   ST.update = up || null; ST.stats = st || null;
-  PRESETS = r.presets||[]; ST.presets = PRESETS; ST.defaultPreset = r.default||null;
+  PRESETS = r.presets||[];   // ST 里不再镜像一份：清单只有 PRESETS 这一个消费者
   ST.skills = sk.skills||[]; ST.flows = pl.pipelines||[]; ST.runs = rn.runs||[];
   if(ag){
     ST.agents = ag.agents||[]; ST.defaultEngine = ag.default_engine||'';
@@ -1149,7 +1152,17 @@ function applySearch(){
   let hitRows = 0, hitSecs = 0;
   body.querySelectorAll('[data-sec]').forEach(sec=>{
     let inSec = 0;
-    sec.querySelectorAll('.st-block').forEach(bl=>{
+    const blocks = [...sec.querySelectorAll('.st-block')];
+    if(!blocks.length){
+      // 键位表是张表，没有 .st-block/.st-row 外壳。照下面的走法它永远 0 命中，
+      // 结果整段被搜索藏掉 —— 所以这类分区直接认行上的 data-k。
+      const trs = [...sec.querySelectorAll('.sc-tr[data-k]')];
+      const shown = trs.filter(r=>!q || (r.dataset.k||'').includes(q)).length;
+      trs.forEach(r=>r.classList.toggle('st-hidden',
+        !!q && !(r.dataset.k||'').includes(q)));
+      if(shown){ inSec = 1; hitRows += shown; }
+    }
+    blocks.forEach(bl=>{
       let shown = 0;
       bl.querySelectorAll('.st-row').forEach(r=>{
         const on = !q || (r.dataset.k||'').includes(q);
@@ -1342,7 +1355,8 @@ window.pfFetchModels=async function(){
   toast(t('pr.modelsFetching'));
   try{
     const provider=(document.getElementById('pfProvider')||{}).value||'anthropic';
-    const r=await post('/api/models/list',{api_base:base, api_key:key, provider});
+    const r=await post('/api/models/list',{api_base:base, api_key:key, provider,
+      id:(PF_EDIT&&PF_EDIT.id)||0});   // 编辑已存预设时密钥不在前端，让服务端按 id 自己取
     if(!r.ok){ toast(t('pr.modelsFail',{err:r.error||''})); return; }
     const ids=(r.models||[]).map(x=>x.id||x.model||x.name||x).filter(Boolean).slice(0,200);
     const hint=document.getElementById('pfModelHint');
@@ -1388,7 +1402,7 @@ window.pfSetDefault=async function(id){
 window.pfTest=async function(id){
   const p=PRESETS.find(x=>x.id===id); if(!p) return;
   toast(t('pr.testing'));
-  const r=await post('/api/providers/test',{provider:p.provider, api_base:p.api_base, api_key:p.api_key, model:p.model})
+  const r=await post('/api/providers/test',{id, provider:p.provider, model:p.model})
     .catch(e=>({ok:false,msg:String(e)}));
   toast(r.ok?t('pr.testOk',{msg:r.msg?('：'+r.msg):''}):t('pr.testFail',{msg:r.msg||''}), !!r.ok);
 };

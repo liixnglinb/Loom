@@ -677,9 +677,12 @@ def _run_thread(run_id: str, start_step: int = 0):
         run = db.get_run(run_id)
         if not run:
             return
-        if start_step == 0:
-            db.update_run(run_id, status="running", waiting_reason="", error="", cur_step=0)
-            bus.publish({"type": "state", "run": db.get_run(run_id)})
+        # 从中间某步重跑也必须置 running。留在 pending 的代价不只是"没有停止按钮"：
+        # 文件面板不轮询、count_active_runs 也数不到它，于是更新器可以在智能体
+        # 正写盘的中途把程序换掉。顺带清掉上一轮的 error，重跑成功了别还挂着红条。
+        db.update_run(run_id, status="running", waiting_reason="", error="",
+                      cur_step=start_step)
+        bus.publish({"type": "state", "run": db.get_run(run_id)})
         steps = run.get("steps") or []
         for idx in range(start_step, len(steps)):
             if is_cancelled(run_id):
@@ -851,6 +854,15 @@ def revise_step(run_id: str, index: int, instruction: str) -> dict:
     if index < 0 or index >= len(steps):
         raise ValueError("步骤序号无效")
     step = steps[index]
+    # 修订线程和流水线线程各持一份 steps 整体回写同一行 JSON，同跑一步就是后写覆盖前写；
+    # codex 那路还要覆写工作区的 AGENTS.md，两步同时在改会读到彼此的规范。
+    if run.get("status") == "running":
+        raise ValueError("这条流水线还在跑，先取消或等它停下再改这一步")
+    if any((s.get("status") or "") == "revising" for s in steps):
+        raise ValueError("已经有一步在修订了，一次只改一步")
+    # cancel_run 只加标志、_run_thread 的 finally 才清；从取消过的那条 run 上发起修订
+    # 时必须先清掉，否则 agents 那边一进来就当被取消，每次都秒失败。
+    _CANCEL.discard(run_id)
     out_name = _safe_out_name(step.get("out") or "")
     if not out_name:
         raise ValueError("该步骤没有产物文件，无法修订（可改用「从此步重跑」）")
@@ -906,7 +918,9 @@ def revise_step(run_id: str, index: int, instruction: str) -> dict:
             bus.publish({"type": "revise_done", "index": index, "chars": len(new_text),
                          "ok": step["status"] == "done"})
             bus.publish({"type": "state", "run": db.get_run(run_id)})
-        except _Cancelled:
+        except (_Cancelled, agents.AgentCancelled):
+            # agents 那边中止抛的是它自己的 AgentCancelled，不接住就会掉进下面的
+            # 通用分支：记成 failed、错误消息是空串，界面上只剩一个没有原因的的红点
             step["status"] = "cancelled"
             db.update_run(run_id, steps=steps)
             bus.publish({"type": "state", "run": db.get_run(run_id)})

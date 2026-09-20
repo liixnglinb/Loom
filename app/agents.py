@@ -46,14 +46,18 @@ def _tok_add(dst: dict, usage: dict) -> dict:
         return int(v) if isinstance(v, (int, float)) else 0
 
     cached = num("cached_input_tokens") or num("cache_read_input_tokens")
+    write = num("cache_write_input_tokens") or num("cache_creation_input_tokens")
     inp = num("input_tokens")
     if "cached_input_tokens" in u:
-        inp = max(0, inp - cached)
+        # codex 的 input_tokens 把读缓存和写缓存都含在里面（所以才另有
+        # net_new_input_tokens 表示净增）。两头都要减，只减一头的话 total 会
+        # 比 CLI 自报的 total_tokens 多出写缓存那一截。
+        inp = max(0, inp - cached - write)
     parts = {
         "in": inp,
         "out": num("output_tokens"),
         "cache_read": cached,
-        "cache_write": num("cache_creation_input_tokens") or num("cache_write_input_tokens"),
+        "cache_write": write,
         "reason": num("reasoning_output_tokens"),
     }
     for k, v in parts.items():

@@ -136,7 +136,9 @@ def restore_pipeline(name: str):
     factory = presets_library.factory_steps(name)
     if not factory:
         return JSONResponse({"detail": "该流程不是内置流程，没有出厂版本可恢复"}, 400)
-    db.update_pipeline(name, steps=factory, builtin=1)
+    if not db.update_pipeline(name, steps=factory, builtin=1):
+        # 出厂步骤取到了但库里没这一行 —— 不能照样回 ok，前端会 toast「已恢复」而什么都没变
+        return JSONResponse({"detail": "库里没有这条流程，恢复未生效"}, 404)
     return {"ok": True, "steps": factory}
 
 
@@ -890,6 +892,7 @@ class PresetUpdate(BaseModel):
     clear_key: bool = False
 
 class PresetTestIn(BaseModel):
+    id: int = 0
     provider: str = "openai"
     api_base: str = ""
     api_key: str = ""
@@ -897,6 +900,7 @@ class PresetTestIn(BaseModel):
 
 
 class ModelsListIn(BaseModel):
+    id: int = 0
     api_base: str = ""
     api_key: str = ""
     provider: str = "openai"
@@ -904,9 +908,41 @@ class ModelsListIn(BaseModel):
     is_full_url: bool = False
 
 
+def _preset_payload():
+    """给前端的预设清单。api_key 一律不外泄：以前这些路由把整行 SELECT * 原样返回，
+    于是密钥随 GET /api/providers 走一遍网络，前端又把它回传给 /test 和 /models/list。
+    现在只回有没有密钥和末四位，测试/拉模型改按 id 由服务端自己取。"""
+    out = []
+    for p in db.list_presets():
+        q = dict(p)
+        k = q.pop("api_key", "") or ""
+        q["has_key"] = bool(k)
+        q["key_hint"] = ("••••" + k[-4:]) if len(k) > 4 else ("•" * min(len(k), 4) if k else "")
+        out.append(q)
+    d = db.get_default_preset()
+    return {"presets": out, "default": (d["id"] if d else None)}
+
+
+def _preset_creds(pid: int, api_base: str, api_key: str):
+    """按 id 让服务端自己去库里取端点与密钥 —— 清单已经不回传 api_key 了，
+    测试和拉模型也不能再靠前端把密钥带回来。显式传进来的值优先（那是在编辑新密钥）。"""
+    if not pid:
+        return api_base, api_key
+    p = db.get_preset(pid)
+    if not p:
+        return api_base, api_key
+    return (api_base or p.get("api_base") or ""), (api_key or p.get("api_key") or "")
+
+
+def _redact(msg: str, key: str) -> str:
+    """上游网关的 4xx body 会被原样回吐，里面可能带我们发过去的 Authorization。"""
+    s = str(msg or "")
+    return s.replace(key, "[REDACTED]") if key else s
+
+
 @app.get("/api/providers")
 def list_providers():
-    return {"presets": db.list_presets(), "default": db.get_default_preset()}
+    return _preset_payload()
 
 
 @app.post("/api/providers")
@@ -918,8 +954,7 @@ def add_provider(p: PresetIn):
         return JSONResponse({"detail": f"预设名「{name}」已存在"}, 400)
     pid = db.add_preset(name, (p.provider or "openai"), p.api_base, p.api_key, p.model,
                         extra=p.extra or {})
-    return {"ok": True, "id": pid, "presets": db.list_presets(),
-            "default": db.get_default_preset()}
+    return {"ok": True, "id": pid, **_preset_payload()}
 
 
 @app.put("/api/providers/{pid}")
@@ -939,8 +974,7 @@ def update_provider(pid: int, u: PresetUpdate):
     db.update_preset(pid, name=new_name, provider=u.provider or p["provider"],
                      api_base=u.api_base or p["api_base"], api_key=api_key,
                      model=u.model or p["model"], extra=(u.extra or None))
-    return {"ok": True, "presets": db.list_presets(),
-            "default": db.get_default_preset()}
+    return {"ok": True, **_preset_payload()}
 
 
 @app.delete("/api/providers/{pid}")
@@ -948,8 +982,7 @@ def del_provider(pid: int):
     if not db.get_preset(pid):
         return JSONResponse({"detail": "not found"}, 404)
     db.delete_preset(pid)
-    return {"ok": True, "presets": db.list_presets(),
-            "default": db.get_default_preset()}
+    return {"ok": True, **_preset_payload()}
 
 
 @app.post("/api/providers/{pid}/default")
@@ -957,14 +990,14 @@ def set_default(pid: int):
     if not db.get_preset(pid):
         return JSONResponse({"detail": "not found"}, 404)
     db.set_default_preset(pid)
-    return {"ok": True, "presets": db.list_presets(),
-            "default": db.get_default_preset()}
+    return {"ok": True, **_preset_payload()}
 
 
 @app.post("/api/providers/test")
 def test_provider(t: PresetTestIn):
-    ok, msg = llm.test_connection(t.provider, t.api_base, t.api_key, t.model)
-    return {"ok": ok, "msg": msg}
+    base, key = _preset_creds(t.id, t.api_base, t.api_key)
+    ok, msg = llm.test_connection(t.provider, base, key, t.model)
+    return {"ok": ok, "msg": _redact(msg, key)}
 
 
 _MODEL_COMPAT_SUFFIXES = (
@@ -1006,6 +1039,7 @@ def _model_url_candidates(base: str, override: str = "", is_full_url: bool = Fal
 def models_list(b: ModelsListIn):
     """按候选策略拉取模型列表，支持 OpenAI/Anthropic/Gemini 认证头。"""
     import requests as _requests
+    b.api_base, b.api_key = _preset_creds(b.id, b.api_base, b.api_key)
     urls = _model_url_candidates(b.api_base, b.models_url, b.is_full_url)
     if not urls:
         return {"ok": False, "models": [], "error": "缺少或无法解析模型端点", "tried": []}
