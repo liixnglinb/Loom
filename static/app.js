@@ -493,26 +493,38 @@ window.taskModal = async function(presetFlow){
   document.body.style.overflow='hidden';
   const root = document.createElement('div');
   root.id='taskModalRoot';
-  root.innerHTML = `<div class="modal open" onclick="if(event.target===this)taskClose()">
-    <div class="modal-box" style="width:min(660px,94vw)">
-      <div class="modal-top"><h3>${esc(t('task.title'))}</h3><button class="modal-x" onclick="taskClose()">×</button></div>
-      <div class="pv-scroll">
-      <div class="pv-form pv-flat">
-        <div class="pv-f"><label class="pv-label">${esc(t('task.flow'))}</label>
+  const cur = tpls.find(p=>p.name===(presetFlow||tpls[0].name)) || tpls[0];
+  const cps = (cur.steps||[]).filter(st=>st.checkpoint).length;
+  root.innerHTML = `<div class="modal open" role="dialog" aria-label="${esc(t('task.title'))}"
+      onclick="if(event.target===this)taskClose()">
+    <div class="tk-stage">
+      <h2 class="tk-greet">${esc(t('tk.greet'))}</h2>
+      <div class="tk-card">
+        <div class="tk-top">
           ${ffSelect(tpls.map(p=>({v:p.name, label:(p.label||p.name)+' · '+p.steps.length+' '+t('c.steps')})),
-                     presetFlow||tpls[0].name, {id:'tkFlow', onChange:'tkHint'})}</div>
-        <div class="pv-f"><label class="pv-label">${esc(t('task.brief'))} <b class="req">*</b></label>
-          <textarea class="pv-input" id="tkBrief" rows="8" placeholder="${esc(t('task.briefPh'))}" oninput="tkHint()"></textarea>
-          <div class="pv-foot-hint" id="tkHintBox">${esc(t('task.briefHint'))}</div></div>
-        <div class="pv-f"><label class="pv-label">${esc(t('task.label'))}</label>
-          <input class="pv-input" id="tkLabel" placeholder="${esc(t('task.labelPh'))}"></div>
-      </div></div>
-      <div class="modal-foot">
-        <button class="btn btn-ghost" onclick="taskClose()">${esc(t('c.cancel'))}</button>
-        <button class="btn btn-primary" onclick="taskStart()">${esc(t('task.start'))}</button>
+                     presetFlow||tpls[0].name, {id:'tkFlow', onChange:'tkHint'})}
+          <span class="tk-meta">${cps ? esc(t('tk.cps',{n:cps})) : esc(t('tk.noCp'))}</span>
+        </div>
+        <div class="tk-field">
+          <textarea class="tk-input" id="tkBrief" rows="4" placeholder="${esc(t('task.briefPh'))}"
+            oninput="tkHint()"></textarea>
+        </div>
+        <div class="tk-foot">
+          <input class="tk-name" id="tkLabel" placeholder="${esc(t('task.labelPh'))}">
+          <button class="cp-send" onclick="taskStart()" aria-label="${esc(t('task.start'))}"
+            title="${esc(t('task.start'))}">${ico('send')}</button>
+        </div>
+      </div>
+      <div class="tk-hint" id="tkHintBox">${esc(t('task.briefHint'))}</div>
+      <div class="tk-sugs" id="tkSugs">
+        <div class="tk-sug-head"><span>${esc(t('tk.tryThese'))}</span><span class="spacer"></span>
+          <button class="tk-op" onclick="tkShuffle()">${esc(t('tk.shuffle'))}</button>
+          <button class="tk-op" aria-label="${esc(t('c.close'))}" onclick="tkHideSugs()">${ico('close')}</button></div>
+        <div id="tkSugList"></div>
       </div>
     </div></div>`;
   document.body.appendChild(root);
+  tkPaintSugs();          // 必须在挂进文档之后：里面靠 getElementById 找容器，提前调是查空的
   setTimeout(()=>{ const b=document.getElementById('tkBrief'); if(b) b.focus(); }, 60);
 };
 function tkHint(){
@@ -523,6 +535,23 @@ function tkHint(){
   hint.style.color = (brief.length>0 && brief.length<20) ? 'var(--warn)' : '';
 }
 window.tkHint = tkHint;
+const TK_SUG_KEYS = ['tk.sug1','tk.sug2','tk.sug3','tk.sug4','tk.sug5','tk.sug6'];
+const TK_SUG_ICONS = ['search','file','chart','play','edit','flag'];
+let TK_SUG_OFF = 0;
+function tkPaintSugs(){
+  const box = document.getElementById('tkSugList'); if(!box) return;
+  box.innerHTML = [0,1,2].map(i => {
+    const k = TK_SUG_KEYS[(TK_SUG_OFF+i) % TK_SUG_KEYS.length];
+    const ic = TK_SUG_ICONS[(TK_SUG_OFF+i) % TK_SUG_ICONS.length];
+    return `<button class="tk-sug" onclick="tkUseSug(this)"><span>${ico(ic)}</span>${esc(t(k))}</button>`;
+  }).join('');
+}
+window.tkShuffle = function(){ TK_SUG_OFF = (TK_SUG_OFF+3) % TK_SUG_KEYS.length; tkPaintSugs(); };
+window.tkHideSugs = function(){ const b=document.getElementById('tkSugs'); if(b) b.remove(); };
+window.tkUseSug = function(btn){
+  const ta = document.getElementById('tkBrief'); if(!ta) return;
+  ta.value = btn.textContent.trim(); ta.focus(); tkHint();
+};
 window.taskClose = function(){
   const r=document.getElementById('taskModalRoot'); if(r) r.remove();
   document.body.style.overflow='';

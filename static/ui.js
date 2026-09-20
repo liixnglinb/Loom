@@ -43,11 +43,16 @@ const DICT = {
     'home.recentEmpty': '还没有运行记录', 'home.restore': '恢复出厂', 'home.engineNone': '智能体未就绪',
 
     /* 工作台（首页） */
-    'task.title': '下一个任务', 'task.flow': '用哪条流程', 'task.brief': '任务说明',
+    'task.title': '下一个任务',
     'task.briefPh': '目标、背景、已有材料、想交付成什么样。',
+    'tk.greet': '今天要跑哪条流程？', 'tk.cps': '此流程含 {n} 个检查点', 'tk.noCp': '此流程不带检查点',
+    'tk.tryThese': '试试这些任务', 'tk.shuffle': '换一批',
+    'tk.sug1': '帮我把这份赛题拆成可执行的子问题', 'tk.sug2': '读一遍这份材料，整理方法和数据清单',
+    'tk.sug3': '把这批结果画成图并写结论', 'tk.sug4': '按流程跑一遍，产物落在我自己的工作区',
+    'tk.sug5': '给我一份能直接交出去的调研报告', 'tk.sug6': '复核这一版里的逻辑漏洞',
     'task.briefHint': '这段文字会原样进入每一步的提示词，是全流程的唯一依据。',
     'task.briefShort': '说明太短，智能体会自行推断大量假设 —— 至少写清目标与交付形态。',
-    'task.label': '运行名称', 'task.labelPh': '留空则用流程名', 'task.start': '开始全自动执行',
+    'task.labelPh': '留空则用流程名', 'task.start': '开始全自动执行',
     'task.needBrief': '任务说明不能为空', 'task.started': '已启动', 'task.noFlow': '还没有流程，先创建一个',
 
     'st.pending': '待执行', 'st.running': '执行中', 'st.waiting': '等待确认', 'st.done': '已完成',
@@ -276,11 +281,16 @@ const DICT = {
     'home.recentEmpty': 'No runs yet', 'home.restore': 'Restore', 'home.engineNone': 'No agent engine',
 
     /* Bench (home) */
-    'task.title': 'New task', 'task.flow': 'Workflow', 'task.brief': 'Task brief',
+    'task.title': 'New task',
     'task.briefPh': 'Goal, context, material you already have, what the deliverable should look like.',
+    'tk.greet': 'Which workflow should we run?', 'tk.cps': '{n} checkpoints in this workflow', 'tk.noCp': 'No checkpoints in this workflow',
+    'tk.tryThese': 'Try these', 'tk.shuffle': 'Shuffle',
+    'tk.sug1': 'Break this problem into executable subtasks', 'tk.sug2': 'Read this material and list methods and data',
+    'tk.sug3': 'Chart these results and write the conclusions', 'tk.sug4': 'Run the workflow, artifacts land in my workspace',
+    'tk.sug5': 'Draft a research report I can hand over', 'tk.sug6': 'Review this draft for logic gaps',
     'task.briefHint': 'This text goes verbatim into every step prompt and is the single source of truth.',
     'task.briefShort': 'Very short brief — the agent will assume a lot. State at least the goal and the deliverable.',
-    'task.label': 'Run name', 'task.labelPh': 'defaults to the workflow name', 'task.start': 'Run end to end',
+    'task.labelPh': 'defaults to the workflow name', 'task.start': 'Run end to end',
     'task.needBrief': 'Task brief is required', 'task.started': 'Started', 'task.noFlow': 'No workflow yet — create one first',
 
     'st.pending': 'Pending', 'st.running': 'Running', 'st.waiting': 'Awaiting', 'st.done': 'Done',
