@@ -153,6 +153,7 @@ const DICT = {
     'ap.accent': '强调色', 'ap.accentD': '选中、焦点、进度与运行中用的彩色；大面积仍是中性灰。',
     'ap.accent.blue': '电光蓝', 'ap.accent.gold': '旧金黄',
     'ap.grpLang': '语言', 'ap.grpLook': '观感', 'ap.grpPreview': '实时预览',
+    'ap.grpSize': '界面尺寸', 'ap.reset': '恢复默认外观', 'ap.resetDone': '外观已恢复默认',
     'ap.pvTitle': '步骤标题', 'ap.pvBody': '智能体把产物写进本次运行的工作区。',
     'ap.pvCode': 'claude -p --output-format stream-json', 'ap.pvMeta': '03_RESEARCH · 12.4s · 0.0318',
 
@@ -198,7 +199,7 @@ const DICT = {
     'dir.open': '打开',
     'dir.runs': '运行记录', 'dir.runsD': '本机累计 {n} 次运行，删除记录不会影响已生成的产物文件。',
 
-    'sc.grpGlobal': '键位',
+    'sc.grpGlobal': '键位', 'sc.searchPh': '搜索键位…', 'sc.noHit': '没有匹配的键位',
     'sc.newTask': '新建任务', 'sc.settings': '打开设置', 'sc.close': '关闭弹窗 / 退出设置',
     'sc.search': '聚焦设置搜索框', 'sc.send': '运行台发送修订',
     'sc.toggleSb': '折叠 / 展开侧边栏',
@@ -384,6 +385,7 @@ const DICT = {
     'ap.accent': 'Accent', 'ap.accentD': 'Colour for selection, focus, progress and live runs; surfaces stay neutral.',
     'ap.accent.blue': 'Electric blue', 'ap.accent.gold': 'Legacy gold',
     'ap.grpLang': 'Language', 'ap.grpLook': 'Look', 'ap.grpPreview': 'Live preview',
+    'ap.grpSize': 'Interface size', 'ap.reset': 'Reset appearance', 'ap.resetDone': 'Appearance restored to defaults',
     'ap.pvTitle': 'Step title', 'ap.pvBody': 'The agent writes artifacts into this run’s workspace.',
     'ap.pvCode': 'claude -p --output-format stream-json', 'ap.pvMeta': '03_RESEARCH · 12.4s · 0.0318',
 
@@ -429,7 +431,7 @@ const DICT = {
     'dir.open': 'Open',
     'dir.runs': 'Run history', 'dir.runsD': '{n} runs on this machine; deleting a record never touches its artifacts.',
 
-    'sc.grpGlobal': 'Keys',
+    'sc.grpGlobal': 'Keys', 'sc.searchPh': 'Search shortcuts…', 'sc.noHit': 'No matching shortcuts',
     'sc.newTask': 'New task', 'sc.settings': 'Open settings', 'sc.close': 'Close dialog / leave settings',
     'sc.search': 'Focus settings search', 'sc.send': 'Send a revision from the run console',
     'sc.toggleSb': 'Collapse / expand the sidebar',
@@ -607,6 +609,12 @@ function applyAppearance() {
   if (bn) bn.textContent = t('brand.name');
 }
 
+/* 只改内存 + 重绘，不落盘：滑块 oninput 走这里，拖动过程不该刷 8 个请求。 */
+function previewAppearance(patch) {
+  Object.assign(APP, patch || {});
+  applyAppearance();
+}
+
 function setAppearance(patch) {
   Object.assign(APP, patch || {});
   applyAppearance();
@@ -706,6 +714,7 @@ window.t = t;
 window.APP = APP;
 window.applyAppearance = applyAppearance;
 window.setAppearance = setAppearance;
+window.previewAppearance = previewAppearance;
 window.loadAppearance = loadAppearance;
 window.mdToHtml = mdToHtml;
 window.AP_OPTS = { THEMES, FONTS, TEXT_SIZES, ZOOMS, WIDTHS, ACCENTS };

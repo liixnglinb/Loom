@@ -568,9 +568,16 @@ const srow = (title, desc, ctl, extra='') => `
       ${desc?`<div class="st-d">${desc}</div>`:''}</div>
     <div class="st-ctl">${ctl||''}</div>
   </div>`;
-const spanel = (rows, label='') => `
-  <div class="st-block">${label?`<div class="st-label">${esc(label)}</div>`:''}
+const spanel = (rows, label='', actions='') => `
+  <div class="st-block">${label || actions ? `<div class="st-labelrow">
+      ${label ? `<div class="st-label">${esc(label)}</div>` : '<span></span>'}
+      ${actions ? `<div class="st-label-acts">${actions}</div>` : ''}</div>` : ''}
     <div class="st-panel">${rows}</div></div>`;
+/* 一整块控件（磁贴 / 色板）放不下右侧的，就自己占一行铺在标题下面 */
+const sblk = (title, desc, body, extra='') => `
+  <div class="st-row st-row-col" data-k="${esc(((title||'')+' '+(desc||'')+' '+extra).toLowerCase())}">
+    <div class="st-row-main"><div class="st-t">${title}</div>
+      ${desc?`<div class="st-d">${desc}</div>`:''}</div>${body}</div>`;
 /* 设置页的「多选一」统一用胶囊下拉：一个当前值 + 箭头，展开时不整页重渲染，所以不闪 */
 const sseg = (opts, cur, fn, arg) => ffSelect(opts.map(([v,l])=>({v, label:l})), cur,
   {cls:'ff-pill', onChange:(v)=>{ const f=window[fn]; if(f){ if(arg) f(arg,v); else f(v); } }});
@@ -582,6 +589,68 @@ const schips = (items) => `<div class="st-chips">${items.map(x=>
   `<span class="st-chip">${esc(x)}</span>`).join('')}</div>`;
 const skey = (k) => `<kbd class="st-kbd">${esc(k)}</kbd>`;
 
+/* 1rem 的基准像素，和 style.css 里 html{font-size:calc(13px * var(--text-scale))} 对齐
+   （tests/test_static_contract.py 钉住两边一致）。滑块读数要说「人话」就得靠它换算。 */
+const ROOT_PX = 13;
+const SL_OPTS = {
+  textSize: () => Object.keys(window.AP_OPTS.TEXT_SIZES),
+  uiZoom: () => Object.keys(window.AP_OPTS.ZOOMS),
+  contentWidth: () => Object.keys(window.AP_OPTS.WIDTHS),
+};
+const SL_LBL = { textSize:'ap.textSize', uiZoom:'ap.zoom', contentWidth:'ap.width' };
+function apValText(key, v){
+  const O = window.AP_OPTS;
+  if(key==='textSize') return t('ap.size.'+v)+' · '+Math.round(ROOT_PX*O.TEXT_SIZES[v])+'px';
+  if(key==='uiZoom') return v;
+  return v==='full' ? t('ap.width.full') : t('ap.width.'+v)+' · '+O.WIDTHS[v];
+}
+const sslider = (key, cur) => {
+  const opts = SL_OPTS[key]();
+  const i = Math.max(0, opts.indexOf(cur));
+  return `<div class="st-slider">
+    <input type="range" class="st-range" min="0" max="${opts.length-1}" step="1" value="${i}"
+      aria-label="${esc(t(SL_LBL[key]))}" data-sk="${key}"
+      oninput="slPick('${key}',this.value)" onchange="slPick('${key}',this.value,1)">
+    <span class="st-slider-val" data-sv="${key}">${esc(apValText(key, cur))}</span></div>`;
+};
+/* 拖动只改内存（oninput），松手才落盘（onchange）：落盘走 apSet，不重渲染整页。 */
+window.slPick = function(key, i, commit){
+  const v = SL_OPTS[key]()[Number(i)];
+  if(!v) return;
+  const out = document.querySelector('[data-sv="'+key+'"]');
+  if(out) out.textContent = apValText(key, v);
+  if(commit) window.apSet(key, v); else window.previewAppearance({[key]: v});
+};
+
+const apTiles = () => `<div class="st-tiles" id="stTiles">${window.AP_OPTS.THEMES.map(v=>{
+  const on = window.APP.theme===v;
+  return `<button type="button" class="st-tile${on?' active':''}" data-v="${v}"
+    aria-pressed="${on?'true':'false'}" onclick="apTile('${v}')">
+    <span class="st-tile-prev" data-prev="${v}"></span>
+    <span class="st-tile-name">${esc(t('ap.theme.'+v))}</span></button>`;}).join('')}</div>`;
+const apSwatches = () => `<div class="st-swatches" id="stAcc">${window.AP_OPTS.ACCENTS.map(v=>{
+  const on = window.APP.accent===v;
+  return `<button type="button" class="st-swatch${on?' active':''}" data-v="${v}"
+    aria-pressed="${on?'true':'false'}" onclick="apAccent('${v}')">
+    <i class="sw-dot sw-${v}"></i><span>${esc(t('ap.accent.'+v))}</span></button>`;}).join('')}</div>`;
+/* 磁贴/色板点了不能重渲染：整页重绘会丢滚动位置，也让 CSS 变量看起来「闪」了一下 */
+window.apTile = function(v){ pickIn('#stTiles', 'st-tile', 'theme', v); };
+window.apAccent = function(v){ pickIn('#stAcc', 'st-swatch', 'accent', v); };
+function pickIn(sel, cls, key, v){
+  document.querySelectorAll(sel+' .'+cls).forEach(b=>{
+    const on = b.dataset.v===v;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  window.apSet(key, v);
+}
+window.apReset = async function(){
+  await window.setAppearance({theme:'dark', font:'default', accent:'blue',
+    textSize:'m', uiZoom:'100%', contentWidth:'medium'});
+  toast(t('ap.resetDone'), true);
+  renderSettings(SET_SECTION);
+};
+
 function secAppearance(){
   const A = window.APP;
   const lang = spanel([
@@ -589,27 +658,25 @@ function secAppearance(){
       sseg([['zh','中文'],['en','English']], A.lang, 'apSet', 'lang'), 'language locale'),
   ].join(''), t('ap.grpLang'));
   const look = spanel([
-    srow(t('ap.theme'), t('ap.themeD'),
-      sseg(window.AP_OPTS.THEMES.map(v=>[v,t('ap.theme.'+v)]), A.theme, 'apSet', 'theme'), 'theme dark light system'),
+    sblk(t('ap.theme'), t('ap.themeD'), apTiles(), 'theme dark light system 明暗'),
     srow(t('ap.font'), t('ap.fontD'),
       ssel(window.AP_OPTS.FONTS.map(v=>[v,t('ap.font.'+v)]), A.font, 'apSetFont'), 'font typeface'),
-    srow(t('ap.textSize'), t('ap.textSizeD'),
-      sseg(Object.keys(window.AP_OPTS.TEXT_SIZES).map(v=>[v,t('ap.size.'+v)]), A.textSize, 'apSet', 'textSize'), 'text size font'),
-    srow(t('ap.zoom'), t('ap.zoomD'),
-      sseg(Object.keys(window.AP_OPTS.ZOOMS).map(v=>[v,v]), A.uiZoom, 'apSet', 'uiZoom'), 'zoom scale ui'),
-    srow(t('ap.width'), t('ap.widthD'),
-      sseg(Object.keys(window.AP_OPTS.WIDTHS).map(v=>[v,t('ap.width.'+v)]), A.contentWidth, 'apSet', 'contentWidth'), 'width content'),
-    srow(t('ap.accent'), t('ap.accentD'),
-      sseg(window.AP_OPTS.ACCENTS.map(v=>[v,t('ap.accent.'+v)]), A.accent, 'apSet', 'accent'), 'accent colour color blue gold'),
+    sblk(t('ap.accent'), t('ap.accentD'), apSwatches(), 'accent colour color blue gold'),
   ].join(''), t('ap.grpLook'));
+  const size = spanel([
+    srow(t('ap.textSize'), t('ap.textSizeD'), sslider('textSize', A.textSize), 'text size font 字号'),
+    srow(t('ap.zoom'), t('ap.zoomD'), sslider('uiZoom', A.uiZoom), 'zoom scale ui 缩放'),
+    srow(t('ap.width'), t('ap.widthD'), sslider('contentWidth', A.contentWidth), 'width content 宽度'),
+  ].join(''), t('ap.grpSize'));
   const pv = spanel(
     `<div class="st-preview">
        <div class="spv-title">${esc(t('ap.pvTitle'))}</div>
        <div class="spv-body">${esc(t('ap.pvBody'))}</div>
        <div class="spv-code">${esc(t('ap.pvCode'))}</div>
        <div class="spv-meta">${esc(t('ap.pvMeta'))}</div>
-     </div>`, t('ap.grpPreview'));
-  return lang + look + pv;
+     </div>`, t('ap.grpPreview'),
+    `<button class="st-btn" onclick="apReset()">${esc(t('ap.reset'))}</button>`);
+  return lang + look + size + pv;
 }
 
 function secEngines(){
@@ -730,9 +797,28 @@ function secShortcuts(){
     ['Esc', t('sc.close'), t('sc.closeD'), 'shortcut close escape'],
     ['/', t('sc.search'), t('sc.searchD'), 'shortcut search focus'],
     ['Enter', t('sc.send'), t('sc.sendD'), 'shortcut send enter revise'],
-  ].map(([k,tt,d,x])=>srow(esc(tt), esc(d), skey(k), x)).join('');
-  return spanel(rows, t('sc.grpGlobal'));
+  ].map(([k,tt,d,x])=>srow(esc(tt), esc(d),
+      `<span class="st-keys">${k.split(' ').map(skey).join('')}</span>`, x)).join('');
+  return `<div id="scBox">
+    <div class="st-scq">${ico('search')}
+      <input id="scQ" placeholder="${esc(t('sc.searchPh'))}" oninput="scFilter(this.value)"></div>
+    ${spanel(rows, t('sc.grpGlobal'))}
+    <div class="st-empty st-hidden">${esc(t('sc.noHit'))}</div></div>`;
 }
+/* 键位页自己的过滤器：整页搜索会把别的分区一起摊开，找一个 Esc 不该看六张卡 */
+window.scFilter = function(q){
+  const box = document.getElementById('scBox');
+  if(!box) return;
+  const s = (q||'').trim().toLowerCase();
+  let n = 0;
+  box.querySelectorAll('.st-row').forEach(r=>{
+    const on = !s || (r.dataset.k||'').includes(s);
+    r.classList.toggle('st-hidden', !on);
+    if(on) n++;
+  });
+  const e = box.querySelector('.st-empty');
+  if(e) e.classList.toggle('st-hidden', n>0);
+};
 
 function upStatusText(s){
   if(!s) return t('up.unknown');
@@ -748,6 +834,10 @@ function secUpdate(){
   const apply = u.frozen
     ? `<button class="st-btn" onclick="applyUpdate()" ${u.phase==='ready'?'':'disabled'}>${esc(t('up.apply'))}</button>`
     : `<span class="st-state no"><i></i>${esc(t('up.applyNo'))}</span>`;
+  /* 下载中给一条真刻度条：数字来自 got/size，和左下角胶囊同一份状态，不是装饰 */
+  const pct = u.phase==='ready' ? 100
+    : (u.phase==='downloading' && u.size) ? Math.floor((u.got||0)*100/u.size) : -1;
+  const bar = pct < 0 ? '' : `<div class="st-prog"><i style="width:${pct}%"></i></div>`;
   return spanel(
       srow(t('up.url'), t('up.urlD'),
         `<input class="pv-input mono" style="width:340px" id="upUrl" value="${esc(u.update_url===u.default_url?'':(u.update_url||''))}"
@@ -755,9 +845,9 @@ function secUpdate(){
          <button class="st-btn" onclick="saveUpdUrl()">${esc(t('c.save'))}</button>`,
         'update manifest url cos')
     + srow(t('up.status'), t('up.statusD',{v:u.local||''}),
-        `<span class="st-val">${esc(upStatusText(u))}</span>
+        `<span class="st-val">${esc(upStatusText(u))}</span>${bar}
          <button class="st-btn" onclick="checkNow()">${ico('refresh')}${esc(t('up.check'))}</button>`,
-        'update check version status')
+        'update check version status progress')
     + srow(t('up.apply'), t('up.applyD'), apply, 'update install apply'),
     t('up.grp'));
 }

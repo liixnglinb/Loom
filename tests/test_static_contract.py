@@ -186,6 +186,26 @@ def test_mono_font_mode_actually_starts_monospace():
     assert mono.group(1).strip().startswith("var(--font-mono)"), mono.group(1).strip()
 
 
+def test_slider_readout_shares_the_css_root_size():
+    """滑块读数说「13px」是从 CSS 的 1rem 基准换算来的。
+    基准改了不改常量，读数就一直在报一个界面上不存在的字号。"""
+    m = re.search(r"html\{font-size:calc\((\d+(?:\.\d+)?)px \* var\(--text-scale\)\)", CSS)
+    assert m, "html 的 font-size 不再是 calc(<n>px * var(--text-scale))，读数逻辑得一起改"
+    j = re.search(r"const ROOT_PX = (\d+(?:\.\d+)?);", APP_JS)
+    assert j, "app.js 里找不到 ROOT_PX 常量"
+    assert float(m.group(1)) == float(j.group(1)), f"CSS {m.group(1)}px ≠ JS {j.group(1)}"
+
+
+def test_appearance_controls_read_from_the_option_maps():
+    """滑块的档位、APP 的当前值、落盘的键名三处同名。改了任一处而没改另两处，
+    滑块会静默停在 0 档，或者拖了却没人存。"""
+    for key, table in (("textSize", "TEXT_SIZES"), ("uiZoom", "ZOOMS"), ("contentWidth", "WIDTHS")):
+        assert f"{key}: () => Object.keys(window.AP_OPTS.{table})" in APP_JS, f"{key} 滑块没走 {table}"
+        assert f"'{key}'" in UI_JS, f"loadAppearance 的白名单里没有 {key}"
+    for key in ("THEMES", "ACCENTS"):
+        assert f"window.AP_OPTS.{key}.map" in APP_JS, f"{key} 磁贴/色板没走 AP_OPTS"
+
+
 APP_JS = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
 INDEX_HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
