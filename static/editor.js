@@ -23,6 +23,8 @@ function _del(path){ return _api(path, {method:'DELETE'}); }
 /* ---------------- 数据 ---------------- */
 let PL_TPLS = [];
 let PL_SKILLS = [];
+let PL_EXT = {claude: [], codex: []};
+let PL_DEF_ENGINE = '';
 let PL_EDIT = null;
 let SK_EDIT = null;
 let _ST_PRESETS = null;
@@ -41,7 +43,7 @@ let PL_BASE = '';
 function plSnap(E){
   return JSON.stringify({n:E.name||'', l:E.label||'', d:E.desc||'', g:E.g||'',
     s:(E.steps||[]).map(x=>[(x.key||'').trim(),(x.label||'').trim(),
-      [(x.skill||'').trim(), ...(x.extra_skills||[])].join(' ').trim(),(x.out||'').trim(),
+      [(x.skill||'').trim(), ...(x.extra_skills||[])].join(' ').trim(),(x.skill_src||''),(x.out||'').trim(),
       x.checkpoint?1:0, x.role||'', (x.model||'').trim(), (x.engine||'').trim(),
       (x.extra_prompt||'').trim()])});
 }
@@ -82,13 +84,36 @@ document.addEventListener('click', (e)=>{
 }, true);
 
 async function plLoad(){
-  const [pips, sks] = await Promise.all([
+  const [pips, sks, caps, ag] = await Promise.all([
     _api('/api/pipelines').catch(()=>({pipelines:[]})),
     _api('/api/skills').catch(()=>({skills:[]})),
+    _api('/api/agents/capabilities').catch(()=>null),
+    _api('/api/agents').catch(()=>null),
   ]);
   PL_TPLS = pips.pipelines || [];
   PL_SKILLS = sks.skills || [];
+  PL_EXT = {claude: plSkillNames(caps, 'claude'), codex: plSkillNames(caps, 'codex')};
+  PL_DEF_ENGINE = (ag && ag.default_engine) || '';
 }
+const plSkillNames = (caps, eng) => {
+  const it = ((caps || {})[eng] || {}).items || [];
+  const sk = it.find(x => x.key === 'skills');
+  return sk ? sk.entries.map(e => e.name) : [];
+};
+/* 一个下拉里并列三家，值里带上来源：skill_src 只有一个字段，
+   所以一步的主技能与叠加技能必须同源 —— 混着选会说不清那份规范到底归谁。 */
+const plSkillValue = (src, name) => (src ? src + ':' : '') + name;
+const plSkillOpt = (src, name) => ({
+  v: plSkillValue(src, name),
+  label: name + (src ? ' · ' + t('ed.src.' + src) : ''),
+});
+const plSkillOptions = (src) =>
+  (src === 'claude' ? PL_EXT.claude : src === 'codex' ? PL_EXT.codex : PL_SKILLS.map(x => x.name))
+    .filter(Boolean).map(n => plSkillOpt(src, n));
+const plSplitSkill = (v) => {
+  const i = String(v || '').indexOf(':');
+  return i > 0 ? {src: v.slice(0, i), name: v.slice(i + 1)} : {src: '', name: v || ''};
+};
 async function stPresets(){
   if(_ST_PRESETS) return _ST_PRESETS;
   try{ _ST_PRESETS = (await _api('/api/providers')).presets||[]; }
@@ -347,13 +372,14 @@ window.plImportFile = async function(el){
 
 function plBlankStep(n){
   return {key:'step'+n, label:t('ed.newStep',{n}), skill:(PL_SKILLS[0]?PL_SKILLS[0].name:''),
-    extra_skills:[], out:'STEP'+n+'.md', checkpoint:false, role:'executor',
+    skill_src:'', extra_skills:[], out:'STEP'+n+'.md', checkpoint:false, role:'executor',
     engine:'', model:'', extra_prompt:''};
 }
 function plNormalizeSteps(){
   for(const s of PL_EDIT.steps){
     const parts = String(s.skill||'').trim().split(/\s+/).filter(Boolean);
     s.skill = parts[0] || '';
+    s.skill_src = (s.skill_src === 'claude' || s.skill_src === 'codex') ? s.skill_src : '';
     s.extra_skills = Array.isArray(s.extra_skills) ? s.extra_skills : parts.slice(1);
     s.extra_prompt = s.extra_prompt || '';
     s.engine = s.engine || '';
@@ -401,10 +427,16 @@ function plDrawEditor(){
           <div class="pv-row2">
             ${pvf(`${esc(t('ed.mainSkill'))} <b class="req">*</b>
               <a class="fld-link" onclick="nav.go('skills')">${esc(t('ed.viewSkills'))}</a>`,
-              (()=>{ const os=[{v:'',label:'—'}].concat(PL_SKILLS.map(sk=>({v:sk.name, label:sk.name})));
-                  if(s.skill && !PL_SKILLS.some(sk=>sk.name===s.skill)) os.push({v:s.skill, label:s.skill+'（'+t('sk.deleted')+'）'});
-                  return ffSelect(os, s.skill||'', {mono:true, onChange:(v)=>{ plSet(i,'skill',v); plDrawEditor(); }}); })(),
-              main?`<div class="pv-foot-hint">${esc(main.desc)}</div>`:'')}
+              (()=>{ let os=[{v:'',label:'—'}]
+                    .concat(plSkillOptions(''), plSkillOptions('claude'), plSkillOptions('codex'));
+                  const cur = plSkillValue(s.skill_src||'', s.skill||'');
+                  if(s.skill && !os.some(o=>o.v===cur)) os.push({v:cur, label:s.skill+'（'+t('sk.deleted')+'）'});
+                  return ffSelect(os, cur, {mono:true, onChange:(v)=>{
+                    const sp = plSplitSkill(v);
+                    plSet(i,'skill',sp.name); PL_EDIT.steps[i].skill_src = sp.src; plDrawEditor(); }}); })(),
+              (s.skill_src ? `<div class="pv-foot-hint">${esc(t('ed.extHint'))}</div>`
+                           : main ? `<div class="pv-foot-hint">${esc(main.desc)}</div>`
+                           : s.skill ? `<div class="pv-foot-hint">${esc(t('ed.lostSkill'))}</div>` : ''))}
             ${pvf(esc(t('ed.out')),
               `<input class="pv-input mono" value="${esc(s.out||'')}" placeholder="${esc(t('ed.outPh'))}"
                 oninput="plSet(${i},'out',this.value)">`,
@@ -437,10 +469,11 @@ function plDrawEditor(){
               ${pvf(esc(t('ed.extraSkills')),
                 `<div class="extra-chips">
                   ${(s.extra_skills||[]).map((n,xi)=>`<span class="x-chip">${esc(n)}<b onclick="plExtraDel(${i},${xi})">×</b></span>`).join('')||`<span class="muted-sm">${esc(t('c.none'))}</span>`}
-                  ${(()=>{ const add=PL_SKILLS.filter(sk=>sk.name!==s.skill && !(s.extra_skills||[]).includes(sk.name))
-                        .map(sk=>({v:sk.name,label:sk.name}));
+                  ${(s.skill_src?`<div class="pv-foot-hint">${esc(t('ed.src.'+s.skill_src))} · ${esc(t('ed.extHint'))}</div>`:'')}
+                  ${(()=>{ const add=plSkillOptions(s.skill_src||'')
+                        .filter(o=>plSplitSkill(o.v).name!==s.skill && !(s.extra_skills||[]).includes(plSplitSkill(o.v).name));
                       return add.length ? ffSelect(add, '', {action:true, cls:'ff-ghost',
-                        placeholder:t('ed.addSkill'), onChange:(v)=>plExtraAdd(i,v)}) : ''; })()}
+                        placeholder:t('ed.addSkill'), onChange:(v)=>plExtraAdd(i, plSplitSkill(v).name)}) : ''; })()}
                 </div>`)}
               ${pvf(esc(t('ed.stepExtra')),
                 `<textarea class="pv-input" rows="3" placeholder="${esc(t('ed.stepExtraPh'))}"
@@ -575,6 +608,7 @@ window.plSave = async function(){
     steps: E.steps.map(s=>({
       key:(s.key||'').trim(), label:(s.label||'').trim(),
       skill:[(s.skill||'').trim(), ...(s.extra_skills||[])].join(' ').trim(),
+      skill_src:(s.skill_src||''),
       out:(s.out||'').trim(), checkpoint:!!s.checkpoint,
       role:s.role||'executor', model:(s.model||'').trim(),
       engine:(s.engine||'').trim(), extra_prompt:(s.extra_prompt||'').trim(),

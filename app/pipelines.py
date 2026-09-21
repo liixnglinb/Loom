@@ -47,6 +47,11 @@ def normalize_steps(steps):
             "key": str(s.get("key") or f"step{i+1}").strip(),
             "label": str(s.get("label") or "").strip(),
             "skill": str(s.get("skill") or "").strip(),
+            # 技能从哪个目录来："" = Loom 自己那份；claude / codex = CLI 自带的那一处。
+            # 只认这三个值：别的写法（路径、引擎别名）一律清成空，别让它进提示词。
+            "skill_src": str(s.get("skill_src") or "").strip()
+                         if str(s.get("skill_src") or "").strip() in ("", "claude", "codex")
+                         else "",
             "out": str(s.get("out") or "").strip(),
             "checkpoint": bool(s.get("checkpoint")),
             "role": role if role in ("executor", "reviewer", "editor") else "executor",

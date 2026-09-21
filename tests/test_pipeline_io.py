@@ -14,11 +14,12 @@ from conftest import db  # noqa: F401  (先装沙箱再 import app)
 
 FLOW = "io-fixture-flow"
 STEPS = [
-    {"key": "clarify", "label": "需求解析", "skill": "sk-a", "out": "REQUIREMENTS.md",
-     "checkpoint": True, "role": "executor", "engine": "", "model": "", "extra_prompt": ""},
-    {"key": "execute", "label": "逐项执行", "skill": "sk-b", "out": "EXECUTION.md",
-     "checkpoint": False, "role": "executor", "engine": "claude", "model": "m1",
-     "extra_prompt": "只写要点"},
+    {"key": "clarify", "label": "需求解析", "skill": "sk-a", "skill_src": "",
+     "out": "REQUIREMENTS.md", "checkpoint": True, "role": "executor",
+     "engine": "", "model": "", "extra_prompt": ""},
+    {"key": "execute", "label": "逐项执行", "skill": "sk-b", "skill_src": "claude",
+     "out": "EXECUTION.md", "checkpoint": False, "role": "executor", "engine": "claude",
+     "model": "m1", "extra_prompt": "只写要点"},
 ]
 
 
@@ -77,6 +78,22 @@ def test_import_onto_an_existing_name_is_rejected(client, fixture_flow):
 def test_steps_survive_the_normalize_roundtrip(client, fixture_flow):
     """步骤里没在 normalize_steps 白名单内的字段会被裁掉，
     裁掉之后不能再被当成"导出丢了东西"，所以这里只比白名单内的键。"""
-    keep = {"key", "label", "skill", "out", "checkpoint", "role", "engine", "model", "extra_prompt"}
+    keep = {"key", "label", "skill", "skill_src", "out", "checkpoint", "role",
+            "engine", "model", "extra_prompt"}
     src = client.get(f"/api/pipelines/{fixture_flow}/export").json()["steps"]
     assert all(set(s) <= keep for s in src), [sorted(set(s) - keep) for s in src]
+
+
+def test_the_skill_source_survives_the_roundtrip(client, fixture_flow):
+    """技能来自哪一家，是导出文件里必须带走的一件事 ——
+    丢了它，换台机器导入回来那些步骤就会去 Loom 自己的目录里找一个不存在的技能。"""
+    src = client.get(f"/api/pipelines/{fixture_flow}/export").json()
+    by = {s["key"]: s for s in src["steps"]}
+    assert by["execute"]["skill_src"] == "claude"
+    dst = dict(src, name="src-flow", label="来源回环")
+    assert client.post("/api/pipelines", json=dst).status_code == 200
+    back = {s["key"]: s for s in
+            client.get("/api/pipelines/src-flow/export").json()["steps"]}
+    assert back["execute"]["skill_src"] == "claude"
+    assert back["clarify"]["skill_src"] == ""
+    db.delete_pipeline("src-flow")

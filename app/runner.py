@@ -472,13 +472,39 @@ def _refs_text(d: Path, limit=8000) -> str:
     return "".join(parts)
 
 
-def compose_skill_prompt(skill_field: str) -> tuple:
+# 两家 CLI 各自的技能目录。和 Loom 那份同格式（<name>/SKILL.md），
+# 所以能按名引用 —— 但引用不等于复制：那些文件会随 CLI 升级而变，
+# 抄一份进工作区就是把它冻在我们的快照上。
+EXTERNAL_SKILL_ROOTS = {
+    "claude": Path.home() / ".claude" / "skills",
+    "codex": Path.home() / ".codex" / "skills",
+}
+
+
+def _external_ref(name: str, src: str) -> str:
+    return (f"### 技能「{name}」（{src} CLI 自带，按名加载）\n\n"
+            f"本步要求使用 {src} 已安装的 skill「{name}」。请按你原生的 skill 发现机制加载并遵守；"
+            f"Loom 不复制它的正文，也不代为改写到这份提示里。")
+
+
+def compose_skill_prompt(skill_field: str, skill_src: str = "") -> tuple:
     """skill 字段可空格分隔叠多个技能（主技能 + 叠加规范），依次拼接。
 
-    返回 (正文, [实际读到的技能名], [缺失的技能名])。
+    skill_src 非空时引用的是那家 CLI 自己的技能：只按名字挂进提示词，
+    不读文件、不拷正文；Loom 自己的技能照旧内联全文。
+    返回 (正文, [实际生效的技能名], [缺失的技能名])。
     """
     names = [n for n in re.split(r"\s+", (skill_field or "").strip()) if n]
     chunks, loaded, missing = [], [], []
+    root = EXTERNAL_SKILL_ROOTS.get((skill_src or "").strip())
+    if root is not None:
+        for n in names:
+            if (root / n / "SKILL.md").is_file():
+                chunks.append(_external_ref(n, skill_src))
+                loaded.append(n)
+            else:
+                missing.append(n)
+        return ("\n\n---\n\n".join(chunks), loaded, missing)
     for n in names:
         body = _skill_body(n)
         if not body:
@@ -514,6 +540,12 @@ def resolve_agent_config(step: dict) -> dict:
 
     conf = {"engine": engine, "provider": "", "api_base": "", "api_key": "",
             "model": "", "wire_api": "", "preset": "", "warn": ""}
+    src = str(step.get("skill_src") or "").strip()
+    if src and src != engine:
+        # 三家技能是同一个格式，抄错引擎顶多加载不到那份规范 —— 给原因进运行台，
+        # 但不替用户拍板禁用：他可能就是想把一份 claude 的写法喂给 codex。
+        conf["warn"] = (f"本步技能来自 {src} 的技能目录，与本步引擎 {engine} 不匹配 —— "
+                        f"{engine} 大概率加载不到「{step.get('skill') or ''}」。")
     want = (step.get("model") or "").strip()
     preset = db.get_preset_by_name(want) if want else None
     raw_model_id = ""
@@ -564,7 +596,8 @@ def build_step_prompt(run: dict, idx: int) -> tuple:
     steps = run.get("steps") or []
     step = steps[idx]
     ws = workspace_dir(run["id"])
-    skill_text, loaded, missing = compose_skill_prompt(step.get("skill"))
+    skill_text, loaded, missing = compose_skill_prompt(step.get("skill"),
+                                                    step.get("skill_src") or "")
 
     role = step.get("role") or "executor"
     sys_parts = [
