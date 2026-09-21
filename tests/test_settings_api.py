@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """设置类接口的往返与边界：这些值是直接喂给 CLI 命令行参数的，不能靠前端兜。"""
+import json
+
 import pytest
+
+from conftest import STATIC_DIR
 
 
 def _get(client):
@@ -185,3 +189,25 @@ def test_error_text_from_upstream_is_redacted(client, monkeypatch):
     pid = _mk_preset(client, "gate-mask-4")
     msg = client.post("/api/providers/test", json={"id": pid}).json()["msg"]
     assert SECRET not in msg and "[REDACTED]" in msg
+def _catalog():
+    src = (STATIC_DIR / "providers-catalog.js").read_text(encoding="utf-8")
+    return json.loads(src[src.index("["):src.rindex("]") + 1])
+
+
+# base 以 /v1 结尾、且实测那条 /v1/messages 真的存在（401 而不是 404）的才许留在名单里
+V1_BASES_OK = {"硅基流动"}
+
+
+def test_anthropic_catalog_bases_are_not_openai_paths():
+    """以 /v1 结尾是 OpenAI 的写法。抄别家工具的配置最容易连这个一起抄，
+    于是 anthropic_url 拼出 /v1/messages。2026-09-21 不带密钥逐个探过：
+    月之暗面 404（它的 anthropic 路在 /anthropic）、百度千帆 404（在 /anthropic），
+    两条都已就地改掉；剩下的 /v1 只有硅基流动是真的。"""
+    from app import llm
+    for e in _catalog():
+        assert e["api_base"].startswith("https://"), e["name"]
+        url = llm.anthropic_url(e["api_base"])
+        assert url.endswith("/messages"), e["name"]
+        assert "/messages" in url
+        if e["api_base"].rstrip("/").endswith("/v1"):
+            assert e["name"] in V1_BASES_OK, f'{e["name"]} 的 base 是 OpenAI 写法：{url}'

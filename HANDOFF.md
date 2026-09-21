@@ -85,6 +85,11 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
   的默认值不能是 chat，配了端点的 codex 步骤否则会在启动那一刻就死。同一份二进制里 EventMsg 枚举明确带
   `TokenCount` / `token_count`，所以"codex 没有 token_count 事件"那条断言是**假的**，别照它改解析。
   核对方法：mmap + 字符串搜，别执行 CLI（费配额、还会动用户本机 relay）。
+- **供应商目录的 api_base 要实测，别从别家工具的示例抄。** 2026-09-21 拿不带密钥的 POST 逐条探过 9 条
+  anthropic 条目（判读：404 = 路径不存在，401/403/429 = 路径在、只是要鉴权）：月之暗面 `/v1/messages` 与
+  百度千帆 `/v2/tokenplan/personal/v1/messages` 都是 404，两家的 anthropic 路其实各自在 `/anthropic`，已改；
+  硅基流动的 `/v1/messages` 返回 401，是唯一一条以 `/v1` 结尾还成立的，所以它在
+  `test_anthropic_catalog_bases_are_not_openai_paths` 的名单里。**新增条目按同一办法探，别照文档抄。**
 - **统计页有两套口径，别混。** 逐条累计（token / 时长 / 步骤 / 成本）只扫最近 500 条 run —— 一次
   `list_runs` 要把每行 steps JSON 全解出来，跑几千条再点设置页会卡住；而"总次数"和状态分布走
   `db.run_status_counts()`（COUNT(*)），孤儿工作区判定走 `db.all_run_ids()`（全表）。
