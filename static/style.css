@@ -211,9 +211,14 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
   color:var(--ink);letter-spacing:-.01em;line-height:1.2}
 .st-strip span{display:block;margin-top:4px;font-size:var(--fs-meta);color:var(--ink-3)}
 .hm-title{font-size:var(--fs-sub);font-weight:600;color:var(--ink-2);margin-bottom:10px}
-.hm-grid{display:flex;gap:3px;overflow-x:auto;padding-bottom:2px}
+/* 网格和月份轴必须同在一个横向滚动容器里，否则网格一滚轴就脱钩；
+   轴的槽宽跟着格子间距走（12 + 3 = 15px 一个节距），才能对上列。 */
+.hm-wrap{overflow-x:auto;padding-bottom:2px}
+.hm-grid{display:flex;gap:3px}
 .hm-col{display:flex;flex-direction:column;gap:3px;flex-shrink:0}
-.hm-cell{display:block;width:11px;height:11px;border-radius:var(--r-1);background:var(--bg-sunken);
+/* 热力图格子必须是方块：刻度最小一档 --r-1=6px，给 11px 的格子就等于半径 5.5 = 半宽，
+   浏览器钳成 50% 后整张图会渲染成 189 个圆点，读不出网格。这里刻意不给圆角。 */
+.hm-cell{display:block;width:12px;height:12px;background:var(--bg-sunken);
   box-shadow:inset 0 0 0 1px var(--line-soft)}
 .hm-out{background:transparent;box-shadow:none}
 .hm-l1{background:color-mix(in srgb, var(--accent) 15%, transparent)}
@@ -221,10 +226,9 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 .hm-l3{background:color-mix(in srgb, var(--accent) 54%, transparent)}
 .hm-l4{background:color-mix(in srgb, var(--accent) 80%, transparent)}
 .hm-axis{display:flex;gap:3px;margin-top:6px}
-.hm-mo{width:11px;flex-shrink:0;font-size:var(--fs-micro);color:var(--ink-3);white-space:nowrap}
+.hm-mo{width:12px;flex-shrink:0;font-size:var(--fs-meta);color:var(--ink-3);white-space:nowrap}
 .hm-legend{display:flex;align-items:center;justify-content:flex-end;gap:4px;margin-top:8px;
-  font-size:var(--fs-micro);color:var(--ink-4)}
-.hm-legend .hm-cell{width:9px;height:9px}
+  font-size:var(--fs-meta);color:var(--ink-3)}
 /* ---------- 基础 ---------- */
 *,*::before,*::after{box-sizing:border-box}
 html{font-size:calc(13px * var(--text-scale))}
@@ -511,7 +515,8 @@ code{font-family:var(--font-mono);font-size:.92em}
 .art-row,.art-row:hover{cursor:default;background:transparent}
 .pl-row-main{flex:1;min-width:0}
 .pl-row-title{display:flex;align-items:baseline;gap:8px;min-width:0}
-.pl-row-name{font-size:var(--fs-body);font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* min-width:0 不能省：flex 项默认 min-width:auto，长名字撑住就不给省略号，直接压到右边的操作按钮上 */
+.pl-row-name{font-size:var(--fs-body);font-weight:600;color:var(--ink);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pl-row-title code{font-family:var(--font-mono);font-size:var(--fs-meta);color:var(--ink-3)}
 .pl-row-meta{display:flex;align-items:center;gap:10px;margin-top:2px;font-size:var(--fs-meta);color:var(--ink-3);flex-wrap:wrap}
 .pl-row-ops{display:flex;align-items:center;gap:4px;flex-shrink:0;opacity:0;transition:opacity var(--slide)}
@@ -600,7 +605,7 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
 .step-body{flex:1;min-width:0}
 .step-body .pv-form{padding:0}
 .step-ops{display:flex;flex-direction:column;gap:4px;flex-shrink:0;opacity:.35;transition:opacity var(--slide)}
-.step-card:hover .step-ops{opacity:1}
+.step-card:hover .step-ops,.step-card:focus-within .step-ops{opacity:1}
 .plop{width:25px;height:23px;border-radius:var(--r-1);border:1px solid var(--line-soft);
   background:transparent;color:var(--ink-3);font-size:var(--fs-meta);cursor:pointer;
   transition:background var(--slide),color var(--slide)}
@@ -696,7 +701,6 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
 .sk-field{display:flex;flex-direction:column;gap:5px;padding:11px 14px;border-bottom:1px solid var(--line-soft)}
 .sk-field.sk-grow{flex:1;border-bottom:none;padding-bottom:12px}
 .sk-content{min-height:56vh;font-size:var(--fs-sub);line-height:1.7;resize:vertical}
-.sk-view-modal{width:min(920px,94vw);max-height:88vh}
 .sk-view-body{flex:1;min-height:0;overflow-y:auto}
 .sk-view-foot{display:flex;justify-content:flex-end;gap:8px;padding:11px 16px;
   border-top:1px solid var(--line-soft);background:var(--bg-pill)}
@@ -804,7 +808,10 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .modal-x:hover{background:var(--bg-hover);color:var(--ink)}
 .modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:11px 16px;
   border-top:1px solid var(--line-soft);background:var(--bg-pill);flex-shrink:0}
+/* 这两个宽度覆盖必须排在 .modal-box 之后：同特异度靠书写顺序决胜，
+   写在它前面就等于没写（技能全文预览那张 920px 之前就是这么静默变成 440px 的）。 */
 .pv-modal{width:min(760px,94vw)}
+.sk-view-modal{width:min(920px,94vw);max-height:88vh}
 
 /* ---------- 提示 / 加载 ---------- */
 .toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,14px);z-index:90;padding:8px 15px;
@@ -898,6 +905,9 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .st-hchip{display:inline-flex;align-items:center;height:24px;padding:0 10px;
   margin-bottom:10px;border-radius:var(--r-2);background:var(--bg-pill);
   color:var(--ink-2);font-size:var(--fs-meta);font-weight:500}
+/* 页头副标题：三级字阶里的第三级。以前只有个 margin 覆盖、没有基规则，
+   于是它一路继承成正文尺寸，跟设置标签分不出层 */
+.st-hsub{font-size:var(--fs-meta);line-height:1.6;color:var(--ink-3);margin-bottom:10px}
 .st-hmeta .st-hsub{margin-bottom:0}
 .st-block{margin-bottom:28px}
 .st-block:last-child{margin-bottom:0}
@@ -931,8 +941,11 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .st-kbd{font-family:var(--font-mono);font-size:var(--fs-meta);color:var(--ink);background:var(--bg-ctl);
   border:1px solid var(--line-panel);border-bottom-width:2px;border-radius:var(--r-1);padding:3px 9px;white-space:nowrap}
 .st-ctl{display:flex;align-items:center;gap:8px;flex-shrink:0}
+/* direction:rtl 是"超长路径截尾不截头"的技巧，只能给路径用。
+   放在 .st-val 上会把所有值都变成 RTL 段落 —— "0 / 128"、"下载中 45%" 会被双向算法左右对调。 */
 .st-val{font-family:var(--font-mono);font-size:var(--fs-meta);letter-spacing:.01em;color:var(--ink-3);max-width:300px;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl}
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st-val-path{direction:rtl;text-align:left}
 .st-btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:var(--r-2);
   border:1px solid var(--line-panel);background:var(--bg-ctl);color:var(--ink);font-size:var(--fs-meta);cursor:pointer;
   transition:background var(--slide),border-color var(--slide),color var(--slide)}

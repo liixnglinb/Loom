@@ -196,7 +196,7 @@ const DICT = {
 
     'dir.grpFolders': '目录',
     'dir.data': '数据目录', 'dir.dataD': '数据库与全部本机设置。',
-    'dir.skills': '技能目录', 'dir.skillsD': '可编辑的技能正文，出厂技能首次启动时拷到这里。',
+    'dir.skills': '技能目录', 'dir.skillsD': '可编辑的技能正文，你自己新建或导入的技能都在这里',
     'dir.workspaces': '工作区目录', 'dir.workspacesD': '每次运行一个子目录，智能体在里面读写产物。',
     'dir.open': '打开',
     'dir.runs': '运行记录', 'dir.runsD': '本机累计 {n} 次运行，删除记录不会影响已生成的产物文件。',
@@ -233,7 +233,6 @@ const DICT = {
     'st.perFlowD': '这条工作流被跑过的次数',
     'st.orphans': '孤立工作区', 'st.orphansD': '有目录但运行记录已删除，占着磁盘；删记录时工作区本应一起清掉',
     'st.none': '没有残留',
-    'up.applyNo': '暂不支持：当前是源码运行形态，装法要等打包后定',
     'about.name': '应用', 'about.api': '本地服务',
     'about.counts': '内容统计', 'about.countsD': '技能 {s} · 流程 {p} · 运行 {r} · 预设 {pre}',
     'about.engines': '已检测引擎', 'about.enginesD': '{n}',
@@ -440,7 +439,7 @@ const DICT = {
 
     'dir.grpFolders': 'Folders',
     'dir.data': 'Data folder', 'dir.dataD': 'Database and all local settings.',
-    'dir.skills': 'Skills folder', 'dir.skillsD': 'Editable skill bodies; factory skills are copied here on first run.',
+    'dir.skills': 'Skills folder', 'dir.skillsD': 'Editable skill bodies — everything you create or import lands here',
     'dir.workspaces': 'Workspace folder', 'dir.workspacesD': 'One subfolder per run; the agent reads and writes artifacts there.',
     'dir.open': 'Open',
     'dir.runs': 'Run history', 'dir.runsD': '{n} runs on this machine; deleting a record never touches its artifacts.',
@@ -477,7 +476,6 @@ const DICT = {
     'st.perFlowD': 'Times this workflow has been run',
     'st.orphans': 'Orphan workspaces', 'st.orphansD': 'Folders whose run record is gone but the directory stayed',
     'st.none': 'Nothing left over',
-    'up.applyNo': 'Not supported yet: running from source, install path depends on packaging',
     'about.name': 'App', 'about.api': 'Local server',
     'about.counts': 'Content', 'about.countsD': '{s} skills · {p} workflows · {r} runs · {pre} presets',
     'about.engines': 'Detected engines', 'about.enginesD': '{n}',

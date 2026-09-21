@@ -435,7 +435,12 @@ function composerHtml(u){
   </div>`;
 }
 window.cpGrow = function(el){ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,160)+'px'; };
-window.cpKey = function(e){ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); runRevise(); } };
+window.cpKey = function(e){
+  /* 中文输入法回车是在"确认候选词"，不是发送。不判 isComposing 会把半截话发出去 ——
+     而这个产品的主语言就是中文。keyCode 229 是老 WebKit 上 isComposing 不成立时的兜底。 */
+  if(e.isComposing || e.keyCode===229) return;
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); runRevise(); }
+};
 
 /* ---------------- SSE ---------------- */
 function connectStream(runId){
@@ -547,7 +552,10 @@ window.runToggleStep = function(i){
   if(!el) return;
   const open = !el.classList.contains('open');
   el.classList.toggle('open', open);
-  if(open){ ACTIVE_STEP = i; const s=document.getElementById('rvStep'); if(s) s.value=String(i); }
+  if(open){ ACTIVE_STEP = i;
+    const st = (RUN.steps||[])[i] || {};
+    window.ffSetValue('rvStep', String(i), (i+1)+'. '+(st.label||st.key||''));
+  }
   paintProc();          /* 进程卡的高亮跟着 ACTIVE_STEP 走，直接点转录标题也一样 */
 };
 

@@ -328,6 +328,9 @@ window.footCycle = async function(key){
   const A = window.APP;
   const CYCLE = { theme:['light','dark','auto'], accent:['blue','gold'], lang:['zh','en'] };
   const list = CYCLE[key]; if(!list) return;
+  // 这条路径直接 nav.resolve() 重绘整页，绕开了 nav.go 上那道未保存守卫 ——
+  // 在流程编辑器里换个主题就能把没存的步骤改动冲没。所以先问守卫，再动设置。
+  if(window.navGuardAsk && !window.navGuardAsk()) return;
   const next = list[(list.indexOf(String(A[key] ?? list[0])) + 1) % list.length];
   await window.setAppearance({[key]: next});
   const pop = document.getElementById('sbPop');
@@ -742,7 +745,7 @@ function secEngines(){
                   `<button class="st-btn" onclick="cancelPath()">${esc(t('c.cancel'))}</button>`);
     }
     return srow(title, t('eng.pathD'),
-      `<span class="st-val">${esc(cur || a.bin || t('eng.auto'))}</span>
+      `<span class="st-val st-val-path">${esc(cur || a.bin || t('eng.auto'))}</span>
        <button class="st-btn" onclick="editPath('${a.engine}')">${esc(t('eng.change'))}</button>`, a.engine+' path binary');
   }).join('');
   return spanel(head + engRows, t('eng.grpEngines')) + spanel(paths, t('eng.grpBinary'));
@@ -791,7 +794,7 @@ function secRuntime(){
 function secDirs(){
   const P = ST.paths||{};
   const row = (k,title,desc) => srow(title, desc,
-    `<span class="st-val">${esc(P[k]||'—')}</span>
+    `<span class="st-val st-val-path">${esc(P[k]||'—')}</span>
      <button class="st-btn" onclick="revealDir('${k}')">${esc(t('dir.open'))}</button>`, title+' folder path directory');
   return spanel(
     row('data',t('dir.data'),t('dir.dataD'))
@@ -920,31 +923,31 @@ function tokenHeat(daily){
   const q = f => vals.length ? vals[Math.min(vals.length-1, Math.floor(vals.length*f))] : 0;
   const t1 = q(.25), t2 = q(.5), t3 = q(.75), mx = vals[vals.length-1] || 0;
   const lvl = v => !v ? 0 : v<=t1 ? 1 : v<=t2 ? 2 : v<=t3 ? 3 : 4;
-  let months = '', lastM = -1;
   // 后端按本地日期入库（time.strftime("%Y-%m-%d")），这里绝不能用 toISOString ——
   // 那是 UTC，UTC+8 下每格都会读成前一天，"今天"永远是空的。
   const dkey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  for (let d = new Date(start); d <= today; d.setDate(d.getDate()+1)){
-    if (d.getDay() === 0){
-      const m = d.getMonth();
-      if (m !== lastM){ months += `<span class="hm-mo">${esc(t('mon.'+m))}</span>`; lastM = m; }
-      else months += '<span class="hm-mo"></span>';
-    }
-  }
+  const axis = [];
+  let lastM = -1;
   for (let w = 0; w*7 < DAYS + 7; w++){
     let cells = '';
     for (let i = 0; i < 7; i++){
       const d = new Date(start); d.setDate(d.getDate() + w*7 + i);
       if (d > today){ cells += '<i class="hm-cell hm-out"></i>'; continue; }
       const iso = dkey(d);
-      const rec = (daily||{})[iso];
-      const v = rec ? (rec.tokens||0) : 0;
+      const v = ((daily||{})[iso]||{}).tokens || 0;
       cells += `<i class="hm-cell ${'hm-l' + lvl(v)}" title="${esc(iso)} · ${fmtTok(v)}"></i>`;
     }
     rows.push(`<div class="hm-col">${cells}</div>`);
+    // 月份轴和列在同一个循环里产出。以前是两套循环各数各的，
+    // 27 对 27 只是巧合，谁动一边轴就会整体错位。
+    const sun = new Date(start); sun.setDate(sun.getDate() + w*7);
+    const mo = sun.getMonth();
+    axis.push(mo !== lastM ? `<span class="hm-mo">${esc(t('mon.'+mo))}</span>` : '<span class="hm-mo"></span>');
+    if (mo !== lastM) lastM = mo;
   }
-  return `<div class="hm-grid">${rows.join('')}</div>
-    <div class="hm-axis">${months}</div>
+  // 网格和轴必须在同一个横向滚动容器里，否则网格一滚，轴留在原地就对不上列了
+  return `<div class="hm-wrap"><div class="hm-grid">${rows.join('')}</div>
+      <div class="hm-axis">${axis.join('')}</div></div>
     <div class="hm-legend"><span>${esc(t('st.less'))}</span>
       ${[0,1,2,3,4].map(i=>`<i class="hm-cell ${'hm-l'+i}"></i>`).join('')}
       <span>${esc(t('st.more'))}</span></div>`;
@@ -1014,7 +1017,7 @@ function secAbout(){
         '', 'engines detected cli')
     + srow(t('about.counts'), t('about.countsD',{s:(ST.skills||[]).length,p:(ST.flows||[]).length,
         r:(ST.runs||[]).length,pre:PRESETS.length}), '', 'counts skills workflows runs presets')
-    + srow(t('dir.data'), '', `<span class="st-val">${esc((ST.paths||{}).data||'—')}</span>`, 'data folder path'),
+    + srow(t('dir.data'), '', `<span class="st-val st-val-path">${esc((ST.paths||{}).data||'—')}</span>`, 'data folder path'),
     t('about.grpInfo'));
 }
 
@@ -1138,10 +1141,17 @@ function applySearch(){
       if(shown){ inSec = 1; hitRows += shown; }
     }
     blocks.forEach(bl=>{
+      const rows = [...bl.querySelectorAll('.st-row')];
+      // 热力图、实时预览这类卡里一行 .st-row 都没有 —— 它不是"没命中"，是没法按行过滤。
+      // 照下面的 shown===0 一律藏，会出现"搜 token 反而看不到 Token 热力图"。
+      if(!rows.length){ bl.classList.remove('st-hidden'); inSec++; return; }
       let shown = 0;
-      bl.querySelectorAll('.st-row').forEach(r=>{
+      rows.forEach(r=>{
         const on = !q || (r.dataset.k||'').includes(q);
         r.classList.toggle('st-hidden', !on);
+        // 整行铺开的输入框是标签行的"下半身"，行藏了它必须跟着藏，否则裸留一个框
+        const sub = r.nextElementSibling;
+        if(sub && sub.classList.contains('st-rowsub')) sub.classList.toggle('st-hidden', !on);
         if(on) shown++;
       });
       bl.classList.toggle('st-hidden', shown===0);
@@ -1307,7 +1317,9 @@ window.pfPick=function(name){
   const grid=document.getElementById('pfGrid');
   if(grid) grid.querySelectorAll('.pv-item').forEach(el=>el.classList.toggle('pv-sel',el.dataset.name===x.name));
   const disp=document.getElementById('pfDisp'); if(disp&&!disp.value.trim()) disp.value=x.name;
-  const prov=document.getElementById('pfProvider'); if(prov) prov.value=x.provider==='anthropic'?'anthropic':'openai';
+  const prov=document.getElementById('pfProvider');
+  if(prov) window.ffSetValue('pfProvider', x.provider==='anthropic'?'anthropic':'openai',
+                             x.provider==='anthropic'?'Anthropic Messages':'OpenAI compatible');
   const base=document.getElementById('pfBase'); if(base) base.value=x.api_base||'';
 };
 window.pfPickCustom=function(){
@@ -1404,6 +1416,14 @@ function ffMenuEl(){
 window.ffClose = function(){
   const m=ffMenuEl(); m.hidden=true; m.innerHTML='';
   document.querySelectorAll('.ff-selw.open').forEach(e=>e.classList.remove('open'));
+};
+/* 从代码里改选中值必须走这里。隐藏 input 和按钮上那行 .ff-sv 文字是两个东西：
+   只写 input，按钮会一直显示着上一项 —— 切步骤、选供应商都就是这么错给用户的。 */
+window.ffSetValue = function(id, v, label){
+  const hid = document.getElementById(id); if(!hid) return;
+  hid.value = v;
+  const sv = hid.parentElement && hid.parentElement.querySelector('.ff-sv');
+  if(sv && label != null) sv.textContent = label;
 };
 
 window.ffOpen = function(e, key){
