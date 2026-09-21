@@ -4,35 +4,57 @@
 后端早有 export、前端一直没人接，接上之后最怕的是两边字段对不上 ——
 导出带着库内字段（id/builtin/时间戳），导入端就会把它们当未知键丢掉，
 看着能用，其实换一次机器就变了味。
+
+以前这几条直接借出厂模板 auto-workflow 当素材；软件不再带默认内容了，
+所以素材由本文件自己造一条，测的还是同一件事。
 """
+import pytest
+
 from conftest import db  # noqa: F401  (先装沙箱再 import app)
+
+FLOW = "io-fixture-flow"
+STEPS = [
+    {"key": "clarify", "label": "需求解析", "skill": "sk-a", "out": "REQUIREMENTS.md",
+     "checkpoint": True, "role": "executor", "engine": "", "model": "", "extra_prompt": ""},
+    {"key": "execute", "label": "逐项执行", "skill": "sk-b", "out": "EXECUTION.md",
+     "checkpoint": False, "role": "executor", "engine": "claude", "model": "m1",
+     "extra_prompt": "只写要点"},
+]
+
+
+@pytest.fixture(scope="module", autouse=True)
+def fixture_flow():
+    db.create_pipeline(FLOW, label="回环素材", desc="导出/导入用的假流程",
+                       g="custom", steps=STEPS)
+    yield FLOW
+    db.delete_pipeline(FLOW)
 
 
 def _names(client):
     return {p["name"] for p in client.get("/api/pipelines").json()["pipelines"]}
 
 
-def test_export_returns_only_interchange_fields(client):
-    r = client.get("/api/pipelines/auto-workflow/export")
+def test_export_returns_only_interchange_fields(client, fixture_flow):
+    r = client.get(f"/api/pipelines/{fixture_flow}/export")
     assert r.status_code == 200, r.text
     body = r.json()
     assert set(body) == {"name", "label", "desc", "emoji", "g", "steps"}, sorted(body)
-    assert body["name"] == "auto-workflow"
+    assert body["name"] == fixture_flow
     assert isinstance(body["steps"], list) and body["steps"]
     assert "id" not in body and "builtin" not in body and "created_at" not in body
 
 
-def test_export_sets_a_download_filename(client):
-    cd = client.get("/api/pipelines/auto-workflow/export").headers["content-disposition"]
-    assert 'filename="loom-auto-workflow.json"' in cd, cd
+def test_export_sets_a_download_filename(client, fixture_flow):
+    cd = client.get(f"/api/pipelines/{fixture_flow}/export").headers["content-disposition"]
+    assert f'filename="loom-{fixture_flow}.json"' in cd, cd
 
 
 def test_export_unknown_pipeline_is_404(client):
     assert client.get("/api/pipelines/no-such-flow/export").status_code == 404
 
 
-def test_exported_file_imports_back_unchanged(client):
-    src = client.get("/api/pipelines/auto-workflow/export").json()
+def test_exported_file_imports_back_unchanged(client, fixture_flow):
+    src = client.get(f"/api/pipelines/{fixture_flow}/export").json()
     assert src["steps"], "源流程没有步骤，测不出什么"
     dst = dict(src, name="roundtrip-flow", label="回环测试")
     r = client.post("/api/pipelines", json=dst)
@@ -41,19 +63,20 @@ def test_exported_file_imports_back_unchanged(client):
     back = client.get("/api/pipelines/roundtrip-flow/export").json()
     assert back["steps"] == src["steps"], "步骤在导出→导入之间被改了"
     assert back["label"] == "回环测试"
+    db.delete_pipeline("roundtrip-flow")
 
 
-def test_import_onto_an_existing_name_is_rejected(client):
+def test_import_onto_an_existing_name_is_rejected(client, fixture_flow):
     """撞名要报错，前端靠这个返回决定「另存为 xxx-copy」的确认框。"""
-    src = client.get("/api/pipelines/auto-workflow/export").json()
+    src = client.get(f"/api/pipelines/{fixture_flow}/export").json()
     r = client.post("/api/pipelines", json=src)
     assert r.status_code == 400
     assert "已存在" in r.json()["detail"]
 
 
-def test_steps_survive_the_normalize_roundtrip(client):
+def test_steps_survive_the_normalize_roundtrip(client, fixture_flow):
     """步骤里没在 normalize_steps 白名单内的字段会被裁掉，
     裁掉之后不能再被当成"导出丢了东西"，所以这里只比白名单内的键。"""
     keep = {"key", "label", "skill", "out", "checkpoint", "role", "engine", "model", "extra_prompt"}
-    src = client.get("/api/pipelines/auto-workflow/export").json()["steps"]
+    src = client.get(f"/api/pipelines/{fixture_flow}/export").json()["steps"]
     assert all(set(s) <= keep for s in src), [sorted(set(s) - keep) for s in src]

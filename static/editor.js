@@ -117,7 +117,6 @@ window.renderSkills = async function(){
     <div class="pl-card-row" onclick="skView('${esc(s.name)}')">
       <div class="pl-row-main">
         <div class="pl-row-title"><span class="pl-row-name">${esc(s.name)}</span>
-          <span class="sk-badge ${s.source==='user'?'sk-badge-user':''}">${s.source==='user'?esc(t('c.user')):esc(t('c.builtin'))}</span>
           <span class="muted-sm">${s.chars>0?(s.chars/1000).toFixed(1)+'k':esc(t('sk.empty2'))}</span></div>
         ${s.desc?`<div class="pl-steps-mini"><span class="pl-step-chip pl-chip-wide">${esc(s.desc)}</span></div>`:''}
       </div>
@@ -268,7 +267,6 @@ window.renderPipelines = async function(){
       <div class="pl-row-main">
         <div class="pl-row-title"><span class="pl-row-name">${esc(p.label||p.name)}</span>
           <code>${esc(p.name)}</code>
-          ${p.builtin?`<span class="ff-tag">${esc(t('c.builtin'))}</span>`:''}
           ${p.desc?`<span class="pf-url">${esc(p.desc)}</span>`:''}</div>
         <div class="pl-row-meta"><span>${p.steps.length} ${esc(t('c.steps'))}</span>
           <span class="pl-steps-mini">${p.steps.map((s,i)=>
@@ -311,15 +309,13 @@ window.plDelete = async function(name){
   renderPipelines();
 };
 
-/* 行操作收进 ⋯：副本 / 导出 / 恢复出厂 / 删除都不是每次都点的，
-   摊在行上是五个按钮，删除还和「运行」挨在一起。 */
+/* 行操作收进 ⋯：副本 / 导出 / 删除都不是每次都点的，
+   摊在行上是三个按钮，删除还和「运行」挨在一起。 */
 window.plRowMore = function(e, name){
-  const p = PL_TPLS.find(x=>x.name===name); if(!p) return;
   const items = [
     {v:'dup', label:t('c.duplicate'), run:()=>plDuplicate(name)},
     {v:'exp', label:t('c.export'), run:()=>plExport(name)},
   ];
-  if(p.builtin) items.push({v:'rst', label:t('home.restore'), run:()=>plRestoreFrom(name)});
   items.push({v:'del', label:t('c.delete'), danger:true, run:()=>plDelete(name)});
   window.ffActionMenu(e, items);
 };
@@ -631,13 +627,5 @@ window.plPreview = async function(i){
   document.body.appendChild(root);
 };
 window.plClosePreview = function(){ const r=document.getElementById('pvPromptRoot'); if(r) r.remove(); _lockScroll(false); };
-
-window.plRestoreFrom = async function(name){
-  if(!confirm(t('list.restoreConfirm',{name}))) return;
-  const r = await _post(`/api/pipelines/${encodeURIComponent(name)}/restore`).catch(e=>({detail:e.message}));
-  if(r.detail){ toast(r.detail); return; }
-  toast(t('list.restoreDone'), true);
-  nav.go('pipeline-edit/'+name);
-};
 
 })();

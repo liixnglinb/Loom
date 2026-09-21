@@ -2,14 +2,15 @@
 # Loom 织流 onedir 打包配置（产物 dist_app/Loom/ 目录树，交给 installer.iss 打成 setup.exe）
 #
 # 打包要点：
-#   - static/ 与 skills/ 是只读资源，走 datas 进 _MEIPASS；用户数据在 app/paths.py
+#   - static/ 是只读资源，走 datas 进 _MEIPASS；技能一律是用户自己建的，装在
+#     paths.USER_SKILLS_DIR 下，随包不再带出厂 skills/。用户数据在 app/paths.py
 #     里另算（冻结态 = exe 同级 data/），所以**绝不能把 modex-data 打进来**。
 #   - fastapi / uvicorn / webview 都有动态导入，collect_all 比手写 hiddenimports 可靠。
 #   - uvicorn 的 loop/protocol 实现是运行时按字符串选的，不显式声明就打包后 500。
 #   - 排除掉的是开发期依赖（pytest）和这台机器上装了但 Loom 零引用的重库。
 from PyInstaller.utils.hooks import collect_all
 
-datas = [("static", "static"), ("skills", "skills")]
+datas = [("static", "static")]
 binaries = []
 hiddenimports = [
     "anyio._backends._asyncio",

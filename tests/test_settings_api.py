@@ -12,8 +12,10 @@ def _get(client):
 def test_agents_payload_shape(client):
     d = _get(client)
     for key in ("agents", "default_engine", "sandbox_options", "effort_options",
-                "step_retry", "reasoning_effort", "auto_continue", "bundled_skills", "paths"):
+                "step_retry", "reasoning_effort", "auto_continue", "paths"):
         assert key in d, f"/api/agents 少了 {key}"
+    # 出厂库没了，这两个字段就不该再出现（留着会变成永远为空的假信息）
+    assert "bundled_skills" not in d and "library_version" not in d
     assert {a["engine"] for a in d["agents"]} == {"claude", "codex"}
     assert d["effort_options"][0] == "auto"
 
@@ -101,8 +103,6 @@ def test_pipelines_expose_run_count(client, dbsession, fresh_runs):
         by = {p["name"]: p["runs"] for p in d["pipelines"]}
         assert by["proj-a"] == 2 and by["proj-b"] == 1
         assert all(isinstance(p["runs"], int) for p in d["pipelines"])
-        # 从没跑过的内置模板必须是 0，而不是缺字段
-        assert by.get("auto-workflow", 0) == 0
     finally:
         conn = dbsession.get_conn()
         conn.execute("DELETE FROM runs WHERE pipeline IN ('proj-a','proj-b')")
@@ -110,11 +110,18 @@ def test_pipelines_expose_run_count(client, dbsession, fresh_runs):
         conn.commit(); conn.close()
 
 
-def test_run_counts_zero_when_nothing_ran(client, dbsession, fresh_runs):
+def test_ships_with_no_default_content(client, dbsession, fresh_runs):
+    """软件不再带任何默认配置：技能与流程两个列表开箱都得是空的。
+
+    这条就是"删掉出厂库"这件事本身的回归 —— 以后谁再往 import 期塞一次
+    播种，这里会立刻红，而不是悄悄回到随包发一套模板的老样子。
+    """
     assert dbsession.run_counts() == {}
-    d = client.get("/api/pipelines").json()
-    assert d["pipelines"], "内置模板应当已播种"
-    assert all(p["runs"] == 0 for p in d["pipelines"])
+    assert client.get("/api/pipelines").json()["pipelines"] == []
+    assert client.get("/api/skills").json()["skills"] == []
+    # 恢复出厂 / 库复位这两个入口应当已经不存在
+    assert client.post("/api/pipelines/anything/restore").status_code == 404
+    assert client.post("/api/library/reset").status_code == 404
 
 
 def test_reveal_rejects_arbitrary_path(client, monkeypatch):

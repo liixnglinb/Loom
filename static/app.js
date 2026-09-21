@@ -52,9 +52,9 @@ window.ffRelDate = relDate;
 
 /* ---------------- 状态 ---------------- */
 const ST = { agents:[], defaultEngine:'',
-             claudeCli:'', codexCli:'', libVersion:'', paths:{}, sandboxOptions:[],
+             claudeCli:'', codexCli:'', paths:{}, sandboxOptions:[],
              agentTimeout:'2700', codexSandbox:'workspace-write', effortOptions:['auto'],
-             reasoningEffort:'auto', stepRetry:'0', autoContinue:'0', bundledSkills:[],
+             reasoningEffort:'auto', stepRetry:'0', autoContinue:'0',
              skills:[], flows:[], runs:[], version:'' };
 window.ST = ST;
 
@@ -190,9 +190,8 @@ async function renderSidebarLists(){
         href="#/pipeline-edit/${esc(p.name)}" data-tip="${esc(p.label||p.name)}"
         aria-label="${esc(p.label||p.name)}"
         ${('pipeline-edit/'+p.name)===cur?'aria-current="page"':''}>
-        <span class="sb-rico">${ico(p.builtin?'flow':'branch')}</span>
-        <span class="sb-rname">${esc(p.label||p.name)}</span>
-        <span class="sb-rtag">${esc(t(p.builtin?'sb.tagBuiltin':'sb.tagMine'))}</span></a>`).join('')
+        <span class="sb-rico">${ico('flow')}</span>
+        <span class="sb-rname">${esc(p.label||p.name)}</span></a>`).join('')
       : `<div class="sb-empty">${esc(t('sb.noProject'))}</div>`);
 
   html += `<div class="sb-group"><span>${esc(t('sb.recent'))}</span>
@@ -231,7 +230,7 @@ window.sbSearch = function(e){
     const ru = (ST.sbRuns||[]).filter(x=>!k || ((x.label||'')+' '+x.pipeline).toLowerCase().includes(k));
     const body = (fl.length||ru.length)
       ? fl.slice(0,6).map(x=>sbHit(x.label||x.name, t('sb.stepsN',{n:(x.steps||[]).length}),
-            `sbGo('pipeline-edit/${esc(x.name)}')`, x.builtin?'flow':'branch')).join('')
+            `sbGo('pipeline-edit/${esc(x.name)}')`, 'flow')).join('')
         + ru.slice(0,6).map(x=>sbHit(x.label||x.pipeline, RUN_ST()[x.status]||x.status,
             `sbGo('run/${esc(x.id)}')`, 'runs')).join('')
       : `<div class="sb-empty">${esc(t('sb.noHit'))}</div>`;
@@ -267,7 +266,6 @@ async function loadAgents(){
   ST.defaultEngine = r.default_engine||'';
   ST.claudeCli = r.claude_cli||'';
   ST.codexCli = r.codex_cli||'';
-  ST.libVersion = r.library_version||'';
   const ready = ST.agents.filter(a=>a.found);
   paintFootMe(ready);
 }
@@ -579,21 +577,13 @@ window.taskStart = async function(){
   nav.go('run/'+r.run.id);
 };
 window.plRun = async function(name){ taskModal(name); };
-window.plRestore = async function(name){
-  if(!confirm(t('list.restoreConfirm',{name}))) return;
-  const r = await post(`/api/pipelines/${encodeURIComponent(name)}/restore`).catch(e=>({detail:String(e)}));
-  if(r.detail){ toast(r.detail); return; }
-  toast(t('list.restoreDone'), true);
-  const a=document.getElementById('app');
-  if(a && a.dataset.shell==='settings') renderSettings(); else window.renderPipelines();
-};
 
 /* ================= 设置：Codex 式两栏外壳 ================= */
 const SET_SECTIONS = [
   {grp:'set.grp.pref', items:[['appearance','set.appearance','appearance'],
                               ['shortcuts','set.shortcuts','keyboard']]},
   {grp:'set.grp.exec', items:[['engines','set.engines','agent'],['presets','set.presets','api'],
-                              ['runtime','set.runtime','runtime'],['library','set.library','layers']]},
+                              ['runtime','set.runtime','runtime']]},
   {grp:'set.grp.data', items:[['dirs','set.dirs','folder'],['stats','set.stats','chart'],
                               ['update','set.update','download'],['about','set.about','info']]},
 ];
@@ -796,30 +786,6 @@ function secRuntime(){
     + srow(t('rt.sandbox'), t('rt.sandboxD'), ssel(sb, ST.codexSandbox, 'saveSandbox'), 'sandbox codex permission')
     + srow(t('rt.auto'), t('rt.autoD'), ssw(ST.autoContinue==='1', 'saveAutoContinue'), 'checkpoint auto continue pause'),
     t('rt.grpPolicy'));
-}
-
-function secLibrary(){
-  const bundled = ST.bundledSkills||[];
-  const skills = ST.skills||[];
-  const mine = skills.filter(s=>!bundled.includes(s.name));
-  const flows = (ST.flows||[]).filter(p=>p.builtin);
-  const head = spanel(
-    srow(t('lib.version'), t('lib.versionD'), `<span class="st-val">${esc(ST.libVersion||'—')}</span>`, 'library version')
-    + srow(t('lib.skills'), esc(t('lib.skillsD',{n:skills.length}))
-        + (mine.length?`<div class="st-d2">${esc(t('lib.mine'))} · ${mine.length}</div>`:''),
-        `<button class="st-btn" onclick="revealDir('skills')">${esc(t('dir.open'))}</button>`, 'skills skill library')
-    + `<div class="st-rowsub">${schips(skills.map(s=>s.name))}</div>`);
-  const flowRows = flows.map(p=>srow(esc(p.label||p.name),
-      ((p.steps||[]).length)+' '+t('c.steps')+' · '+esc(p.name),
-      `<button class="st-btn" onclick="plRestore('${esc(p.name)}')">${esc(t('lib.restoreOne'))}</button>`,
-      'restore factory workflow '+p.name)).join('');
-  const flowsBlk = spanel(
-    (flowRows || srow(t('lib.flows'), t('lib.flowsD',{n:0}), '', 'workflow templates flows'))
-    + srow(t('lib.restore'), t('lib.resetD'),
-        `<button class="st-btn st-btn-danger" onclick="resetLibrary()">${esc(t('lib.reset'))}</button>`,
-        'restore factory reset builtin'),
-    t('lib.flows'));
-  return head + flowsBlk;
 }
 
 function secDirs(){
@@ -1070,7 +1036,7 @@ window.checkNow = async function(){
 };
 
 const SEC_RENDER = {appearance:secAppearance, engines:secEngines, presets:secPresets,
-                    runtime:secRuntime, library:secLibrary, dirs:secDirs,
+                    runtime:secRuntime, dirs:secDirs,
                     shortcuts:secShortcuts, stats:secStats, update:secUpdate, about:secAbout};
 const SEC_FLAT = () => SET_SECTIONS.flatMap(g=>g.items);
 /* 页头那枚 chip 只报"这一屏现在生效的是什么"，且只挂有真实数据源的分区 ——
@@ -1121,13 +1087,12 @@ window.renderSettings = async function(section){
   if(ag){
     ST.agents = ag.agents||[]; ST.defaultEngine = ag.default_engine||'';
     ST.claudeCli = ag.claude_cli||''; ST.codexCli = ag.codex_cli||'';
-    ST.libVersion = ag.library_version||''; ST.paths = ag.paths||{};
+    ST.paths = ag.paths||{};
     ST.agentTimeout = ag.agent_timeout; ST.codexSandbox = ag.codex_sandbox;
     ST.sandboxOptions = ag.sandbox_options||[];
     ST.effortOptions = ag.effort_options||['auto'];
     ST.reasoningEffort = ag.reasoning_effort||'auto';
     ST.stepRetry = ag.step_retry||'0'; ST.autoContinue = ag.auto_continue||'0';
-    ST.bundledSkills = ag.bundled_skills||[];
   }
   ST.version = hp.version||'';
 
@@ -1266,14 +1231,6 @@ window.revealDir = async function(k){
   const r = await post('/api/reveal?which='+encodeURIComponent(k)).catch(e=>({detail:String(e)}));
   if(r.detail) toast(r.detail);
 };
-window.resetLibrary = async function(){
-  if(!confirm(t('lib.resetConfirm'))) return;
-  const r = await post('/api/library/reset').catch(e=>({detail:String(e)}));
-  if(r.detail){ toast(r.detail); return; }
-  toast(t('lib.resetDone',{n:r.skills_copied, m:(r.pipelines_reset||[]).length}), true);
-  await loadAgents(); renderSettings();
-};
-
 /* ---------------- 预设（列表已并入设置 › API 接入） ---------------- */
 let PRESETS = [];
 

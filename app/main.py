@@ -16,15 +16,12 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
-from . import agents, db, llm, paths, pipelines, presets_library, runner, updater
+from . import agents, db, llm, paths, pipelines, runner, updater
 
 app = FastAPI(title="Loom 织流")
 
 STATIC = paths.STATIC_DIR
 app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
-
-# 出厂技能与内置流程播种（幂等；只在库版本号变化时同步技能）
-presets_library.seed()
 
 
 @app.middleware("http")
@@ -128,18 +125,6 @@ def update_pipeline(name: str, u: PipelineUpdate):
     db.update_pipeline(name, label=u.label or None, desc=u.desc or None,
                        emoji=u.emoji or None, g=u.g or None, steps=steps)
     return {"ok": True}
-
-
-@app.post("/api/pipelines/{name}/restore")
-def restore_pipeline(name: str):
-    """把某个内置流程的步骤清单恢复成出厂版本（技能正文另行用 /api/library/reset）。"""
-    factory = presets_library.factory_steps(name)
-    if not factory:
-        return JSONResponse({"detail": "该流程不是内置流程，没有出厂版本可恢复"}, 400)
-    if not db.update_pipeline(name, steps=factory, builtin=1):
-        # 出厂步骤取到了但库里没这一行 —— 不能照样回 ok，前端会 toast「已恢复」而什么都没变
-        return JSONResponse({"detail": "库里没有这条流程，恢复未生效"}, 404)
-    return {"ok": True, "steps": factory}
 
 
 @app.delete("/api/pipelines/{name}")
@@ -725,8 +710,6 @@ def get_agents():
             "effort_options": ["auto"] + list(agents.EFFORTS),
             "step_retry": str(agents.step_retry()),
             "auto_continue": "1" if agents.auto_continue() else "0",
-            "library_version": db.get_setting("library_version"),
-            "bundled_skills": list(presets_library.BUNDLED_SKILLS),
             "paths": {"data": str(paths.DATA_DIR), "skills": str(paths.USER_SKILLS_DIR),
                       "workspaces": str(paths.WORKSPACES_DIR)}}
 
@@ -850,12 +833,6 @@ def update_check():
 @app.post("/api/update/download")
 def update_download():
     return updater.start_download() | {"active_runs": db.count_active_runs()}
-
-
-@app.post("/api/library/reset")
-def reset_library():
-    """恢复出厂：内置流程步骤复位 + 出厂技能覆盖回原版（用户自建技能不受影响）。"""
-    return {"ok": True, **presets_library.seed(force=True)}
 
 
 # ---------- 设置（外观 / 键值配置） ----------
