@@ -90,6 +90,25 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
   百度千帆 `/v2/tokenplan/personal/v1/messages` 都是 404，两家的 anthropic 路其实各自在 `/anthropic`，已改；
   硅基流动的 `/v1/messages` 返回 401，是唯一一条以 `/v1` 结尾还成立的，所以它在
   `test_anthropic_catalog_bases_are_not_openai_paths` 的名单里。**新增条目按同一办法探，别照文档抄。**
+- **`app/cli_inventory.py` 只许回名字、条数、路径 —— 值一个字节都不许进接口。** 它扫的是两家 CLI
+  自己的配置面，那些文件里就是真密钥：本机 `~/.claude/settings.json` 的 `env` 里有
+  `ANTHROPIC_AUTH_TOKEN`、`~/.claude.json` 里有 `oauthAccount`、`~/.codex/config.toml` 里有
+  `experimental_bearer_token`。所以预览口只开给四类"用户自己写的 markdown"
+  （记忆 / 技能 / 命令 / 子智能体），mcp / hooks / plugins 连预览都没有。
+  别顺手加"编辑"：schema 不归我们（同一轮里 codex 一次升级就把 `wire_api="chat"` 判死了），
+  写坏的是用户 CLI 本体，而且 Loom 自己也跑不了 —— 它靠那两个 CLI 出正文。
+  真机上踩到过两处误判（假数据里没有的形状）：`officialMarketplaceAutoInstalled` 这类记账布尔
+  被当成插件、`[mcp_servers.node_repl.env]` 子段被当成第二台 MCP 服务器。
+- **步骤的 `skill_src` 是"引用哪一家的技能目录"，不是路径。** 三家技能同格式（`<name>/SKILL.md`），
+  所以能并列选择；但外部技能只往提示词里放一句"按你原生机制加载并遵守「x」"，
+  **不读文件、不抄正文** —— 抄一份进工作区等于把别人会升级的东西冻成我们的快照。
+  `skill_src` 只有一个字段，所以一步的主技能与叠加技能必须同源。引擎与来源不匹配时
+  只在轨迹里留原因，不禁用。导出/导入必须带上它（`test_the_skill_source_survives_the_roundtrip`）。
+- **统计页的两个开关（每日/每周/累计、近 7/近 30）刻意不落库。** 它们是这一屏的视图，
+  不是外观偏好；写进 `ui_*` 那套通道就要多一个设置键、多一处白名单，
+  而 `test_appearance_bulk_cannot_touch_engine_keys` 那类边界也会被拖进来。
+  热力图列数恒定 52（锚点是"今天那一周的周日往回数 51 周"）—— 按天数换算再补一周的写法
+  会在非周日收尾时多出第 53 列，把网格顶出卡片。
 - **统计页有两套口径，别混。** 逐条累计（token / 时长 / 步骤 / 成本）只扫最近 500 条 run —— 一次
   `list_runs` 要把每行 steps JSON 全解出来，跑几千条再点设置页会卡住；而"总次数"和状态分布走
   `db.run_status_counts()`（COUNT(*)），孤儿工作区判定走 `db.all_run_ids()`（全表）。
@@ -152,10 +171,16 @@ app/runner.py          执行引擎：工作区、SSE 事件、检查点、日�
   ├ ws_file()          工作区路径校验只写这一处（预览和下载共用）
   └ read_workspace_file()  预览单文件；内部文件与二进制不给正文
 app/agents.py          Claude / Codex CLI 适配（参数拼装 + 流式解析）
+app/cli_inventory.py   两家 CLI 配置面的只读盘点：只回名字/条数/路径，值不进接口
+                       ├ scan()          设置页「Agent 能力」的数据源
+                       ├ preview_text()  只放四类用户写的 markdown
+                       └ reveal_path()   /api/reveal 的 agent 分支，绝不 mkdir
 app/updater.py         读 COS latest.json → 下载 → 核对 sha256 → 打包态静默装上
 app/paths.py           FROZEN 分支：打包态数据在 exe 同级 data/
 static/ui.js           中英双字典 + ICONS + 外观通道 + mdToHtml
 static/app.js          路由、侧栏（含折叠轨道）、tooltip、设置页各分区、更新胶囊
+  ├ stSeg/secRepaint   分段控件与"只重渲染当前分区"；页头 chip 也要一起补，否则切引擎后还写着旧引擎
+  └ tokenHeat/hmValues 一年热力图三档读数共用一套格子；悬停是两行 data-tip（&#10; 分隔，裸换行会被归一化成空格）
   ├ spanel/srow/sblk  设置页三种骨架：卡片（可带头部动作）、右侧控件行、整块控件行
   ├ apTiles/apSwatches 明暗磁贴与强调色板，档位取 window.AP_OPTS，点击只改类不重渲染
   └ sslider/slPick    字号/缩放/内容宽度三条滑块：oninput 只 previewAppearance，onchange 才落盘
@@ -225,6 +250,9 @@ PYTHONUTF8=1 "<python>" -m pytest -q          # 全绿即可，不需网络
 - 滑块读数说「13px」：`ROOT_PX`（app.js）必须等于 CSS 里 `html{font-size:calc(13px * …)}` 的那个 13，测试钉着。
 - 设置页外观的档位表只有一处真相：`ui.js` 的 `TEXT_SIZES/ZOOMS/WIDTHS/THEMES/ACCENTS`，`APP` 里的键名和
   `loadAppearance` 白名单必须同名（测试钉着），否则滑块会静默停在 0 档。
+- **`node --check` 过一遍每个 `static/*.js`。** 其余契约全靠正则扫源码，看不见语法错误：
+  这一轮把 Python 的"相邻字符串自动相连"当成 JS 写进字典，设置页整个白屏
+  （`t is not a function`），200 条测试一条不红。
 - 路径越界用例是参数化的一整套（`../../db`、`%2e%2e`、绝对路径…），新加读文件的端点要接进同一套校验。
 - **内联 `onclick="x()"` 里的名字必须在 `window` 上找得到。** 四个脚本各自是 IIFE，没导出的函数在全局作用域里
   不存在 —— 产出面板那个「刷新」就是这么死的（按钮照画，点一下 ReferenceError，而几百条测试一条都不会红）。
