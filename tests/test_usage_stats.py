@@ -143,3 +143,33 @@ def test_usage_stats_survives_steps_without_tokens():
     st = runner.usage_stats()
     assert isinstance(st["tokens_total"], int)
     assert st["streak_best"] >= 0
+
+
+def test_run_totals_are_not_limited_by_the_scan_window(dbsession, fresh_runs, monkeypatch):
+    """逐条累计只扫最近 500 条是性能决定，但"总共跑过几次"和状态分布不是：
+    它们走 COUNT(*)。这里把窗口压成 1 条，总次数仍要是全表的 3。"""
+    real = db.list_runs
+    for i, st in enumerate(("done", "failed", "done")):
+        dbsession.create_run(f"run-window{i:03d}", "p", steps=[])
+        dbsession.update_run(f"run-window{i:03d}", status=st)
+    monkeypatch.setattr(db, "list_runs", lambda pipeline=None, limit=50: real(pipeline, 1))
+    d = runner.usage_stats()
+    assert d["runs"] == 3, "总次数跟着扫描窗口走了，跑到 500 就会永远卡在 500"
+    assert d["by_status"] == {"done": 2, "failed": 1}
+
+
+def test_orphan_scan_covers_every_run_not_just_the_window(dbsession, fresh_runs,
+                                                          workspaces, monkeypatch):
+    """孤儿工作区=有目录没记录。以前拿 list_runs 的前 500 条当"全部记录"，
+    第 501 条的现场就被当成孤儿报出来 —— 那一栏旁边可是"清理"的语义。
+    这里把窗口打成空，判定必须仍然认得这些 id。"""
+    real = db.list_runs
+    dbsession.create_run("run-keepme001", "p", steps=[])
+    (workspaces / "run-keepme001").mkdir(parents=True, exist_ok=True)
+    dbsession.create_run("run-keepme002", "p", steps=[])
+    (workspaces / "run-keepme002").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(db, "list_runs", lambda *a, **k: [])
+    names = {o["name"] for o in runner.orphan_workspaces()}
+    assert "run-keepme001" not in names and "run-keepme002" not in names
+    (workspaces / "run-keepme001").rmdir()
+    (workspaces / "run-keepme002").rmdir()

@@ -15,11 +15,11 @@ from app import db, updater
 def _clean_url():
     db.set_setting("update_url", "")
     updater._set(phase="idle", latest="", url="", notes="", asset="", sha256="",
-                 size=0, got=0, path="", error="")
+                 size=0, got=0, path="", error="", checked_at="")
     yield
     db.set_setting("update_url", "")
     updater._set(phase="idle", latest="", url="", notes="", asset="", sha256="",
-                 size=0, got=0, path="", error="")
+                 size=0, got=0, path="", error="", checked_at="")
 
 
 class _JsonResp:
@@ -129,6 +129,22 @@ def test_check_survives_http_error_and_garbage(client, monkeypatch):
     monkeypatch.setattr(updater.requests, "get", lambda url, **kw: _JsonResp({}))
     d2 = client.post("/api/update/check").json()
     assert d2["phase"] == "error" and "version" in d2["error"]
+
+
+def test_check_does_not_clobber_an_in_flight_download(client, monkeypatch):
+    """下载飞行中做一次强制检查，会把 got 清 0、把正在写的包路径抹掉：
+    进度条当场跳回原点，后台线程还在往原路径写 —— 状态被踩了一脚。"""
+    dest = "updates/Loom-9.9.9-setup.exe.part"
+    updater._set(phase="downloading", url="https://x/Loom-9.9.9-setup.exe",
+                 asset="pkg.exe", latest="9.9.9", size=42, path=dest, got=17, error="")
+
+    def _boom(*a, **k):
+        raise AssertionError("下载中不该再去打网络")
+
+    monkeypatch.setattr(updater.requests, "get", _boom)
+    d = updater.check(force=True)
+    assert d["phase"] == "downloading" and d["got"] == 17, "下载状态被强制检查覆盖了"
+    assert d["path"] == dest
 
 
 def test_manifest_url_must_be_https_or_empty(client):

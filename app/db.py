@@ -105,6 +105,24 @@ def run_counts():
     return {r["pipeline"]: r["c"] for r in rows}
 
 
+def run_status_counts():
+    """全表按状态计数。统计页的总次数/状态分布不能用 list_runs 的窗口来算 ——
+    窗口只有最近 500 条，跑够 501 次之后页面上的"总计"就永远停在 500。"""
+    conn = get_conn()
+    rows = conn.execute("SELECT status, COUNT(*) c FROM runs GROUP BY status").fetchall()
+    conn.close()
+    return {r["status"]: r["c"] for r in rows}
+
+
+def all_run_ids():
+    """全部运行 id。孤儿工作区判定要看全表：按 list_runs 的前 500 条比，
+    第 501 条的工作区会被当成孤儿报出来，那是别人还没删的现场。"""
+    conn = get_conn()
+    ids = {r["id"] for r in conn.execute("SELECT id FROM runs").fetchall()}
+    conn.close()
+    return ids
+
+
 def get_pipeline(name):
     conn = get_conn()
     r = conn.execute("SELECT * FROM pipeline_definitions WHERE name=?", (name,)).fetchone()

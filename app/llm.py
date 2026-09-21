@@ -91,8 +91,8 @@ def chat(provider, api_base, api_key, model, messages, temperature=0.7, max_toke
     max_tokens = min(int(max_tokens or 0), 64)
     provider = (provider or "openai").lower().strip()
     if provider == "anthropic":
-        return _chat_anthropic(api_base, api_key, model, messages, teerature, max_tokens)
-    return _stream_openai(api_base, api_key, model, messages, temperature, max_tokens)
+        return _chat_anthropic(api_base, api_key, model, messages, temperature, max_tokens)
+    return _chat_openai(api_base, api_key, model, messages, temperature, max_tokens)
 
 
 def test_connection(provider="openai", api_base="", api_key="", model=""):

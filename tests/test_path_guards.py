@@ -39,6 +39,24 @@ def test_artifact_download_cannot_escape(client, run_id, fname):
     assert b"SQLite format" not in r.content
 
 
+@pytest.mark.parametrize("rel", [
+    "_step_system.txt", "AGENTS.md", "_turn_logs/01_a_120000.jsonl",
+])
+def test_artifact_download_hides_internals(client, run_id, workspaces, rel):
+    """产物清单早就不列这些了，下载口却是照单全收 —— 直接在地址栏敲
+    /api/runs/<id>/artifacts/_step_system.txt 就能把本步注入的系统提示词
+    （里面有用户的项目内容）和引擎原始转录整份拿走。清单挡过的，下载也得挡。"""
+    p = workspaces / run_id / rel
+    made = not p.exists()
+    if made:
+        p.write_text("ENGINE-ONLY-CONTENT", encoding="utf-8")
+    r = client.get(f"/api/runs/{run_id}/artifacts/{rel}")
+    assert r.status_code in (400, 404), f"{rel} 居然 {r.status_code}"
+    assert b"ENGINE-ONLY" not in r.content
+    if made:
+        p.unlink()
+
+
 def test_logs_listing(client, run_id):
     d = client.get(f"/api/runs/{run_id}/logs").json()
     assert [x["name"] for x in d["logs"]] == ["01_a_120000.jsonl"]

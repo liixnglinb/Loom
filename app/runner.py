@@ -160,10 +160,15 @@ _PREVIEW_MAX_BYTES = 400_000
 
 def ws_file(run_id: str, rel: str) -> Path:
     """工作区内的一个真实文件。校验只写这一处 —— 预览和下载共用，
-    才不会一个入口严、一个入口松。"""
+    才不会一个入口严、一个入口松。
+
+    内部文件必须在这里一起挡掉：清单早就过滤了 _is_internal，但路径是拼出来的，
+    直接输 /api/runs/<id>/artifacts/_step_system.txt 就能把引擎原始转录和
+    本次注入的系统提示词整份下下来 —— 那里面带着用户的项目内容与密钥路径。"""
     ws = _ws_path(run_id).resolve()
-    f = (ws / str(rel or "")).resolve()
-    if f == ws or not f.is_relative_to(ws) or not f.is_file():
+    rel = str(rel or "").replace("\\", "/")
+    f = (ws / rel).resolve()
+    if f == ws or not f.is_relative_to(ws) or not f.is_file() or _is_internal(rel):
         raise FileNotFoundError(str(rel))
     return f
 
@@ -182,10 +187,7 @@ def file_kind(name: str) -> str:
 def read_workspace_file(run_id: str, rel: str, max_bytes: int = _PREVIEW_MAX_BYTES) -> dict:
     """预览一个工作区文件。二进制（pptx / docx / xlsx / 压缩包）只报类型，
     正文一律不给 —— 前端拿到 kind 自己决定是渲染还是给下载。
-    清单里不出现的内部文件（引擎转录等）这里也不给：一个地方说"不是你的"，
-    另一个地方就不能放行。"""
-    if _is_internal(str(rel or "")):
-        raise FileNotFoundError(str(rel))
+    内部文件由 ws_file 统一挡，预览和下载两条口不会一个严一个松。"""
     f = ws_file(run_id, rel)
     size = f.stat().st_size
     kind = file_kind(f.name)
@@ -234,7 +236,7 @@ def orphan_workspaces() -> list:
     root = paths.WORKSPACES_DIR
     if not root.is_dir():
         return []
-    known = {r["id"] for r in db.list_runs(None, 500)}
+    known = db.all_run_ids()
     out = []
     for d in sorted(root.iterdir()):
         if not d.is_dir():
@@ -268,12 +270,16 @@ def _streaks(daily: dict) -> tuple:
 
 
 def usage_stats() -> dict:
-    """把 runs 表里的 step.meta 汇总成看得懂的用量。没有的字段一律按 0 计。"""
+    """把 runs 表里的 step.meta 汇总成看得懂的用量。没有的字段一律按 0 计。
+
+    逐条累计的那几项（token / 时长 / 步骤 / 成本）只扫最近 500 条 —— 一次
+    list_runs 要把每行的 steps JSON 全解出来，跑几千条再点设置页会卡住。
+    但"总共跑过几次"和状态分布不看窗口：那是 COUNT(*) 一下的事，
+    跟着窗口走就会在 500 这条线上永远卡住。"""
     runs = db.list_runs(None, 500)
-    by_status = {}
+    by_status = db.run_status_counts()
     cost = dur = tools = turns = steps_done = steps_total = 0
     for r in runs:
-        by_status[r["status"]] = by_status.get(r["status"], 0) + 1
         for s in (r.get("steps") or []):
             steps_total += 1
             if s.get("status") == "done":
@@ -309,7 +315,7 @@ def usage_stats() -> dict:
     streak_now, streak_best = _streaks(daily)
     ws_bytes, ws_dirs = workspace_bytes()
     return {
-        "runs": len(runs),
+        "runs": sum(by_status.values()),
         "by_status": by_status,
         "steps_done": steps_done,
         "steps_total": steps_total,
@@ -406,11 +412,10 @@ class _Cancelled(Exception):
 
 # ==================== 技能加载 ====================
 def _skill_dir(name: str) -> Path | None:
-    for base in (paths.USER_SKILLS_DIR, paths.BASE / "skills"):
-        d = base / name
-        if (d / "SKILL.md").is_file():
-            return d
-    return None
+    """只认用户技能目录：软件不再随包带任何出厂技能，
+    留着 BASE/skills 这一支，装过旧版本的目录里那份出厂技能就会悄悄复活。"""
+    d = paths.USER_SKILLS_DIR / name
+    return d if (d / "SKILL.md").is_file() else None
 
 
 def _skill_body(name: str) -> str:

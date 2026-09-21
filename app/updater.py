@@ -89,10 +89,17 @@ def norm_tag(s: str) -> str:
 
 
 def check(force: bool = False) -> dict:
-    """问一次清单。已经拿到结果且不是 force 就直接回缓存，避免每次轮询打网络。"""
+    """问一次清单。已经拿到结果且不是 force 就直接回缓存，避免每次轮询打网络。
+
+    下载正在飞的时候连 force 也不问：一次检查会把 phase 改成 checking、
+    再把进度 got 清成 0、把正在写的包路径 path 抹掉，进度条当场跳回原点，
+    而后台那个线程还在往原路径里写 —— 看着像卡住，其实是状态被踩了。"""
     with _LOCK:
-        cached = STATE["phase"] in ("available", "current") and STATE["url"] and not force
-    if cached:
+        # _LOCK 不是可重入的：绝不能在 with 里 return snapshot()，那自己等自己。
+        downloading = STATE["phase"] == "downloading"
+        cached = (not downloading and STATE["phase"] in ("available", "current")
+                  and STATE["url"] and not force)
+    if downloading or cached:
         return snapshot()
     _set(phase="checking", error="")
     try:
