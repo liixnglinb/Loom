@@ -824,7 +824,8 @@ function secShortcuts(){
     </div>`).join('');
   return `<div id="scBox">
     <div class="st-scq">${ico('search')}
-      <input id="scQ" placeholder="${esc(t('sc.searchPh'))}" oninput="scFilter(this.value)"></div>
+      <input id="scQ" placeholder="${esc(t('sc.searchPh'))}" oninput="scFilter(this.value)"
+        ${SET_Q.trim() ? 'disabled' : ''}></div>
     <div class="sc-card">
       <div class="sc-tr sc-thead">
         <div class="sc-td">${esc(t('sc.colCmd'))}</div>
@@ -839,7 +840,7 @@ function secShortcuts(){
 window.scFilter = function(q){
   const box = document.getElementById('scBox');
   if(!box) return;
-  if(SET_Q.trim()) return;   // 全局搜索已经在管这张表了，两个过滤器别抢同一批行
+  if(SET_Q.trim()) return;   // 整页搜索在管这张表（框渲染时就 disable 了），两个过滤器别抢同一批行
   const s = (q||'').trim().toLowerCase();
   let n = 0;
   box.querySelectorAll('.sc-tr:not(.sc-thead)').forEach(r=>{
@@ -1142,9 +1143,17 @@ function applySearch(){
     }
     blocks.forEach(bl=>{
       const rows = [...bl.querySelectorAll('.st-row')];
-      // 热力图、实时预览这类卡里一行 .st-row 都没有 —— 它不是"没命中"，是没法按行过滤。
-      // 照下面的 shown===0 一律藏，会出现"搜 token 反而看不到 Token 热力图"。
-      if(!rows.length){ bl.classList.remove('st-hidden'); inSec++; return; }
+      if(!rows.length){
+        // 热力图、实时预览这类卡里一行 .st-row 都没有，没法按行过滤。
+        // 一律留下是不行的：那样随便敲一串乱码它也算命中，"没有匹配"永远出不来。
+        // 折中是拿卡自己的标题文案比一次 —— "token" 命中热力图标题，"zzzz" 谁都不命中。
+        const k = [...bl.querySelectorAll('.st-label,.hm-title,.spv-title,.st-t,.st-d')]
+          .map(e=>e.textContent).join(' ').toLowerCase();
+        const on = !q || k.includes(q);
+        bl.classList.toggle('st-hidden', !on);
+        if(on){ inSec++; hitRows++; }
+        return;
+      }
       let shown = 0;
       rows.forEach(r=>{
         const on = !q || (r.dataset.k||'').includes(q);
@@ -1354,8 +1363,11 @@ window.pfSave=async function(){
   if(!name.trim()){ toast(t('pr.needName')); return; }
   if(!api_base.trim()){ toast(t('pr.needBase')); return; }
   const picked=window.PF_PICKED;
+  /* extra 整列是覆盖写的。这个表单只拥有 display_name 和 site 两个键，
+     别把没在界面上露面的 model_map / fallback_model（端点/模型阶梯靠它们）一起擦掉。 */
+  const kept=(PF_EDIT && typeof PF_EDIT.extra==='object' && PF_EDIT.extra) ? PF_EDIT.extra : {};
   const body={name:name.trim(), provider, api_base:api_base.trim(), model:model.trim(),
-              extra:{display_name:name.trim(), site:(picked&&picked.site)||''}};
+              extra:{...kept, display_name:name.trim(), site:(picked&&picked.site)||''}};
   let r;
   if(PF_EDIT){ r=await put('/api/providers/'+PF_EDIT.id, {...body, api_key}).catch(e=>({detail:String(e)})); }
   else { r=await post('/api/providers', {...body, api_key}).catch(e=>({detail:String(e)})); }

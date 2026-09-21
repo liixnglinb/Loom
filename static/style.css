@@ -1103,6 +1103,8 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .st-scq:focus-within{border-color:var(--accent);background:var(--bg-raised)}
 .st-scq .ic{width:1rem;height:1rem;color:var(--ink-4);stroke-width:1.8}
 .st-scq input{flex:1;min-width:0;border:none;background:transparent;font-size:var(--fs-sub);outline:none}
+/* 整页搜索在筛这张表时，页内那个框就 disable 掉：不然它看着能敲，敲了却没反应 */
+.st-scq input:disabled{opacity:.45;cursor:not-allowed}
 
 /* ---------- 响应式 ---------- */
 @media (max-width:1080px){

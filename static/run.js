@@ -110,7 +110,7 @@ function drawConsole(){
       <span class="muted">(<span id="wsCount">${WS.length}</span>)</span>
       ${['running','revising','waiting'].includes(u.status)?`<span class="ws-live"><i></i>${esc(t('run.wsLive'))}</span>`:''}
       <span class="spacer"></span>
-      <button class="pf-op" onclick="wsTick()">${ico('refresh')}${esc(t('run.refresh'))}</button></div>
+      <button class="pf-op" onclick="runRefreshArts(true)">${ico('refresh')}${esc(t('run.refresh'))}</button></div>
     <div class="pl-list" id="runArts">${wsRows()}</div>
 
     ${composerHtml(u)}`;

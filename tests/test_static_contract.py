@@ -388,3 +388,49 @@ def test_sidebar_stopped_using_native_title():
     """原生 title 和自研提示并存会出现两套样式、两种延迟，侧栏里只留一套。"""
     side = re.search(r'<aside class="sidebar">.*?</aside>', INDEX_HTML, re.S).group(0)
     assert "title=" not in side, f"侧栏里又用了原生 title：{re.findall(r'[\\w]*title=', side)}"
+
+
+# ---------------- 内联事件处理器 ----------------
+
+HANDLER_ATTR = re.compile(r"\bon[a-zA-Z]+\s*=\s*\\?[\"']([^\"']*)\\?[\"']")
+CALL_HEAD = re.compile(r"(?<![.\w$])([A-Za-z_$][\w$]*)\s*[.(]")
+# 内联表达式里的关键字，和浏览器塞进作用域的两个宿主名。
+# 其余宿主对象（document / window / JSON …）一个都不预先放行：现在没人用，
+# 以后谁用谁就地加，条目才不会烂成一串没人信的白名单。
+EXPR_WORDS = {"if", "return", "typeof", "catch", "function", "in", "of"}
+HOST_GLOBALS = EXPR_WORDS | {"event", "this"}
+
+
+def _handler_globals():
+    """内联 onclick="x()" 里的 x 是浏览器在全局作用域里查的。
+    四个脚本各自是 IIFE，没导出到 window 的函数在外面根本不存在 ——
+    产出面板那个「刷新」就是这么死的：按钮照画，点一下 ReferenceError，
+    而 161 条测试一条都不会红。这里把整条链子焊上。"""
+    exported = set()
+    for f in JS_FILES:
+        exported |= set(re.findall(r"window\.([A-Za-z_$][\w$]*)\s*=",
+                                   f.read_text(encoding="utf-8")))
+    used = {}
+    for f in JS_FILES + [STATIC_DIR / "index.html"]:
+        src = f.read_text(encoding="utf-8")
+        for m in HANDLER_ATTR.finditer(src):
+            # ${...} 在模板串生成时就求过值了，用的是闭包里的局部变量；
+            # 处理器真正拿到的是替换后的字面量，不能把它当全局名来查。
+            body = re.sub(r"\$\{[^{}]*\}", "", m.group(1))
+            for c in CALL_HEAD.finditer(body):
+                used.setdefault(c.group(1), set()).add(f.name)
+    return exported, used
+
+
+def test_inline_handlers_only_call_exported_globals():
+    exported, used = _handler_globals()
+    missing = {k: sorted(v) for k, v in used.items()
+               if k not in exported and k not in HOST_GLOBALS}
+    assert missing == {}, f"这些内联处理器调的函数没导出到 window：{missing}"
+
+
+def test_handler_globals_allowlist_is_not_stale():
+    """兜底名用上了就是废条目 —— 别让它越积越长，长到没人信。"""
+    _, used = _handler_globals()
+    stale = {n for n in HOST_GLOBALS if n not in used and n not in EXPR_WORDS}
+    assert stale == set(), f"HOST_GLOBALS 里这些名字已经没人用了：{sorted(stale)}"
