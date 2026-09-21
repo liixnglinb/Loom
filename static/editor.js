@@ -122,7 +122,7 @@ window.renderSkills = async function(){
       </div>
       <div class="pl-row-ops" onclick="event.stopPropagation()">
         <button class="pf-op" onclick="skView('${esc(s.name)}')">${esc(t('c.view'))}</button>
-        ${s.source==='user'?`<button class="pf-op" onclick="nav.go('skill-edit/${esc(s.name)}')">${esc(t('c.edit'))}</button>`:''}
+        <button class="pf-op" onclick="nav.go('skill-edit/${esc(s.name)}')">${esc(t('c.edit'))}</button>
       </div>
     </div>`;
   window.__chrome = {title:t('sk.title'), icon:'skill',
@@ -158,16 +158,14 @@ window.skView = async function(name){
   root.id = 'skViewRoot';
   root.innerHTML = `<div class="modal open" onclick="if(event.target===this)skCloseModal()">
     <div class="modal-box sk-view-modal">
-      <div class="modal-top"><div class="pv-head"><h3>${esc(d.name)}</h3>
-        <span class="sk-badge ${d.editable?'sk-badge-user':''}">${d.editable?esc(t('sk.badgeUser')):esc(t('sk.badgeBundled'))}</span></div>
+      <div class="modal-top"><div class="pv-head"><h3>${esc(d.name)}</h3></div>
         <button class="modal-x" onclick="skCloseModal()">×</button></div>
       <div class="sk-view-body"><pre class="sk-pre">${esc(d.content)}</pre></div>
       <div class="sk-view-foot">
         <button class="btn btn-ghost btn-sm" onclick="skCloseModal()">${esc(t('c.close'))}</button>
-        ${d.editable
-          ? `<button class="btn btn-primary btn-sm" onclick="skCloseModal();nav.go('skill-edit/${esc(d.name)}')">${esc(t('c.edit'))}</button>
-             <button class="btn btn-ghost btn-sm pl-danger" onclick="skDelete('${esc(d.name)}')">${esc(t('c.delete'))}</button>`
-          : `<button class="btn btn-accent btn-sm" onclick="skDuplicate('${esc(d.name)}')">${esc(t('sk.dupe'))}</button>`}
+        <button class="btn btn-ghost btn-sm" onclick="skDuplicate('${esc(d.name)}')">${esc(t('sk.dupe'))}</button>
+        <button class="btn btn-ghost btn-sm pl-danger" onclick="skDelete('${esc(d.name)}')">${esc(t('c.delete'))}</button>
+        <button class="btn btn-primary btn-sm" onclick="skCloseModal();nav.go('skill-edit/${esc(d.name)}')">${esc(t('c.edit'))}</button>
       </div>
     </div></div>`;
   document.body.appendChild(root);
@@ -196,10 +194,9 @@ window.renderSkillEdit = async function(name){
   if(name && name !== 'new'){
     const d = await _api('/api/skills/'+encodeURIComponent(name)).catch(e=>({detail:e.message}));
     if(d.detail){ toast(d.detail); nav.go('skills'); return; }
-    SK_EDIT = {name: d.name, content: d.content, editable: d.editable, isNew: false};
-    if(!d.editable) toast(t('sk.readonly'));
+    SK_EDIT = {name: d.name, content: d.content, isNew: false};
   }else{
-    SK_EDIT = {name:'', content:'', editable:true, isNew:true};
+    SK_EDIT = {name:'', content:'', isNew:true};
   }
   skDrawEditor();
   SK_BASE = skSnap({n:SK_EDIT.name, c:SK_EDIT.content, nw:SK_EDIT.isNew});
@@ -207,13 +204,12 @@ window.renderSkillEdit = async function(name){
 
 function skDrawEditor(){
   const E = SK_EDIT;
-  const readOnly = !E.editable;
   const lines = E.content ? E.content.split('\n').length : 0;
-  const title = (E.isNew?t('sk.newTitle'):(readOnly?t('sk.viewTitle'):t('sk.editTitle')))
+  const title = (E.isNew?t('sk.newTitle'):t('sk.editTitle'))
     + (E.name?` · ${E.name}`:'');
   window.__chrome = {title: title, icon:'skill', actions: `
     <button class="btn btn-ghost btn-sm" onclick="skBack()">${esc(t('c.back'))}</button>
-    ${!readOnly?`<button class="btn btn-primary btn-sm" onclick="skSave()">${esc(t('sk.save'))}</button>`:''}`};
+    <button class="btn btn-primary btn-sm" onclick="skSave()">${esc(t('sk.save'))}</button>`};
   $('#view').innerHTML = `
     <div class="card sk-edit-card">
       ${E.isNew?`
@@ -224,12 +220,12 @@ function skDrawEditor(){
       </div>`:''}
       <div class="sk-field sk-grow">
         <label class="pv-label">${esc(t('sk.content'))} <b class="req">*</b></label>
-        <textarea class="pv-input mono sk-content" id="skContent" ${readOnly?'readonly':''}
+        <textarea class="pv-input mono sk-content" id="skContent"
           placeholder="${esc(t('sk.contentPh'))}" oninput="skSync()">${esc(E.content)}</textarea>
         <div class="sk-hint" id="skCount">${esc(t('sk.lines',{n:lines}))}</div>
       </div>
     </div>`;
-  if(!readOnly) setTimeout(()=>{ const el=document.getElementById('skContent'); if(el && E.isNew) el.focus(); }, 50);
+  setTimeout(()=>{ const el=document.getElementById('skContent'); if(el && E.isNew) el.focus(); }, 50);
 }
 window.skSync = function(){
   const el = document.getElementById('skContent');
@@ -407,7 +403,7 @@ function plDrawEditor(){
           <div class="pv-row2">
             ${pvf(`${esc(t('ed.mainSkill'))} <b class="req">*</b>
               <a class="fld-link" onclick="nav.go('skills')">${esc(t('ed.viewSkills'))}</a>`,
-              (()=>{ const os=[{v:'',label:'—'}].concat(PL_SKILLS.map(sk=>({v:sk.name, label:sk.name+(sk.source==='user'?' · '+t('c.user'):'')})));
+              (()=>{ const os=[{v:'',label:'—'}].concat(PL_SKILLS.map(sk=>({v:sk.name, label:sk.name})));
                   if(s.skill && !PL_SKILLS.some(sk=>sk.name===s.skill)) os.push({v:s.skill, label:s.skill+'（'+t('sk.deleted')+'）'});
                   return ffSelect(os, s.skill||'', {mono:true, onChange:(v)=>{ plSet(i,'skill',v); plDrawEditor(); }}); })(),
               main?`<div class="pv-foot-hint">${esc(main.desc)}</div>`:'')}

@@ -368,7 +368,10 @@ def _codex_args(ws: Path, system_file: Path | None, model: str,
             "-c", f'model_providers.{_CODEX_PROVIDER}.name="Loom"',
             "-c", f'model_providers.{_CODEX_PROVIDER}.base_url="{base}"',
             "-c", f'model_providers.{_CODEX_PROVIDER}.env_key="FLOWFORGE_API_KEY"',
-            "-c", f'model_providers.{_CODEX_PROVIDER}.wire_api="{wire_api or "chat"}"',
+            # 0.154 的 codex 直接拒绝 chat：二进制里写着
+            # `wire_api = "chat"` is no longer supported / set `wire_api = "responses"`。
+            # 用户在预设里显式填了别的值就以他的为准（错误会原样出现在运行日志里）。
+            "-c", f'model_providers.{_CODEX_PROVIDER}.wire_api="{wire_api or "responses"}"',
         ]
     if model.strip():
         args += ["-c", f'model="{model.strip()}"']

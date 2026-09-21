@@ -119,7 +119,7 @@ def test_protocol_ok(engine, provider, base, ok):
 def test_codex_args_carry_reasoning_effort(monkeypatch, tmp_path):
     monkeypatch.setattr(db, "get_setting", lambda k, d="": {
         "reasoning_effort": "high", "codex_sandbox": "workspace-write"}.get(k, d))
-    args = agents._codex_args(tmp_path, None, "gpt-5", "", "", "chat")
+    args = agents._codex_args(tmp_path, None, "gpt-5", "", "", "")
     joined = " ".join(args)
     assert 'model_reasoning_effort="high"' in joined
     assert "network_access=true" in joined
@@ -134,6 +134,16 @@ def test_codex_args_omit_effort_when_auto(monkeypatch, tmp_path):
 
 
 def test_provider_display_name_is_loom_not_flowforge(monkeypatch, tmp_path):
-    args = " ".join(agents._codex_args(tmp_path, None, "", "https://k/v1", "k", "chat"))
+    args = " ".join(agents._codex_args(tmp_path, None, "", "https://k/v1", "k", ""))
     assert 'name="Loom"' in args
     assert "FLOWFORGE_API_KEY" in args       # 环境变量名是内部契约，改名要同步
+
+
+def test_codex_defaults_to_the_responses_wire(monkeypatch, tmp_path):
+    """本机装的 codex 0.154 里写着 `wire_api = "chat"` is no longer supported，
+    默认值再留 chat，凡是配了端点的 codex 步骤都会在启动那一刻就失败。"""
+    args = " ".join(agents._codex_args(tmp_path, None, "", "https://k/v1", "k", ""))
+    assert 'wire_api="responses"' in args
+    assert 'wire_api="chat"' not in args
+    mine = " ".join(agents._codex_args(tmp_path, None, "", "https://k/v1", "k", "responses"))
+    assert 'wire_api="responses"' in mine     # 显式填过的照原样发出去

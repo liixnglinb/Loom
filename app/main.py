@@ -202,43 +202,40 @@ def _skill_desc(text: str) -> str:
 
 @app.get("/api/skills")
 def list_skills():
-    """枚举 skill（自建优先）。
+    """枚举自建 skill。
 
-    每个 skill 返回：name、desc（frontmatter.description 或首个正文行）、
-    source（user=自建可编辑 / bundled=随包内置只读）、chars（正文长度）。
+    每个 skill 返回：name、desc（frontmatter.description 或首个正文行）、chars（正文长度）。
+    只扫可写技能目录：出厂技能已经随包撤掉了，再扫一遍 BASE/skills 等于让
+    旧版本装过的目录里那份只读副本悄悄复活。
     """
     seen = {}
-    for base, source in ((paths.USER_SKILLS_DIR, "user"), (paths.BASE / "skills", "bundled")):
-        if not base.is_dir():
-            continue
+    base = paths.USER_SKILLS_DIR
+    if base.is_dir():
         for d in sorted(base.iterdir()):
             if not (d.is_dir() and (d / "SKILL.md").exists()):
-                continue
-            if d.name in seen:
                 continue
             try:
                 text = (d / "SKILL.md").read_text(encoding="utf-8")
             except Exception:
                 text = ""
             seen[d.name] = {"name": d.name, "desc": _skill_desc(text),
-                            "source": source, "chars": len(text)}
+                            "chars": len(text)}
     out = list(seen.values())
-    out.sort(key=lambda x: (x["source"] != "user", x["name"]))
+    out.sort(key=lambda x: x["name"])
     return {"skills": out}
 
 
 @app.get("/api/skills/{name}")
 def get_skill(name: str):
     """读取单个 skill 的 SKILL.md 全文（用于技能管理页查看/编辑）。"""
-    for base in (paths.USER_SKILLS_DIR, paths.BASE / "skills"):
-        p = base / name / "SKILL.md"
-        if p.exists():
-            try:
-                text = p.read_text(encoding="utf-8")
-            except Exception:
-                return JSONResponse({"detail": "skill 文件读取失败"}, 500)
-            return {"name": name, "content": text,
-                    "editable": base == paths.USER_SKILLS_DIR}
+    d = _skill_dir_safe(name)
+    p = d / "SKILL.md" if d else None
+    if p and p.exists():
+        try:
+            text = p.read_text(encoding="utf-8")
+        except Exception:
+            return JSONResponse({"detail": "skill 文件读取失败"}, 500)
+        return {"name": name, "content": text, "editable": True}
     return JSONResponse({"detail": "skill 不存在"}, 404)
 
 
@@ -274,27 +271,22 @@ def create_skill(s: SkillIn):
 
 @app.put("/api/skills/{name}")
 def update_skill(name: str, s: SkillIn):
-    """更新自建 skill 内容（内置 skill 不可改，需另存副本）。"""
+    """更新自建 skill 内容。"""
     d = _skill_dir_safe(name)
     if not d or not (d / "SKILL.md").exists():
-        return JSONResponse({"detail": "自建 skill 不存在（内置 skill 只读）"}, 404)
+        return JSONResponse({"detail": "skill 不存在"}, 404)
     (d / "SKILL.md").write_text((s.content or "").rstrip() + "\n", encoding="utf-8")
     return {"ok": True, "name": name}
 
 
 @app.post("/api/skills/{name}/duplicate")
 def duplicate_skill(name: str, s: SkillIn):
-    """把内置/现有 skill 另存为自建副本（副本可编辑）。"""
-    src_text = ""
-    found = False
-    for base in (paths.USER_SKILLS_DIR, paths.BASE / "skills"):
-        p = base / name / "SKILL.md"
-        if p.exists():
-            src_text = p.read_text(encoding="utf-8")
-            found = True
-            break
-    if not found:
+    """把现有 skill 另存一份副本。"""
+    src = _skill_dir_safe(name)
+    p = src / "SKILL.md" if src else None
+    if not (p and p.exists()):
         return JSONResponse({"detail": "skill 不存在"}, 404)
+    src_text = p.read_text(encoding="utf-8")
     newname = (s.name or "").strip()
     d = _skill_dir_safe(newname)
     if not d:
@@ -308,10 +300,10 @@ def duplicate_skill(name: str, s: SkillIn):
 
 @app.delete("/api/skills/{name}")
 def delete_skill(name: str):
-    """删除自建 skill（内置 skill 只读不可删）。"""
+    """删除一份 skill。"""
     d = _skill_dir_safe(name)
     if not d or not (d / "SKILL.md").exists():
-        return JSONResponse({"detail": "自建 skill 不存在"}, 404)
+        return JSONResponse({"detail": "skill 不存在"}, 404)
     import shutil
     shutil.rmtree(d, ignore_errors=True)
     return {"ok": True}
