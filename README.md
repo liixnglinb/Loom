@@ -40,7 +40,7 @@ python run.py --port 8001     # 换端口
 python run.py --auto-kill     # 端口被旧进程占用时自动释放
 ```
 
-回归测试（122 条，不需要网络）：
+回归测试（不需要网络）：
 
 ```bash
 python -m pytest -q
@@ -53,10 +53,8 @@ app/            FastAPI 后端
   main.py         路由与全部 /api
   runner.py       流程执行引擎：检查点、SSE 事件流、工作区、产物
   agents.py       Claude / Codex CLI 适配层（参数拼装 + 流式解析）
-  presets_library.py  内置流程与技能模板（可恢复出厂）
   updater.py      读 latest.json 检查更新、下载安装包、核对 sha256
 static/         前端（原生 HTML/CSS/JS，无框架、无构建步骤）
-skills/         随包内置技能（只读；用户自建技能落在数据目录）
 tests/          pytest 回归，含静态资产契约测试
 loom_launch.py    打包态入口（pywebview 原生窗口，失败则退回浏览器）
 run.py            源码态入口
@@ -102,5 +100,5 @@ Everything stays on disk in a local data folder. No accounts, no telemetry.
 
 ```bash
 pip install -r requirements.txt && python run.py     # http://127.0.0.1:8000
-python -m pytest -q                                   # 122 regression tests
+python -m pytest -q                                   # offline regression suite
 ```

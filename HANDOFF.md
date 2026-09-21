@@ -1,6 +1,6 @@
 # 交接文档（给下一个 agent）
 
-> 更新时间：2026-09-20 · 上一任：Qoder agent 会话
+> 更新时间：2026-09-21 · 上一任：Qoder agent 会话
 > 本文**不含任何密钥**，只写路径。密钥与站点全局信息在同目录之外的私人文档
 > `C:\Users\李星历\Desktop\个人开发信息\个人网站信息\Voyra个人网站说明.md`（含全部密钥，严禁入库）。
 > 读那一份的 0 节 + 2.6 节 + 5 节，再回来看这里。
@@ -40,7 +40,17 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
 那条 `gh api`，**线上 sha 真变了才算上去**（本地 `origin/main` 引用会滞后，别拿它当线上状态；
 本文档也故意不写死本地 HEAD 的 sha —— 改它自己就会多出一个提交）。
 
-**上一轮（2026-09-20）做完并已验，别重复做**：设置页换成 Codex 那套形态 ——
+**上一轮（2026-09-21）做完并已验，别重复做**：六路分区子智能体把"页面上写着的功能到底实现了没有"
+逐条对过一遍，确认的缺陷已修完 ——
+`llm.chat` 两个分支各引用不存在的名字（"检测连通"在生产里恒红）、产物下载口能取到内部引擎转录、
+更新器在下载飞行中被强制检查踩掉进度、统计页"总次数"跟着 500 条窗口一起卡死、
+孤儿判定按窗口比会把正常现场报成孤儿、产出面板「刷新」按钮点一下 ReferenceError、
+设置页搜索"敲任意乱码都算命中"、技能读口比写口松。
+另外两件事改的是约定，别退回去：codex 0.154 的默认 `wire_api` 必须是 `responses`；
+出厂技能的 `BASE/skills` 扫描四支全撤（旧安装目录里那份只读副本会复活）。
+新钉住的契约见第 6 节，两条断言的实测出处见第 2 节末尾。
+
+**再上一轮（2026-09-20）**：设置页换成 Codex 那套形态 ——
 明暗预览磁贴、字号/缩放/内容宽度三条带数字读数的滑块、卡片头部动作位（挂「恢复默认外观」）、
 键位页内搜索 + 双键帽；强调色换成色板芯片；更新页下载中加真刻度条。
 深浅两套主题都用 `getComputedStyle` 量过，用户外观偏好已逐项还原。
@@ -53,8 +63,9 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
 1. **PPT / Word 的真渲染**。浏览器画不出 pptx/docx 版式，这是硬限制。三条路已摆给用户：
    - A LibreOffice headless 转 PDF 再预览（保真最高，代价几百 MB 外部依赖）；
    - B 纯 Python 拆 OOXML 做"分镜预览"（读 `ppt/slides/slideN.xml` 的文字 + `ppt/media/` 的图，按页出卡片；零新依赖，约 150–200 行 + 测试）；
-   - C 改内置流程：让智能体产出 markdown/HTML 源，最后一步再转 pptx（实时预览直接复用现成的 markdown 渲染器）。
-   **推荐 B + C**。B 点头就能做；C 要改内置流程和技能提示词，动的是用户定过的东西。
+   - C 让智能体产出 markdown/HTML 源，最后一步再转 pptx（实时预览直接复用现成的 markdown 渲染器）。
+   **推荐 B + C**。B 点头就能做；C 动的是流程和技能提示词，要用户定（软件已经不随包带任何流程模板和技能，
+   改的是用户自己建的那些）。
 2. **要不要下线旧授权后端**。`functions/modelflow/*`、D1 `mflic`、`/modelflow/admin/` 还在部署、还能打开，但已无任何页面引用。下线不可逆（历史授权码数据会没）。
 3. **COS 保留策略**。`upload_cos.py` 现在**只列不删**（桶刚被清空过一次，删线上包必须是显式动作）。攒到两个版本以上再谈"留最近两个"。
 4. **代码签名**。安装包没签名（`installer.iss` 里没有 SignTool），Windows SmartScreen 会拦"未知发布者"。买证书是花钱的决定，要用户定。
@@ -68,6 +79,24 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
 
 ## 2. 已知缺口 / 没做完的事（按重要性）
 
+- **两条对引擎的断言是在本机二进制里量出来的，不是查文档查来的。**
+  `D:\npm-global\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\bin\codex.exe`（0.154.0）里
+  写着 `` `wire_api = "chat"` is no longer supported / How to fix: set `wire_api = "responses"` `` —— 所以 `agents._codex_args`
+  的默认值不能是 chat，配了端点的 codex 步骤否则会在启动那一刻就死。同一份二进制里 EventMsg 枚举明确带
+  `TokenCount` / `token_count`，所以"codex 没有 token_count 事件"那条断言是**假的**，别照它改解析。
+  核对方法：mmap + 字符串搜，别执行 CLI（费配额、还会动用户本机 relay）。
+- **统计页有两套口径，别混。** 逐条累计（token / 时长 / 步骤 / 成本）只扫最近 500 条 run —— 一次
+  `list_runs` 要把每行 steps JSON 全解出来，跑几千条再点设置页会卡住；而"总次数"和状态分布走
+  `db.run_status_counts()`（COUNT(*)），孤儿工作区判定走 `db.all_run_ids()`（全表）。
+  把后两者接回窗口的写法都出现过，后果分别是：跑到 501 就永远显示 500、第 501 条的现场被当成孤儿报出来。
+- **软件只剩一个技能目录。** `paths.BASE / "skills"` 那四支扫描（列表 / 详情 / 另存源 / 提示词装载）已全撤：
+  装过 1.0.0 的目录里还留着 `skills/ff-*`，扫它等于让出厂技能悄悄复活。随之 `editable`/`source` 恒为真，
+  技能徽标、只读提示、编辑器 readonly 与 `sk.viewTitle`/`sk.readonly`/`sk.badgeUser`/`c.user` 一并删掉；
+  「另存副本」从"只读才能按"改成常驻，否则这条功能就没入口了。
+- **`extra.model_map` / `extra.fallback_model` / `extra.wire_api` 是活的但没有界面。** 它们由
+  `runner.resolve_agent_config` 读，界面上既看不见也改不了，唯一会碰它们的是「编辑供应商」——
+  而 `pfSave` 以前把 `extra` 整列覆盖写，等于改一次名字就把模型阶梯抹平了。现在表单只拥有自己那两个键。
+  真要做界面，先和用户确认这三个键的语义再摆控件。
 - **`apply_update()` 的打包态分支没真跑过。** 只验证了源码态明确拒绝、以及有任务在跑时返回 409。真自装要装两个版本互演，且会改本机程序 —— 上一任没敢擅自做。改这块时注意：批处理用 `encoding="mbcs"` 写（中文用户名路径 + cmd 代码页），以及 `DETACHED_PROCESS` 起 cmd 后 `os._exit(0)` 的时序。
 - **下载页的兜底版本号/体积要人工同步。** 页面正常运行时从 `latest.json` 现拉，拉不到才用写死的 `1.0.0` / `36 MB`。发新版时**记得改** `D:\Voyra 个人网站\public\modelflow\index.html` 里那两处（第 5 节 SOP 里也写了）。想彻底根治：让按钮在 fetch 成功前禁用，而不是显示一个可能说谎的兜底值。
 - 下载页 FAQ 里以前写死过测试条数，几天里飘了三次（122→130→145）。2026-09-20 改成不报数、只说"看守哪些契约"，这条同步义务到此为止 —— 别再往页里塞具体条数。
@@ -112,6 +141,7 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
 
 ```
 app/main.py            全部 /api 路由。注意 /api/settings/bulk 只收 ui_ 前缀
+                       技能只有一个目录（paths.USER_SKILLS_DIR），读写四条口共用 _skill_dir_safe
 app/runner.py          执行引擎：工作区、SSE 事件、检查点、日志读取、使用统计
   ├ _is_internal()     整条相对路径任一段以下划线开头 = 内部文件，别泄漏进清单
   ├ ws_file()          工作区路径校验只写这一处（预览和下载共用）
@@ -191,6 +221,12 @@ PYTHONUTF8=1 "<python>" -m pytest -q          # 全绿即可，不需网络
 - 设置页外观的档位表只有一处真相：`ui.js` 的 `TEXT_SIZES/ZOOMS/WIDTHS/THEMES/ACCENTS`，`APP` 里的键名和
   `loadAppearance` 白名单必须同名（测试钉着），否则滑块会静默停在 0 档。
 - 路径越界用例是参数化的一整套（`../../db`、`%2e%2e`、绝对路径…），新加读文件的端点要接进同一套校验。
+- **内联 `onclick="x()"` 里的名字必须在 `window` 上找得到。** 四个脚本各自是 IIFE，没导出的函数在全局作用域里
+  不存在 —— 产出面板那个「刷新」就是这么死的（按钮照画，点一下 ReferenceError，而几百条测试一条都不会红）。
+  `test_inline_handlers_only_call_exported_globals` 现在盯着；它的兜底名单 `HOST_GLOBALS` 只有三个词，
+  另有一条反向测试盯着这个名单别烂掉。
+- 「检测连通」这条直连路有两道锁：`llm.chat` 的 64 token 硬顶，和 `test_llm_probe.py` 那组只桩到 HTTP
+  一层的用例（路由侧的测试直接 monkeypatch `test_connection`，是**看不出** chat 内部引用了不存在的名字的）。
 
 改完**在浏览器里量一遍**再收工：`getComputedStyle` 拿真实值，别凭眼睛看。
 上一任靠这个抓到过：轨道被两个图标按钮撑破 4px、图标按钮漏 `data-tip-any`、
