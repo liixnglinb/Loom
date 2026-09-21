@@ -131,10 +131,12 @@ RADIUS_SCALE = {"--r-1", "--r-2", "--r-3", "--r-4", "--r-5", "--r-pill"}
 
 
 FONT_CSS = (STATIC_DIR / "fonts" / "fonts.css").read_text(encoding="utf-8")
-# 七档：micro/meta/sub/body/lead + 两个展示档。曾经还有 --fs-h3，
+# 八档：micro/meta/sub/body/lead + 两个展示档 + 数据大字。曾经还有 --fs-h3，
 # 唯一的用户是列表页 .page-head h1，那整块早没人引用了，删掉后这一档就空了 ——
 # 刻度上留一个没人站的格子，只会被下一个人随手填个新数值。
-FS_TOKENS = {"micro", "meta", "sub", "body", "lead", "h2", "h1"}
+# --fs-stat 是这一轮按参考图像素量出来的（统计条那排数字字高 ≈20px）：
+# lead 14.3 太小、h2 23.4 太大，只有 .st-strip b 用着。
+FS_TOKENS = {"micro", "meta", "sub", "body", "lead", "h2", "h1", "stat"}
 
 
 def test_font_faces_declare_one_standard_weight_each():
@@ -445,3 +447,35 @@ def test_every_static_script_actually_parses():
     for f in JS_FILES:
         r = subprocess.run(["node", "--check", str(f)], capture_output=True, text=True)
         assert r.returncode == 0, f"{f.name} 过不了 node --check：{r.stderr[:400]}"
+
+
+def test_stats_page_keeps_the_measured_rhythm():
+    """这几条是 2026-09-22 对着参考截图逐像素量出来的（图像 px ÷1.5 = CSS px）。
+    改回去不会弄坏任何功能，只会悄悄不像 —— 所以只能靠断言钉住。"""
+    need = {
+        ".st-strip>div{background:var(--bg-panel);padding:9px 10px":
+            "顶部条卡上下 9px（整条量到 66，参考 65）",
+        ".st-strip span{display:block;margin-top:6px;font-size:var(--fs-body)":
+            "数字→标签 6px、标签 13px（参考 13）",
+        ".hm-grid{display:flex;gap:3px 2px}":
+            "横向节距 14 = 12 格 + 2 缝（参考 14.3），52 列才铺得下还留得住两侧内边距",
+        ".hm-axis{display:flex;gap:2px;margin-top:15px}":
+            "网格→月份轴 15px，且轴的节距必须跟格子一致，否则轴会逐列偏掉",
+        ".hm-wrap{overflow-x:auto;padding:0 18px 2px}":
+            "网格与卡片标题同一条左线（18px）",
+        ".st-stats .st-block{margin-bottom:19px}":
+            "统计页卡片之间 19px（别的分区仍走 28px）",
+    }
+    for frag, why in need.items():
+        assert frag in CSS, f"{why}；这条被改动了：{frag}"
+
+
+def test_durations_are_localised_in_js_not_hardcoded():
+    """中文里 "7h 2m" 读不成一句话，参考图写的是 "7 小时 2 分钟"。
+    单位取 unit.* 那几个键，别再退回硬编码的英文字母。"""
+    body = re.search(r"function fmtDur\(ms\)\{(.*?)\n\}", APP_JS, re.S)
+    assert body, "找不到 fmtDur"
+    code = body.group(1)
+    for k in ("unit.sec", "unit.min", "unit.hour"):
+        assert f"t('{k}')" in code, f"fmtDur 的中文分支不再取 {k}"
+    assert "'en'" in code, "英文分支（h/m/s）也得留着"

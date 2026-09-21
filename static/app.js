@@ -608,6 +608,9 @@ const srow = (title, desc, ctl, extra='') => `
       ${desc?`<div class="st-d">${desc}</div>`:''}</div>
     <div class="st-ctl">${ctl||''}</div>
   </div>`;
+/* 统计页用"卡片内标题"，别的分区用"卡片上方那行分组标签" —— 参考图里那张屏没有分组标签 */
+const stCard = (title, rows) => `<div class="st-block"><div class="st-panel">`
+  + (title ? `<div class="st-pttl">${esc(title)}</div>` : '') + rows + `</div></div>`;
 const spanel = (rows, label='', actions='') => `
   <div class="st-block">${label || actions ? `<div class="st-labelrow">
       ${label ? `<div class="st-label">${esc(label)}</div>` : '<span></span>'}
@@ -904,9 +907,16 @@ const fmtBytes = n => n >= MB1024 ? (n/MB1024).toFixed(1)+' MB'
                      : n >= 1024  ? (n/1024).toFixed(0)+' KB' : (n||0)+' B';
 function fmtDur(ms){
   const s = Math.round((ms||0)/1000);
-  if(s < 60) return s+'s';
-  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
-  return h ? h+'h '+m+'m' : m+'m '+(s%60)+'s';
+  if ((window.APP && window.APP.lang) === 'en') {
+    if (s < 60) return s+'s';
+    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+    return h ? h+'h '+m+'m' : m+'m '+(s%60)+'s';
+  }
+  // 中文里 "7h 2m" 读不成一句话；参考图写的是 "7 小时 2 分钟"
+  if (s < 60) return s + ' ' + t('unit.sec');
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s % 60;
+  if (h) return m ? h+' '+t('unit.hour')+' '+m+' '+t('unit.min') : h+' '+t('unit.hour');
+  return sec ? m+' '+t('unit.min')+' '+sec+' '+t('unit.sec') : m+' '+t('unit.min');
 }
 /* 亿/万只在中文用，英文走 K/M —— 直接写死一套单位会在另一语言里读不通 */
 function fmtTok(n){
@@ -1006,10 +1016,7 @@ function tokenHeat(daily, mode){
   });
   // 网格和轴必须在同一个横向滚动容器里，否则网格一滚，轴留在原地就对不上列了
   return `<div class="hm-wrap"><div class="hm-grid">${grid}</div>
-      <div class="hm-axis">${axis.join('')}</div></div>
-    <div class="hm-legend"><span>${esc(t('st.less'))}</span>
-      ${[0,1,2,3,4].map(i => `<i class="hm-cell ${'hm-l'+i}"></i>`).join('')}
-      <span>${esc(t('st.more'))}</span></div>`;
+      <div class="hm-axis">${axis.join('')}</div></div>`;
 }
 
 function stNoData(){
@@ -1048,9 +1055,6 @@ function stModels(list){
       <span class="st-mval">${esc(fmtTok(b.tokens))} · ${Math.round((b.tokens||0)/total*100)}%</span></div>`).join('');
 }
 
-const stGrpLabel = () => ST_MODE === 'week' ? t('st.heatGrpWeek')
-  : ST_MODE === 'cum' ? t('st.heatGrpCum') : t('st.heatGrp');
-
 
 function secStats(){
   const s = ST.stats || {};
@@ -1063,25 +1067,20 @@ function secStats(){
     <div><b>${esc(fmtTok(s.tokens_total))}</b><span>${esc(t('st.tokTotal'))}</span></div>
     <div><b>${esc(fmtTok(s.peak_day_tokens))}</b><span>${esc(t('st.peakDay'))}</span></div>
     <div><b>${esc(fmtDur(s.peak_step_ms))}</b><span>${esc(t('st.peakStep'))}</span></div>
-    <div><b>${s.streak_now||0}</b><span>${esc(t('st.streakNow'))}</span></div>
-    <div><b>${s.streak_best||0}</b><span>${esc(t('st.streakBest'))}</span></div>
+    <div><b>${(s.streak_now||0)+' '+t('unit.day')}</b><span>${esc(t('st.streakNow'))}</span></div>
+    <div><b>${(s.streak_best||0)+' '+t('unit.day')}</b><span>${esc(t('st.streakBest'))}</span></div>
   </div>`;
-  const heat = spanel(
+  const heat = stCard('',
       `<div class="st-cardtop"><div class="hm-title">${esc(t('st.heat'))}</div>`
         + stSeg([['day', t('st.modeDay')], ['week', t('st.modeWeek')], ['cum', t('st.modeCum')]],
                 ST_MODE, 'stSetMode') + `</div>`
-      + tokenHeat(s.daily || {}, ST_MODE),
-    stGrpLabel());
+      + tokenHeat(s.daily || {}, ST_MODE));
   const rangeRow = `<div class="st-rangerow"><span>${esc(t('st.range'))}</span>`
     + stSeg([['7', t('st.last7')], ['30', t('st.last30')]], String(ST_RANGE), 'stSetRange')
     + `</div>`;
-  const trend = spanel(
-      `<div class="hm-title">${esc(t('st.trend'))}</div>` + stTrend(s.daily || {}, ST_RANGE),
-    t('st.grpTrend'));
-  const models = spanel(
-      `<div class="hm-title">${esc(t('st.models'))}</div>` + stModels(s.by_model),
-    t('st.grpModels'));
-  const usage = spanel(
+  const trend = stCard(t('st.trend'), stTrend(s.daily || {}, ST_RANGE));
+  const models = stCard(t('st.models'), stModels(s.by_model));
+  const usage = stCard(t('st.grpUsage'),
       srow(t('st.runs'), t('st.runsD',{done:bs.done||0, failed:bs.failed||0,
           running:(bs.running||0)+(bs.revising||0), waiting:bs.waiting||0,
           cancelled:bs.cancelled||0}),
@@ -1104,21 +1103,20 @@ function secStats(){
         `<span class="st-val">${esc(fmtTok(tk.reason))}</span>`, 'token reasoning thought')
     + srow(t('st.disk'), t('st.diskD',{n:s.workspaces||0}),
         `<span class="st-val">${esc(fmtBytes(s.workspace_bytes))}</span>`, 'stats disk bytes workspace')
-    , t('st.grpUsage'));
+  );
   const foot = `<div class="st-foot"><button class="st-btn" onclick="stReload()">`
     + `${ico('refresh')}${esc(t('c.refresh'))}</button></div>`;
-  return strip + heat + rangeRow + trend + models + usage
-  + (pw.length ? spanel(
+  return `<div class="st-stats">` + strip + heat + rangeRow + trend + models + usage
+  + (pw.length ? stCard(t('st.grpFlows'),
       pw.map(([k,v])=>srow(esc(k), t('st.perFlowD'),
-        `<span class="st-val">${v}</span>`, 'stats per workflow')).join(''), t('st.grpFlows')) : '')
-  + spanel(
+        `<span class="st-val">${v}</span>`, 'stats per workflow')).join('')) : '')
+  + stCard(t('st.grpClean'),
       srow(t('st.orphans'), t('st.orphansD'),
         orphans.length
           ? `<span class="st-state no"><i></i>${orphans.length} · ${esc(fmtBytes(orphanBytes))}</span>`
           : `<span class="st-state ok"><i></i>${esc(t('st.none'))}</span>`,
         'stats orphan leftover cleanup')
-    , t('st.grpClean'))
-  + foot;
+  ) + foot + `</div>`;
 }
 
 /* ---------------- Agent 能力：两家 CLI 自己的配置面（只读盘点） ----------------
