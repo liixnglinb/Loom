@@ -110,7 +110,7 @@ function drawConsole(){
       <span class="muted">(<span id="wsCount">${WS.length}</span>)</span>
       ${['running','revising','waiting'].includes(u.status)?`<span class="ws-live"><i></i>${esc(t('run.wsLive'))}</span>`:''}
       <span class="spacer"></span>
-      <button class="pf-op" onclick="runRefreshArts(true)">${ico('refresh')}${esc(t('run.refresh'))}</button></div>
+      <button class="pf-op" onclick="runRefreshArts(true)">${ico('refresh')}${esc(t('c.refresh'))}</button></div>
     <div class="pl-list" id="runArts">${wsRows()}</div>
 
     ${composerHtml(u)}`;
@@ -586,7 +586,7 @@ window.runRefreshArts = async function(silent){
   const d = await _api('/api/runs/'+RUN.id+'/artifacts').catch(()=>null);
   if(d) ARTS = d.artifacts||{};
   await wsTick();
-  if(!silent) toast(t('run.refresh'), true);
+  if(!silent) toast(t('c.refresh'), true);
 };
 
 /* 预览一个工作区文件：文本 / markdown（可切原文）、图片、PDF 就地看，

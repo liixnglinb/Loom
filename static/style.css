@@ -229,6 +229,33 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 .hm-mo{width:12px;flex-shrink:0;font-size:var(--fs-meta);color:var(--ink-3);white-space:nowrap}
 .hm-legend{display:flex;align-items:center;justify-content:flex-end;gap:4px;margin-top:8px;
   font-size:var(--fs-meta);color:var(--ink-3)}
+/* 统计页的视图开关（每日/每周/累计、近 7/近 30）。格子保持无圆角，见上面那条注释 */
+.st-seg{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--line);
+  border-radius:var(--r-pill);background:var(--bg-pill)}
+.st-segb{border:0;background:transparent;color:var(--ink-3);cursor:pointer;
+  padding:3px 10px;border-radius:var(--r-pill);font-size:var(--fs-meta);line-height:1.5}
+.st-segb[aria-pressed="true"]{background:var(--bg-raised);color:var(--ink)}
+.st-segb:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.st-cardtop{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.st-rangerow{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin:2px 0 12px;font-size:var(--fs-sub);color:var(--ink-2)}
+.st-chart{display:block;width:100%;height:74px}
+.st-tb{fill:var(--accent)}
+.st-tb0{fill:var(--line-strong)}
+.st-cx{display:flex;justify-content:space-between;margin-top:4px;
+  font-size:var(--fs-micro);color:var(--ink-4)}
+.st-nodata{display:flex;flex-direction:column;align-items:center;gap:4px;padding:22px 10px;
+  border:1px dashed var(--line);border-radius:var(--r-3);background:var(--bg-pill)}
+.st-nodata b{font-size:var(--fs-sub);font-weight:600;color:var(--ink-2)}
+.st-nodata span{font-size:var(--fs-meta);color:var(--ink-4)}
+.st-mrow{display:grid;grid-template-columns:minmax(0,1fr) 2fr auto;align-items:center;
+  gap:10px;padding:5px 0}
+.st-mname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:var(--fs-meta);color:var(--ink-2)}
+.st-mtrack{display:block;height:6px;border-radius:var(--r-pill);background:var(--bg-hover)}
+.st-mtrack i{display:block;height:100%;border-radius:var(--r-pill);background:var(--accent)}
+.st-mval{font-size:var(--fs-meta);color:var(--ink-3);white-space:nowrap}
+.st-foot{display:flex;justify-content:flex-end;margin-top:2px}
 /* ---------- 基础 ---------- */
 *,*::before,*::after{box-sizing:border-box}
 html{font-size:calc(13px * var(--text-scale))}
@@ -406,9 +433,13 @@ code{font-family:var(--font-mono);font-size:.92em}
 .sb-pdot.no{background:var(--bad)}
 
 /* ---------- 悬停提示 ---------- */
-.ff-tip{position:fixed;z-index:95;max-width:264px;padding:5px 10px;border-radius:var(--r-pill);
+.ff-tip{position:fixed;z-index:95;max-width:264px;padding:5px 10px;
+  /* 以前是 --r-pill：单行侧栏提示没问题，但热力图那行提示是两行，
+     胶囊半径会变成 21px 的圆头，框不住第二行。统一改成 --r-3。 */
+  border-radius:var(--r-3);
   background:var(--bg-float);border:1px solid var(--line-strong);box-shadow:var(--shadow-pop);
   color:var(--ink);font-size:var(--fs-meta);line-height:1.45;pointer-events:none;
+  white-space:pre-line;                              /* 热力图那两行提示靠换行分栏 */
   animation:tipIn .12s var(--ease) both}
 .ff-tip[hidden]{display:none}
 @keyframes tipIn{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:none}}

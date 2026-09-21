@@ -163,7 +163,6 @@ def test_orphan_scan_covers_every_run_not_just_the_window(dbsession, fresh_runs,
     """孤儿工作区=有目录没记录。以前拿 list_runs 的前 500 条当"全部记录"，
     第 501 条的现场就被当成孤儿报出来 —— 那一栏旁边可是"清理"的语义。
     这里把窗口打成空，判定必须仍然认得这些 id。"""
-    real = db.list_runs
     dbsession.create_run("run-keepme001", "p", steps=[])
     (workspaces / "run-keepme001").mkdir(parents=True, exist_ok=True)
     dbsession.create_run("run-keepme002", "p", steps=[])
@@ -173,3 +172,49 @@ def test_orphan_scan_covers_every_run_not_just_the_window(dbsession, fresh_runs,
     assert "run-keepme001" not in names and "run-keepme002" not in names
     (workspaces / "run-keepme001").rmdir()
     (workspaces / "run-keepme002").rmdir()
+
+
+def test_daily_buckets_carry_turns_and_tools(dbsession, fresh_runs):
+    """悬停卡片要写"多少轮消息"，那个数只能从每步 meta.turns 归到当天。
+    以前 daily 只有 tokens/steps，卡片就只能报一半。"""
+    today = date.today().isoformat()
+    steps = [{"key": "a", "status": "done", "model_used": "claude-sonnet-4-5",
+              "meta": {"tokens": {"in": 10, "out": 5, "total": 15}, "turns": 3,
+                       "tools": 7, "day": today, "engine": "claude"}}]
+    db.create_run("run-daily-turns", "p", "t", steps)
+    db.update_run("run-daily-turns", status="done", steps=steps)
+    d = runner.usage_stats()["daily"][today]
+    assert d["turns"] == 3 and d["tools"] == 7
+    assert d["tokens"] == 15 and d["steps"] == 1
+
+
+def test_by_model_buckets_engine_and_model_apart(dbsession, fresh_runs):
+    """模型用量那张卡按 引擎 + 模型 分桶。没注入端点的步骤 model 是空串 ——
+    "沿用 CLI 自身配置"是给人看的标签，不该进接口。"""
+    today = date.today().isoformat()
+    steps = [
+        {"key": "a", "status": "done", "meta": {"tokens": {"total": 100}, "turns": 2,
+                                                "day": today, "engine": "claude",
+                                                "model": "claude-sonnet-4-5"}},
+        {"key": "b", "status": "done", "meta": {"tokens": {"total": 40}, "turns": 1,
+                                                "day": today, "engine": "codex"},
+         "model_used": "（沿用 CLI 自身配置）"},
+        {"key": "c", "status": "done", "meta": {"tokens": {"total": 7}, "turns": 1,
+                                                "day": today, "engine": "codex",
+                                                "model": "gpt-5-codex"}},
+    ]
+    db.create_run("run-by-model", "p", "t", steps)
+    db.update_run("run-by-model", status="done", steps=steps)
+    bm = runner.usage_stats()["by_model"]
+    by = {(b["engine"], b["model"]): b for b in bm}
+    assert by[("claude", "claude-sonnet-4-5")]["tokens"] == 100
+    assert by[("codex", "")]["steps"] == 1 and by[("codex", "")]["turns"] == 1
+    assert by[("codex", "gpt-5-codex")]["tokens"] == 7
+    assert sum(b["tokens"] for b in bm) == 147
+
+
+def test_step_meta_records_the_model(dbsession):
+    """新跑的步骤必须把模型名留在 meta 里，否则模型用量只能靠那句人读的标签倒推。"""
+    import inspect
+    src = inspect.getsource(runner)
+    assert '"model": conf["model"]' in src, "step.meta 里没有 model 这个键"

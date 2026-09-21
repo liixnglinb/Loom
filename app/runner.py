@@ -32,6 +32,9 @@ _ROLE_HINT = {
     "editor": "你是本步的修订者：按评审意见逐条修复，改文件本体并复验。",
 }
 _RUN_STATUS = ("pending", "running", "done", "failed", "cancelled", "revising")
+# 步骤没注入端点时给运行台看的那句话。它是标签，不是模型名 ——
+# 统计按模型分桶时要把它还原成空串，否则接口里会混进一句中文当键。
+_NO_MODEL_HINT = "（沿用 CLI 自身配置）"
 
 
 def _norm_run_id(rid: str) -> str | None:
@@ -291,6 +294,7 @@ def usage_stats() -> dict:
             turns += int(m.get("turns") or 0)
     tok = {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, "reason": 0, "total": 0}
     daily: dict = {}
+    by_model: dict = {}
     peak_dur = 0
     for r in runs:
         for st in (r.get("steps") or []):
@@ -307,10 +311,28 @@ def usage_stats() -> dict:
                 n = sum(v for k in ("in", "out", "cache_read", "cache_write")
                         if isinstance((v := t.get(k)), int))
             tok["total"] += n
+            s_turns = int(m.get("turns") or 0)
+            s_tools = int(m.get("tools") or 0)
             if day:
-                d = daily.setdefault(day, {"tokens": 0, "steps": 0})
+                d = daily.setdefault(day, {"tokens": 0, "steps": 0, "turns": 0, "tools": 0})
                 d["tokens"] += n
                 d["steps"] += 1
+                d["turns"] += s_turns
+                d["tools"] += s_tools
+            # 模型用量按「引擎 + 模型」分桶。老步骤的 meta 里没有 model，退回 step.model_used，
+            # 但那句给人看的标签要还原成空串 —— 接口里不该出现中文标签当键。
+            model = str(m.get("model") or "")
+            if not model:
+                used = str(st.get("model_used") or "")
+                model = "" if used == _NO_MODEL_HINT else used
+            eng = str(m.get("engine") or st.get("engine_used") or "")
+            b = by_model.setdefault((eng, model), {"engine": eng, "model": model,
+                                                   "tokens": 0, "turns": 0, "steps": 0,
+                                                   "cost_usd": 0.0})
+            b["tokens"] += n
+            b["turns"] += s_turns
+            b["steps"] += 1
+            b["cost_usd"] += float(m.get("cost_usd") or 0)
             peak_dur = max(peak_dur, int(m.get("duration_ms") or 0))
     streak_now, streak_best = _streaks(daily)
     ws_bytes, ws_dirs = workspace_bytes()
@@ -327,6 +349,7 @@ def usage_stats() -> dict:
         "tokens_total": tok["total"],
         "peak_step_ms": peak_dur,
         "daily": dict(sorted(daily.items())),
+        "by_model": sorted(by_model.values(), key=lambda x: (-x["tokens"], x["engine"])),
         "peak_day": max(daily.items(), key=lambda kv: kv[1]["tokens"])[0] if daily else "",
         "peak_day_tokens": max((d["tokens"] for d in daily.values()), default=0),
         "streak_now": streak_now,
@@ -621,7 +644,7 @@ def _run_step(run: dict, idx: int, bus: RunBus, extra_instruction: str = "") -> 
         sys_arg = system_text
 
     step["engine_used"] = conf["engine"]
-    step["model_used"] = conf["model"] or "（沿用 CLI 自身配置）"
+    step["model_used"] = conf["model"] or _NO_MODEL_HINT
     step["started_at"] = time.strftime("%H:%M:%S")
     step["trace"] = []
     if conf.get("warn"):
@@ -668,7 +691,7 @@ def _run_step(run: dict, idx: int, bus: RunBus, extra_instruction: str = "") -> 
                      "text": f"智能体未落盘 {out_name}，已按最终回答代写"})
     meta = {"tools": res["tools"], "turns": res["turns"],
             "duration_ms": res["duration_ms"], "cost_usd": res["cost_usd"],
-            "engine": res["engine"],
+            "engine": res["engine"], "model": conf["model"],
             "tokens": res.get("tokens") or {},
             "day": time.strftime("%Y-%m-%d"),
             "log": Path(res["log"]).name if res.get("log") else ""}

@@ -126,6 +126,8 @@ function showTip(el){
   const rail = document.documentElement.dataset.sidebar==='collapsed' && el.closest('.sidebar');
   let left = rail ? r.right + 8 : r.left;
   let top  = rail ? r.top + r.height/2 - b.height/2 : r.bottom + 6;
+  // 贴底的那一排（热力图最后一行）往下放就出屏了，翻到格子上方
+  if (!rail && top + b.height > window.innerHeight - 8) top = r.top - b.height - 6;
   left = Math.max(8, Math.min(left, window.innerWidth - b.width - 8));
   top  = Math.max(8, Math.min(top, window.innerHeight - b.height - 8));
   tip.style.left = left + 'px'; tip.style.top = top + 'px';
@@ -915,44 +917,134 @@ function fmtTok(n){
 }
 /* 热力图：一格一天，按列铺、每列 7 格。起始补空格把日期对齐到周日，
    否则格子会随数据量左右错位，看不出周节律。 */
-function tokenHeat(daily){
-  const DAYS = 182, rows = [];
-  const today = new Date(); today.setHours(0,0,0,0);
-  const start = new Date(today); start.setDate(start.getDate() - (DAYS - 1));
+/* 统计页的两个视图开关只作用于这一分区，不写进外观通道（那是要落库的全局偏好），
+   所以刷新页面回到默认。切档与切范围都只重渲染这块，不重新拉接口。 */
+let ST_MODE = 'day';
+let ST_RANGE = 7;
+const HM_WEEKS = 52;        /* 52 列 × 15px 节距 = 780，正好铺满设置页那张卡的宽度。
+                               锚点取"今天那一周的周日"往回数 51 周，列数恒定 52；
+                               以前按天数换算再补一周，非周日收尾时会多出第 53 列把网格顶出卡片。 */
+
+const stSeg = (opts, cur, fn) => `<div class="st-seg" role="group">`
+  + opts.map(([v, l]) => `<button type="button" class="st-segb"
+      aria-pressed="${v === cur ? 'true' : 'false'}" onclick="${fn}('${v}')">${esc(l)}</button>`)
+      .join('') + `</div>`;
+
+const hmKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+function stDateLong(iso){
+  const p = iso.split('-');
+  return (window.APP && window.APP.lang) === 'en'
+    ? `${t('mon.'+(+p[1]-1))} ${+p[2]}, ${p[0]}`
+    : `${p[0]}年${+p[1]}月${+p[2]}日`;
+}
+
+/* 三档共用同一套格子，只有读数不同 —— 周视图塌成一行反而看不出周节律，所以整列同色。
+   后端按本地日期入库（time.strftime("%Y-%m-%d")），这里绝不能用 toISOString ——
+   那是 UTC，UTC+8 下每格都会读成前一天，"今天"永远是空的。 */
+function hmValues(daily, mode){
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const start = new Date(today); start.setDate(start.getDate() - (HM_WEEKS - 1) * 7);
   start.setDate(start.getDate() - start.getDay());
-  const vals = Object.values(daily||{}).map(d=>d.tokens||0).filter(v=>v>0).sort((a,b)=>a-b);
-  const q = f => vals.length ? vals[Math.min(vals.length-1, Math.floor(vals.length*f))] : 0;
-  const t1 = q(.25), t2 = q(.5), t3 = q(.75), mx = vals[vals.length-1] || 0;
-  const lvl = v => !v ? 0 : v<=t1 ? 1 : v<=t2 ? 2 : v<=t3 ? 3 : 4;
-  // 后端按本地日期入库（time.strftime("%Y-%m-%d")），这里绝不能用 toISOString ——
-  // 那是 UTC，UTC+8 下每格都会读成前一天，"今天"永远是空的。
-  const dkey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  const axis = [];
-  let lastM = -1;
-  for (let w = 0; w*7 < DAYS + 7; w++){
-    let cells = '';
+  const cols = [];
+  for (let w = 0; w < HM_WEEKS; w++){
+    const one = [];
     for (let i = 0; i < 7; i++){
       const d = new Date(start); d.setDate(d.getDate() + w*7 + i);
-      if (d > today){ cells += '<i class="hm-cell hm-out"></i>'; continue; }
-      const iso = dkey(d);
-      const v = ((daily||{})[iso]||{}).tokens || 0;
-      cells += `<i class="hm-cell ${'hm-l' + lvl(v)}" title="${esc(iso)} · ${fmtTok(v)}"></i>`;
+      one.push(d > today ? null : hmKey(d));
     }
-    rows.push(`<div class="hm-col">${cells}</div>`);
-    // 月份轴和列在同一个循环里产出。以前是两套循环各数各的，
-    // 27 对 27 只是巧合，谁动一边轴就会整体错位。
-    const sun = new Date(start); sun.setDate(sun.getDate() + w*7);
-    const mo = sun.getMonth();
-    axis.push(mo !== lastM ? `<span class="hm-mo">${esc(t('mon.'+mo))}</span>` : '<span class="hm-mo"></span>');
-    if (mo !== lastM) lastM = mo;
+    cols.push(one);
   }
+  const day = {}, week = {}, cum = {};
+  let run = 0;
+  cols.forEach(one => {
+    let wk = 0;
+    one.forEach(iso => { if(!iso) return;
+      const v = ((daily||{})[iso]||{}).tokens || 0;
+      day[iso] = v; wk += v; run += v; cum[iso] = run; });
+    one.forEach(iso => { if(iso) week[iso] = wk; });
+  });
+  return { cols, val: mode === 'week' ? week : mode === 'cum' ? cum : day };
+}
+
+function tokenHeat(daily, mode){
+  const m = mode || 'day';
+  const hv = hmValues(daily, m);
+  const cols = hv.cols, val = hv.val;
+  const vals = Object.values(val).filter(v => v > 0).sort((a, b) => a - b);
+  const q = f => vals.length ? vals[Math.min(vals.length-1, Math.floor(vals.length*f))] : 0;
+  const t1 = q(.25), t2 = q(.5), t3 = q(.75);
+  const lvl = v => !v ? 0 : v <= t1 ? 1 : v <= t2 ? 2 : v <= t3 ? 3 : 4;
+  const grid = cols.map(one => '<div class="hm-col">' + one.map(iso => {
+    if (!iso) return '<i class="hm-cell hm-out"></i>';
+    const v = val[iso] || 0, e = (daily||{})[iso] || {};
+    // 悬停走自研提示：原生 title 有一秒延迟、样式跟系统、而且只能一行。
+    // 两行之间用 &#10; 分隔 —— 属性值里的裸换行会被归一化成空格。
+    const l1 = m === 'week' ? `${stDateLong(one[0])} – ${stDateLong(one[6] || one[0])}` : stDateLong(iso);
+    const l2 = m === 'cum' ? `${esc(t('st.cumTo'))} ${fmtTok(v)} tokens`
+                           : `${fmtTok(v)} tokens · ${e.turns || 0} ${esc(t('st.msgs'))}`;
+    return `<i class="hm-cell ${'hm-l'+lvl(v)}" data-tip-any="1" data-tip="${esc(l1)}&#10;${l2}"></i>`;
+  }).join('') + '</div>').join('');
+  // 月份轴和列在同一个循环里产出。以前是两套循环各数各的，
+  // 27 对 27 只是巧合，谁动一边轴就会整体错位。
+  // 标签槽只有 12px（文字靠 nowrap 溢出），所以两档之间至少隔两列才放得下 ——
+  // 一年里唯一撞车的就是窗口起点：9 月中开、下一周就跨进 10 月。
+  const axis = []; let lastM = -1, lastCol = -9;
+  cols.forEach((one, w) => {
+    const sun = one[0];
+    const mo = sun ? +sun.split('-')[1] - 1 : -1;
+    if (sun && mo !== lastM && w - lastCol >= 2){
+      axis.push(`<span class="hm-mo">${esc(t('mon.'+mo))}</span>`);
+      lastM = mo; lastCol = w;
+    } else axis.push('<span class="hm-mo"></span>');
+  });
   // 网格和轴必须在同一个横向滚动容器里，否则网格一滚，轴留在原地就对不上列了
-  return `<div class="hm-wrap"><div class="hm-grid">${rows.join('')}</div>
+  return `<div class="hm-wrap"><div class="hm-grid">${grid}</div>
       <div class="hm-axis">${axis.join('')}</div></div>
     <div class="hm-legend"><span>${esc(t('st.less'))}</span>
-      ${[0,1,2,3,4].map(i=>`<i class="hm-cell ${'hm-l'+i}"></i>`).join('')}
+      ${[0,1,2,3,4].map(i => `<i class="hm-cell ${'hm-l'+i}"></i>`).join('')}
       <span>${esc(t('st.more'))}</span></div>`;
 }
+
+function stNoData(){
+  return `<div class="st-nodata"><b>${esc(t('st.noData'))}</b>
+    <span>${esc(t('st.noDataD'))}</span></div>`;
+}
+
+/* 手写 SVG 柱状：不引图表库（无构建步骤 + 离线跑），viewBox 归一到 100×46 由 CSS 拉宽 */
+function stTrend(daily, range){
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const days = [];
+  for (let i = range - 1; i >= 0; i--){ const d = new Date(today); d.setDate(d.getDate() - i); days.push(hmKey(d)); }
+  const vals = days.map(k => ((daily||{})[k]||{}).tokens || 0);
+  if (!vals.some(v => v > 0)) return stNoData();
+  const mx = Math.max.apply(null, vals.concat([1]));
+  const bw = 100 / days.length;
+  const bars = days.map((k, i) => {
+    const h = vals[i] > 0 ? Math.max(1.6, 46 * vals[i] / mx) : 0.8;
+    return `<rect class="${vals[i] > 0 ? 'st-tb' : 'st-tb0'}" x="${(i*bw + bw*0.16).toFixed(2)}" `
+      + `y="${(46-h).toFixed(2)}" width="${(bw*0.68).toFixed(2)}" height="${h.toFixed(2)}"></rect>`;
+  }).join('');
+  return `<svg class="st-chart" viewBox="0 0 100 46" preserveAspectRatio="none" role="img" `
+    + `aria-label="${esc(t('st.trendAria'))}">${bars}</svg>`
+    + `<div class="st-cx"><span>${esc(stDateLong(days[0]))}</span>`
+    + `<span>${esc(stDateLong(days[days.length-1]))}</span></div>`;
+}
+
+function stModels(list){
+  const rows = (list || []).filter(b => b && (b.tokens || b.steps));
+  if (!rows.length) return stNoData();
+  const mx = Math.max.apply(null, rows.map(b => b.tokens || 0).concat([1]));
+  const total = rows.reduce((a, b) => a + (b.tokens || 0), 0) || 1;
+  return rows.map(b => `<div class="st-mrow">
+      <span class="st-mname mono">${esc((b.engine || '?') + ' · ' + (b.model || t('st.noModelInjected')))}</span>
+      <span class="st-mtrack"><i style="width:${Math.max(1, (b.tokens||0)/mx*100).toFixed(1)}%"></i></span>
+      <span class="st-mval">${esc(fmtTok(b.tokens))} · ${Math.round((b.tokens||0)/total*100)}%</span></div>`).join('');
+}
+
+const stGrpLabel = () => ST_MODE === 'week' ? t('st.heatGrpWeek')
+  : ST_MODE === 'cum' ? t('st.heatGrpCum') : t('st.heatGrp');
+
 
 function secStats(){
   const s = ST.stats || {};
@@ -969,9 +1061,21 @@ function secStats(){
     <div><b>${s.streak_best||0}</b><span>${esc(t('st.streakBest'))}</span></div>
   </div>`;
   const heat = spanel(
-      `<div class="hm-title">${esc(t('st.heat'))}</div>` + tokenHeat(s.daily || {}),
-    t('st.heatGrp'));
-  return strip + heat + spanel(
+      `<div class="st-cardtop"><div class="hm-title">${esc(t('st.heat'))}</div>`
+        + stSeg([['day', t('st.modeDay')], ['week', t('st.modeWeek')], ['cum', t('st.modeCum')]],
+                ST_MODE, 'stSetMode') + `</div>`
+      + tokenHeat(s.daily || {}, ST_MODE),
+    stGrpLabel());
+  const rangeRow = `<div class="st-rangerow"><span>${esc(t('st.range'))}</span>`
+    + stSeg([['7', t('st.last7')], ['30', t('st.last30')]], String(ST_RANGE), 'stSetRange')
+    + `</div>`;
+  const trend = spanel(
+      `<div class="hm-title">${esc(t('st.trend'))}</div>` + stTrend(s.daily || {}, ST_RANGE),
+    t('st.grpTrend'));
+  const models = spanel(
+      `<div class="hm-title">${esc(t('st.models'))}</div>` + stModels(s.by_model),
+    t('st.grpModels'));
+  const usage = spanel(
       srow(t('st.runs'), t('st.runsD',{done:bs.done||0, failed:bs.failed||0,
           running:(bs.running||0)+(bs.revising||0), waiting:bs.waiting||0,
           cancelled:bs.cancelled||0}),
@@ -994,7 +1098,10 @@ function secStats(){
         `<span class="st-val">${esc(fmtTok(tk.reason))}</span>`, 'token reasoning thought')
     + srow(t('st.disk'), t('st.diskD',{n:s.workspaces||0}),
         `<span class="st-val">${esc(fmtBytes(s.workspace_bytes))}</span>`, 'stats disk bytes workspace')
-    , t('st.grpUsage'))
+    , t('st.grpUsage'));
+  const foot = `<div class="st-foot"><button class="st-btn" onclick="stReload()">`
+    + `${ico('refresh')}${esc(t('c.refresh'))}</button></div>`;
+  return `<div id="stStats">` + strip + heat + rangeRow + trend + models + usage
   + (pw.length ? spanel(
       pw.map(([k,v])=>srow(esc(k), t('st.perFlowD'),
         `<span class="st-val">${v}</span>`, 'stats per workflow')).join(''), t('st.grpFlows')) : '')
@@ -1004,8 +1111,25 @@ function secStats(){
           ? `<span class="st-state no"><i></i>${orphans.length} · ${esc(fmtBytes(orphanBytes))}</span>`
           : `<span class="st-state ok"><i></i>${esc(t('st.none'))}</span>`,
         'stats orphan leftover cleanup')
-    , t('st.grpClean'));
+    , t('st.grpClean'))
+  + foot + `</div>`;
 }
+
+/* 只换这一块：切档、切范围、刷新都不走整页重渲染（那会重新拉八个接口并丢掉滚动位置） */
+function stRepaint(){
+  const host = document.getElementById('stStats');
+  if (!host){ renderSettings(SET_SECTION); return; }
+  host.outerHTML = secStats();
+  if (SET_Q.trim()) applySearch();
+}
+window.stSetMode = function(v){ ST_MODE = v; stRepaint(); };
+window.stSetRange = function(v){ ST_RANGE = +v || 7; stRepaint(); };
+window.stReload = async function(){
+  const st = await api('/api/stats').catch(()=>null);
+  if (st) ST.stats = st;
+  stRepaint();
+  toast(t('st.reloaded'), true);
+};
 
 function secAbout(){
   const ready = ST.agents.filter(a=>a.found).map(a=>t('eng.'+a.engine));
