@@ -10,9 +10,7 @@ const esc = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','
 const _api = (u,o) => fetch(u,o).then(r=>r.json());
 const _post = (u,b) => _api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
 const toast = (m,ok) => window.ffToast(m,ok);
-const _lockScroll = on => { document.body.style.overflow = on?'hidden':''; };
 const ART_URL = (runId,name) => '/api/runs/'+encodeURIComponent(runId)+'/artifacts/'+encodeURI(name);
-const jsq = s => String(s??'').replace(/\\/g,'\\\\').replace(/"/g,'&quot;').replace(/'/g,"\\'");
 const dur = ms => { const s=Math.round((ms||0)/1000);
   return s<60 ? s+'s' : t('run.durLong',{m:Math.floor(s/60), s:s%60}); };
 

@@ -434,3 +434,14 @@ def test_handler_globals_allowlist_is_not_stale():
     _, used = _handler_globals()
     stale = {n for n in HOST_GLOBALS if n not in used and n not in EXPR_WORDS}
     assert stale == set(), f"HOST_GLOBALS 里这些名字已经没人用了：{sorted(stale)}"
+
+
+@pytest.mark.skipif(__import__("shutil").which("node") is None, reason="本机没有 node")
+def test_every_static_script_actually_parses():
+    """上面那些契约全靠正则扫源码，看不见语法错误。真踩过一次：把 Python 的
+    "相邻字符串自动相连"当成 JS 写进字典，设置页整个白屏（t is not a function），
+    而几百条测试一条都不红。语法这一关只能交给 JS 引擎自己判。"""
+    import subprocess
+    for f in JS_FILES:
+        r = subprocess.run(["node", "--check", str(f)], capture_output=True, text=True)
+        assert r.returncode == 0, f"{f.name} 过不了 node --check：{r.stderr[:400]}"

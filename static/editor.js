@@ -20,8 +20,6 @@ async function _api(path, opts){
 function _post(path, data){ return _api(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data||{})}); }
 function _put(path, data){ return _api(path, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data||{})}); }
 function _del(path){ return _api(path, {method:'DELETE'}); }
-function _lockScroll(on){ document.body.style.overflow = on?'hidden':''; }
-
 /* ---------------- 数据 ---------------- */
 let PL_TPLS = [];
 let PL_SKILLS = [];

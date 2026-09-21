@@ -239,6 +239,7 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 .st-cardtop{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
 .st-rangerow{display:flex;align-items:center;justify-content:space-between;gap:10px;
   margin:2px 0 12px;font-size:var(--fs-sub);color:var(--ink-2)}
+.st-note{font-size:var(--fs-meta);line-height:1.6;color:var(--ink-4)}
 .st-chart{display:block;width:100%;height:74px}
 .st-tb{fill:var(--accent)}
 .st-tb0{fill:var(--line-strong)}

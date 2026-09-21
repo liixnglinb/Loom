@@ -16,7 +16,7 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
-from . import agents, db, llm, paths, pipelines, runner, updater
+from . import agents, cli_inventory, db, llm, paths, pipelines, runner, updater
 
 app = FastAPI(title="Loom 织流")
 
@@ -750,7 +750,8 @@ def save_agents(b: EngineIn):
 
 
 @app.post("/api/reveal")
-def reveal_dir(which: str = "data", run_id: str = "", file: str = ""):
+def reveal_dir(which: str = "data", run_id: str = "", file: str = "",
+             engine: str = "", key: str = ""):
     """在资源管理器里打开本机目录。只认白名单键，或数据库里真实存在的一次运行 ——
     路径一律由 runner 拼，绝不接受调用方直接给的目录。"""
     import subprocess
@@ -762,6 +763,13 @@ def reveal_dir(which: str = "data", run_id: str = "", file: str = ""):
         except FileNotFoundError:
             return JSONResponse({"detail": "文件不存在"}, 404)
         args = ["explorer", f"/select,{target}"] if file else ["explorer", str(target)]
+    elif (which or "").strip() == "agent":
+        # 两家 CLI 的目录：路径由 cli_inventory 自己算，调用方只能挑引擎和类目键。
+        # 这里绝不 mkdir —— 那是用户机器上别人的配置面，没有就是没有。
+        d = cli_inventory.reveal_path(engine, key)
+        if not d:
+            return JSONResponse({"detail": "这台机器上没有这一项"}, 404)
+        args = ["explorer", str(d)]
     else:
         targets = {"data": paths.DATA_DIR, "skills": paths.USER_SKILLS_DIR,
                    "workspaces": paths.WORKSPACES_DIR}
@@ -775,6 +783,33 @@ def reveal_dir(which: str = "data", run_id: str = "", file: str = ""):
     except Exception as e:
         return JSONResponse({"detail": f"打开失败：{e}"}, 500)
     return {"ok": True}
+
+
+@app.get("/api/agents/capabilities")
+def agent_capabilities():
+    """两家 CLI 自己的配置面（记忆/技能/命令/子智能体/MCP/钩子/插件）。
+
+    只读，且只回名字、条数和路径 —— 那些文件里就是真密钥
+    （~/.claude/settings.json 的 env、~/.codex/config.toml 的 bearer token）。
+    要改请走各自的官方入口，Loom 不做第二套配置编辑器。"""
+    return cli_inventory.scan()
+
+
+@app.get("/api/agents/capabilities/{engine}/{key}")
+def cap_preview(engine: str, key: str):
+    """预览一份用户自己写的 markdown（记忆 / 技能 / 命令 / 子智能体）。"""
+    d = cli_inventory.preview_text(engine, key)
+    if not d:
+        return JSONResponse({"detail": "没有这一项"}, 404)
+    return d
+
+
+@app.get("/api/agents/capabilities/{engine}/{key}/{name}")
+def cap_preview_named(engine: str, key: str, name: str):
+    d = cli_inventory.preview_text(engine, key, name)
+    if not d:
+        return JSONResponse({"detail": "没有这一项"}, 404)
+    return d
 
 
 @app.get("/api/stats")

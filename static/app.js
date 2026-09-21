@@ -10,6 +10,12 @@
 const $ = s => document.querySelector(s);
 const t = window.t;
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+/* 往内联事件里塞字符串参数要转义两次（HTML 属性 + JS 字面量）；弹窗打开时锁背景滚动。
+   这两个原来在 editor.js / run.js 各有一份，现在统一从这里走。 */
+const jsq = s => String(s==null?'':s).replace(/\\/g,'\\\\').replace(/"/g,'&quot;').replace(/'/g,"\\'");
+window.jsq = jsq;
+const _lockScroll = on => { document.body.style.overflow = on ? 'hidden' : ''; };
+window._lockScroll = _lockScroll;
 
 async function api(path, opts){
   const r = await fetch(path, opts);
@@ -55,7 +61,7 @@ const ST = { agents:[], defaultEngine:'',
              claudeCli:'', codexCli:'', paths:{}, sandboxOptions:[],
              agentTimeout:'2700', codexSandbox:'workspace-write', effortOptions:['auto'],
              reasoningEffort:'auto', stepRetry:'0', autoContinue:'0',
-             skills:[], flows:[], runs:[], version:'' };
+             skills:[], flows:[], runs:[], caps:null, version:'' };
 window.ST = ST;
 
 const RUN_ST = () => ({pending:t('st.pending'), running:t('st.running'), waiting:t('st.waiting'),
@@ -588,7 +594,7 @@ const SET_SECTIONS = [
   {grp:'set.grp.pref', items:[['appearance','set.appearance','appearance'],
                               ['shortcuts','set.shortcuts','keyboard']]},
   {grp:'set.grp.exec', items:[['engines','set.engines','agent'],['presets','set.presets','api'],
-                              ['runtime','set.runtime','runtime']]},
+                              ['runtime','set.runtime','runtime'],['caps','set.caps','layers']]},
   {grp:'set.grp.data', items:[['dirs','set.dirs','folder'],['stats','set.stats','chart'],
                               ['update','set.update','download'],['about','set.about','info']]},
 ];
@@ -1101,7 +1107,7 @@ function secStats(){
     , t('st.grpUsage'));
   const foot = `<div class="st-foot"><button class="st-btn" onclick="stReload()">`
     + `${ico('refresh')}${esc(t('c.refresh'))}</button></div>`;
-  return `<div id="stStats">` + strip + heat + rangeRow + trend + models + usage
+  return strip + heat + rangeRow + trend + models + usage
   + (pw.length ? spanel(
       pw.map(([k,v])=>srow(esc(k), t('st.perFlowD'),
         `<span class="st-val">${v}</span>`, 'stats per workflow')).join(''), t('st.grpFlows')) : '')
@@ -1112,22 +1118,98 @@ function secStats(){
           : `<span class="st-state ok"><i></i>${esc(t('st.none'))}</span>`,
         'stats orphan leftover cleanup')
     , t('st.grpClean'))
-  + foot + `</div>`;
+  + foot;
 }
 
-/* 只换这一块：切档、切范围、刷新都不走整页重渲染（那会重新拉八个接口并丢掉滚动位置） */
-function stRepaint(){
-  const host = document.getElementById('stStats');
+/* ---------------- Agent 能力：两家 CLI 自己的配置面（只读盘点） ----------------
+   只回名字与条数：那些文件里就是真密钥（settings.json 的 env、config.toml 的 bearer
+   token），所以 mcp / hooks / plugins 连预览口都不开。改动请走各自的官方入口。 */
+let CAPS_ENGINE = '';
+const capsEngine = () => CAPS_ENGINE || ST.defaultEngine || 'claude';
+const CAPS_PREVIEW = {memory:1, skills:1, commands:1, agents:1};
+
+function secCaps(){
+  const eng = capsEngine();
+  const d = (ST.caps || {})[eng] || {items: []};
+  const head = `<div class="st-block"><div class="st-panel">
+      <div class="st-cardtop"><div class="hm-title">${esc(t('caps.title'))}</div>`
+    + stSeg([['claude', t('eng.claude')], ['codex', t('eng.codex')]], eng, 'capsSetEngine')
+    + `</div><div class="st-note">${esc(t('caps.note'))}</div></div></div>`;
+  return head + (d.items || []).map(it => {
+    const label = t('caps.' + it.key);
+    const open = it.found
+      ? `<button class="st-btn" onclick="capsOpen('${jsq(eng)}','${jsq(it.key)}')">`
+        + esc(t('dir.open')) + `</button>` : '';
+    let rows;
+    if (!it.count){
+      rows = srow(label, t('caps.none') + ' · ' + it.path, '', 'capabilities none cli ' + label);
+    } else if (CAPS_PREVIEW[it.key]){
+      rows = it.entries.map(e => srow(esc(e.name), fmtBytes(e.bytes) + ' · ' + it.path,
+        `<button class="st-btn" onclick="capsView('${jsq(eng)}','${jsq(it.key)}','${jsq(e.name)}')">`
+        + esc(t('c.view')) + `</button>`, 'capabilities ' + label)).join('');
+    } else {
+      rows = it.entries.map(e => srow(esc(e.name), t('caps.nameOnly'), '',
+                                      'capabilities ' + label)).join('');
+    }
+    return spanel(rows, label, open);
+  }).join('');
+}
+
+window.capsSetEngine = function(v){ CAPS_ENGINE = v; secRepaint('caps'); };
+window.capsOpen = async function(eng, key){
+  const url = '/api/reveal?which=agent&engine=' + encodeURIComponent(eng)
+            + '&key=' + encodeURIComponent(key);
+  const r = await post(url).catch(e => ({detail: String(e)}));
+  if (r && r.detail) toast(r.detail);
+};
+window.capsView = async function(eng, key, name){
+  const url = '/api/agents/capabilities/' + encodeURIComponent(eng) + '/'
+            + encodeURIComponent(key) + (name ? '/' + encodeURIComponent(name) : '');
+  const d = await api(url).catch(e => ({detail: String((e && e.message) || e)}));
+  if (d.detail){ toast(d.detail); return; }
+  _lockScroll(true);
+  const root = document.createElement('div');
+  root.id = 'capsViewRoot';
+  root.innerHTML = `<div class="modal open" onclick="if(event.target===this)capsClose()">
+    <div class="modal-box sk-view-modal">
+      <div class="modal-top"><div class="pv-head"><h3>${esc(name || key)}</h3>
+        <span class="muted-sm mono">${esc(d.path)}</span></div>
+        <button class="modal-x" onclick="capsClose()">×</button></div>
+      <div class="sk-view-body"><div class="ws-md">${window.mdToHtml(d.text || '')}</div>
+        ${d.truncated ? `<div class="st-note">${esc(t('caps.truncated'))}</div>` : ''}</div>
+      <div class="sk-view-foot"><span class="spacer"></span>
+        <button class="btn btn-ghost btn-sm" onclick="capsClose()">${esc(t('c.close'))}</button>
+      </div></div></div>`;
+  document.body.appendChild(root);
+};
+window.capsClose = function(){
+  const r = document.getElementById('capsViewRoot');
+  if (r) r.remove();
+  _lockScroll(false);
+};
+
+/* 只重渲染当前这一块：切档、切范围、刷新、换引擎都走这里 ——
+   整页重渲染会重新拉那八个接口，还会把滚动位置还回顶部。
+   搜索结果态下分区在 [data-sec] 里，标题得一起补回去。 */
+function secRepaint(id){
+  const inSearch = !!(id && id !== SET_SECTION);
+  const host = inSearch ? document.querySelector('#stBody [data-sec="' + id + '"]')
+                        : document.getElementById('stSec');
   if (!host){ renderSettings(SET_SECTION); return; }
-  host.outerHTML = secStats();
+  const sec = id || SET_SECTION;
+  host.innerHTML = (inSearch ? `<div class="st-h2">${esc(secTitle(sec))}</div>` : '')
+    + sectionBody(sec);
+  // 页头那枚 chip 在 #stSec 外面，只换分区它会留下上一次的读数（切引擎后还写着旧引擎）
+  const chip = document.querySelector('.st-hchip');
+  if (chip && SEC_CHIP[sec]) chip.textContent = String(SEC_CHIP[sec]() || '');
   if (SET_Q.trim()) applySearch();
 }
-window.stSetMode = function(v){ ST_MODE = v; stRepaint(); };
-window.stSetRange = function(v){ ST_RANGE = +v || 7; stRepaint(); };
+window.stSetMode = function(v){ ST_MODE = v; secRepaint('stats'); };
+window.stSetRange = function(v){ ST_RANGE = +v || 7; secRepaint('stats'); };
 window.stReload = async function(){
   const st = await api('/api/stats').catch(()=>null);
   if (st) ST.stats = st;
-  stRepaint();
+  secRepaint('stats');
   toast(t('st.reloaded'), true);
 };
 
@@ -1164,7 +1246,7 @@ window.checkNow = async function(){
 };
 
 const SEC_RENDER = {appearance:secAppearance, engines:secEngines, presets:secPresets,
-                    runtime:secRuntime, dirs:secDirs,
+                    runtime:secRuntime, caps:secCaps, dirs:secDirs,
                     shortcuts:secShortcuts, stats:secStats, update:secUpdate, about:secAbout};
 const SEC_FLAT = () => SET_SECTIONS.flatMap(g=>g.items);
 /* 页头那枚 chip 只报"这一屏现在生效的是什么"，且只挂有真实数据源的分区 ——
@@ -1173,6 +1255,7 @@ const SEC_CHIP = {
   appearance: () => t('ap.theme.'+(window.APP.theme || 'dark')),
   engines: () => { const a = ST.agents || []; const f = a.filter(x=>x.found).length;
                    return f ? t('set.chipEngines',{n:f}) : t('set.chipNone'); },
+  caps: () => t('eng.' + capsEngine()),
   update: () => ST.version ? 'v' + ST.version : '',
   about:  () => ST.version ? 'v' + ST.version : '',
 };
@@ -1191,7 +1274,7 @@ function settingsMain(){
       ${chip?`<span class="st-hchip">${esc(chip)}</span>`:''}
       ${sub?`<div class="st-hsub">${esc(sub)}</div>`:''}</div>` : '';
   return `<div class="st-h1">${esc(secTitle(SET_SECTION))}</div>
-    ${meta}${sectionBody(SET_SECTION)}`;
+    ${meta}<div id="stSec">${sectionBody(SET_SECTION)}</div>`;
 }
 function sectionBody(id){ return (SEC_RENDER[id]||secAppearance)(); }
 
@@ -1199,7 +1282,7 @@ function sectionBody(id){ return (SEC_RENDER[id]||secAppearance)(); }
 window.renderSettings = async function(section){
   viewLoading();
   if(section && section!=='settings') SET_SECTION = section;
-  const [r, ag, sk, pl, rn, hp, up, st] = await Promise.all([
+  const [r, ag, sk, pl, rn, hp, up, st, cp] = await Promise.all([
     api('/api/providers').catch(()=>({presets:[],default:null})),
     api('/api/agents').catch(()=>null),
     api('/api/skills').catch(()=>({skills:[]})),
@@ -1208,8 +1291,9 @@ window.renderSettings = async function(section){
     api('/api/health').catch(()=>({})),
     api('/api/update').catch(()=>null),
     api('/api/stats').catch(()=>null),
+    api('/api/agents/capabilities').catch(()=>null),
   ]);
-  ST.update = up || null; ST.stats = st || null;
+  ST.update = up || null; ST.stats = st || null; ST.caps = cp || null;
   PRESETS = r.presets||[];   // ST 里不再镜像一份：清单只有 PRESETS 这一个消费者
   ST.skills = sk.skills||[]; ST.flows = pl.pipelines||[]; ST.runs = rn.runs||[];
   if(ag){
