@@ -3,6 +3,7 @@
 
 这三条本次会话靠一次性脚本临时验过，回归靠肉眼守不住。
 """
+import json
 import re
 from pathlib import Path
 
@@ -540,3 +541,75 @@ def test_task_modal_checkpoint_hint_follows_the_picked_flow():
     assert "tkMeta" in body.group(1), "tkHint 不再刷新检查点提示"
     assert 'id="tkMeta"' in APP_JS, "检查点提示没有挂载点"
     assert "TK_CPS" in APP_JS, "检查点计数表没了"
+
+
+# ==================== 照参考实现（开源的 zai-org/ZCode）对齐的六条 ====================
+# 这几处是 2026-09-22 读到 ZCode 真源码之后改的。以前只能对着截图量像素，
+# 量不出"分档怎么算、填格往哪个方向、层级谁压谁"这类行为，所以只能靠断言钉住。
+
+def test_heatmap_buckets_are_peak_relative_and_weeks_fill_bottom_up():
+    """分位数分档会让每个轻活日都落在 1~2 档，一整年看过去永远满屏有色，
+    恰好抹掉"哪天是我最好的一天"这个信号；周/累计档整列铺同一档也会被读成
+    "这周每天都这么多"。所以：档位对峰值取比，填格自下而上。"""
+    assert "Math.min(4, Math.max(1, Math.ceil(v / mx * 4)))" in APP_JS, "热力图分档不再按峰值等比"
+    assert "Math.ceil(cv / mx * 7)" in APP_JS, "周/累计档不再按峰值算填几格"
+    assert "i >= 7 - fill" in APP_JS, "填格方向反了（应当自下而上：周日在顶）"
+    for gone in ("q(.25)", "q(.5)", "q(.75)"):
+        assert gone not in APP_JS, f"分位数分档又回来了：{gone}"
+
+
+def test_heatmap_ramp_mixes_in_oklab_into_a_solid_surface():
+    """srgb 插值在低百分比上偏灰，四档前密后疏；混 transparent 会让格子随卡片底色变，
+    明暗两套下深浅不等价。混进 --bg-sunken（也就是 0 档那格的实色）才接得上。"""
+    for pct, n in ((18, 1), (36, 2), (58, 3), (82, 4)):
+        frag = f".hm-l{n}{{background:color-mix(in oklab, var(--accent) {pct}%, var(--bg-sunken))}}"
+        assert frag in CSS, f"色阶第 {n} 档被改动：{frag}"
+    assert "in srgb, var(--accent)" not in CSS, "srgb 混色又回来了"
+
+
+def test_z_index_goes_through_the_scale_and_orders_menu_on_top():
+    """裸数字写 z-index 迟早撞车：以前提示(95)压在菜单(80)上，⋯ 一开，
+    上一格留下的提示就糊在菜单第一项上。顺序规定是"正在操作的那层在最上"。"""
+    assert CSS.count("z-index:") == CSS.count("z-index:var(--z-"),         "有 z-index 没走 --z-* 刻度"
+    tok = dict(re.findall(r"--z-([a-z]+):([0-9]+);", CSS))
+    want = ["sticky", "composer", "float", "modal", "toast", "tip", "menu"]
+    assert set(tok) == set(want), f"层叠刻度变了：{sorted(tok)}"
+    vals = [int(tok[k]) for k in want]
+    assert vals == sorted(vals), f"层级顺序不是递增的：{dict(zip(want, vals))}"
+
+
+def test_row_actions_survive_devices_without_hover():
+    """⋯ 和行内按钮原本只认 :hover —— 触屏/平板模式压根没有 hover 这回事，
+    等于把动作对这类设备整个藏掉。"""
+    assert "@media (hover:none){.sb-more{display:inline-flex}.pl-row-ops{opacity:1}}" in CSS,         "没有 hover 的设备上行内动作不可达"
+
+
+def test_pinyin_initial_table_actually_resolves():
+    """搜索键拼的是"原文 + 首字母"，表错了不会报错、只会搜不到 ——
+    所以让 JS 引擎真把表跑一遍，而不是断言那串字符还在。"""
+    import subprocess
+    js = ("const s=require('fs').readFileSync(process.argv[1],'utf8');"
+          "const g=s.match(/const PY_GROUPS = \"([^\"]+)\";/)[1];"
+          "const m={};g.split('|').forEach(x=>{const i=x.indexOf(':');"
+          "for(const c of x.slice(i+1)) m[c]=x.slice(0,i).toLowerCase();});"
+          "const w=JSON.parse(process.argv[2]);"
+          "console.log(JSON.stringify(w.map(x=>[...x].map(c=>m[c]||'?').join(''))));")
+    words = ["模型", "外观", "语言", "主题", "统计", "设置", "运行", "引擎", "密钥", "归档", "工作流"]
+    want = ["mx", "wg", "yy", "zt", "tj", "sz", "yx", "yq", "my", "gd", "gzl"]
+    r = subprocess.run(["node", "-e", js, str(STATIC_DIR / "app.js"), json.dumps(words)],
+                       capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stderr[:400]
+    assert json.loads(r.stdout) == want, r.stdout[:200]
+    # 无 .st-row 的卡靠这份元素清单取标题文案；统计页的卡标题是 .st-pttl，
+    # 漏了它这六张卡就对搜索完全隐形（"mxy" 搜不到「模型用量」）。
+    frag = "querySelectorAll('.st-label,.hm-title,.spv-title,.st-pttl,.st-t,.st-d')"
+    assert frag in APP_JS, f"搜索兜底的标题清单变了：{frag}"
+
+
+def test_chart_palette_has_six_slots_and_merges_only_past_six():
+    """六条模型以内全画 —— 第 7 档没颜色了，但"六条 + 其他"那种只剩一个
+    "其他"的图例更难看。合并的触发条件是超过六条，切成 5 具名 + 其他。"""
+    assert "const CHART_N = 6;" in APP_JS, "分类色档数变了，--chart-* 得同步"
+    assert CSS.count("--chart-6:") == 2, "--chart-6 必须明暗各一份"
+    assert ".st-c6{background:var(--chart-6)}" in CSS and ".st-s6{stroke:var(--chart-6)}" in CSS
+    assert "rows.length > CHART_N ? CHART_N - 1 : rows.length" in APP_JS,         "合并规则不再是「超过六条才并」"

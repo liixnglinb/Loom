@@ -40,11 +40,12 @@
   --accent-soft:#EAF1FD;
   --accent-line:rgba(47,111,228,.34);
   --on-accent:#FFFFFF;
-  /* 分类色板：只给趋势图的线与环形图的扇区用。第一档跟着 --accent 的蓝，
-     后面四档是数据用的绿/紫/红/橙 —— 不参与主题强调色切换，
-     否则两张图会随强调色一起变，读者以为数据变了。 */
+  /* 分类色板：只给趋势图的线与环形图的扇区用。六档各自独立取色，一律不跟
+     --accent —— 参考实现里第一档原本复用品牌色，结果它那套纯黑/纯白主题下
+     整条线直接消失；我们这边换强调色时两张图会一起变，读者以为数据动了。
+     色相按 蓝→绿→紫→红→橙→青 排，相邻两档在明度和色相上都拉开距离。 */
   --chart-1:#2F6FE4; --chart-2:#2FA35F; --chart-3:#7A5AF8;
-  --chart-4:#E0483D; --chart-5:#E08A1E;
+  --chart-4:#E0483D; --chart-5:#E08A1E; --chart-6:#0E9AA7;
   --on-solid:#FFFFFF;   /* 实色填充（报错 / 成功）上的文字；暗色那套另给近黑，见下 */
 
   --good:#1A8B4C;   --good-soft:#E9F5EE;
@@ -76,6 +77,17 @@
   --slide:.14s var(--ease);
   --shadow-pop:0 16px 40px -12px rgba(0,0,0,.18),0 2px 6px -2px rgba(0,0,0,.08);
   --shadow-composer:0 1px 2px rgba(0,0,0,.05),0 8px 24px -12px rgba(0,0,0,.14);
+
+  /* 层叠刻度：谁压谁只看这张表，别在规则里拍脑袋写数字。
+     顺序是"用户正在操作的那一层在最上"—— 菜单 > 悬停提示 > toast > 弹窗。
+     以前提示(95)压在菜单(80)上：⋯ 一开，上一格留下的提示就糊在菜单第一项上。 */
+  --z-sticky:1;      /* 运行台那条工具栏 */
+  --z-composer:30;   /* 贴在输入区的 composer */
+  --z-float:40;      /* 进程卡、窄屏抽屉这类贴边浮层 */
+  --z-modal:60;      /* 对话框遮罩 */
+  --z-toast:80;      /* 一次性回执 */
+  --z-tip:90;        /* 自研 tooltip */
+  --z-menu:100;      /* 所有菜单：.ff-menu / .pc-menu / 侧栏底部弹层 */
 
   --font-ui:"MiSansWeb","MiSans",-apple-system,"Segoe UI",system-ui,"PingFang SC","Microsoft YaHei UI","Hiragino Sans GB",sans-serif;
   --font-mono:ui-monospace,"Cascadia Code","JetBrains Mono","SFMono-Regular",Consolas,Menlo,monospace;
@@ -129,7 +141,7 @@ html[data-theme="dark"]{
   --accent-line:rgba(77,139,247,.45);
   --on-accent:#0A1425;
   --chart-1:#4D8BF7; --chart-2:#4CC77E; --chart-3:#9B87FF;
-  --chart-4:#FF6B5E; --chart-5:#F0A840;
+  --chart-4:#FF6B5E; --chart-5:#F0A840; --chart-6:#3FC8D4;
   --on-solid:#0E1512;   /* 暗色这套 good/bad 偏亮，白字只有 2.5:1；改近黑后 7.4 / 5.8 */
 
   --good:#4EB77C;   --good-soft:rgba(78,183,124,.13);
@@ -237,10 +249,14 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 .hm-cell{display:block;width:12px;height:12px;background:var(--bg-sunken);
   box-shadow:inset 0 0 0 1px var(--line-soft)}
 .hm-out{background:transparent;box-shadow:none}
-.hm-l1{background:color-mix(in srgb, var(--accent) 15%, transparent)}
-.hm-l2{background:color-mix(in srgb, var(--accent) 32%, transparent)}
-.hm-l3{background:color-mix(in srgb, var(--accent) 54%, transparent)}
-.hm-l4{background:color-mix(in srgb, var(--accent) 80%, transparent)}
+/* 色阶混进 --bg-sunken（也就是 0 档那格的实色）而不是 transparent：
+   混 transparent 的话格子颜色会随卡片底色变，明暗两套下深浅并不等价。
+   用 oklab 而不是 srgb —— srgb 插值在低百分比上偏灰，四档看着前密后疏。
+   百分比取参考实现的 18/36/58/82（它也是按峰值等比分四档，档位含义一致）。 */
+.hm-l1{background:color-mix(in oklab, var(--accent) 18%, var(--bg-sunken))}
+.hm-l2{background:color-mix(in oklab, var(--accent) 36%, var(--bg-sunken))}
+.hm-l3{background:color-mix(in oklab, var(--accent) 58%, var(--bg-sunken))}
+.hm-l4{background:color-mix(in oklab, var(--accent) 82%, var(--bg-sunken))}
 .hm-axis{display:flex;gap:2px;margin-top:15px}
 .hm-mo{width:12px;flex-shrink:0;font-size:var(--fs-meta);color:var(--ink-3);white-space:nowrap}
 /* 统计页的视图开关（每日/每周/累计、近 7/近 30）。格子保持无圆角，见上面那条注释 */
@@ -277,10 +293,10 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 .st-base{stroke:var(--line-strong);stroke-width:1}
 .st-c1{background:var(--chart-1)}.st-c2{background:var(--chart-2)}
 .st-c3{background:var(--chart-3)}.st-c4{background:var(--chart-4)}
-.st-c5{background:var(--chart-5)}
+.st-c5{background:var(--chart-5)}.st-c6{background:var(--chart-6)}
 .st-s1{stroke:var(--chart-1)}.st-s2{stroke:var(--chart-2)}
 .st-s3{stroke:var(--chart-3)}.st-s4{stroke:var(--chart-4)}
-.st-s5{stroke:var(--chart-5)}
+.st-s5{stroke:var(--chart-5)}.st-s6{stroke:var(--chart-6)}
 
 /* ---- 模型用量：左边环形，右边清单 ---- */
 /* 标题与内容之间留 19px：参考图量到卡片总高 338，不给这段就只到 315 */
@@ -480,7 +496,7 @@ code{font-family:var(--font-mono);font-size:.92em}
 .sb-fres .sb-empty{padding:14px 10px;text-align:center}
 
 /* 左下角配置浮层 */
-.sb-pop{position:fixed;z-index:70;width:242px;padding:6px;border-radius:var(--r-4);
+.sb-pop{position:fixed;z-index:var(--z-menu);width:242px;padding:6px;border-radius:var(--r-4);
   background:var(--bg-float);border:1px solid var(--line-strong);box-shadow:var(--shadow-pop);
   animation:popIn .13s var(--ease) both}
 @keyframes popIn{from{opacity:0;transform:translateY(6px) scale(.985)}to{opacity:1;transform:none}}
@@ -501,7 +517,7 @@ code{font-family:var(--font-mono);font-size:.92em}
 .sb-pdot.no{background:var(--bad)}
 
 /* ---------- 悬停提示 ---------- */
-.ff-tip{position:fixed;z-index:95;max-width:264px;padding:5px 10px;
+.ff-tip{position:fixed;z-index:var(--z-tip);max-width:264px;padding:5px 10px;
   /* 以前是 --r-pill：单行侧栏提示没问题，但热力图那行提示是两行，
      胶囊半径会变成 21px 的圆头，框不住第二行。统一改成 --r-3。 */
   border-radius:var(--r-3);
@@ -629,6 +645,9 @@ code{font-family:var(--font-mono);font-size:.92em}
 .pl-row-ops{display:flex;align-items:center;gap:4px;flex-shrink:0;opacity:0;transition:opacity var(--slide)}
 /* 键盘走到行内任何一个按钮都要能看见操作，光靠 hover 等于对键盘隐藏 */
 .pl-card-row:hover .pl-row-ops,.pl-card-row:focus-within .pl-row-ops{opacity:1}
+/* 触屏 / 平板模式没有 hover 这回事，只靠 :hover 等于把行内动作对这类设备整个藏掉。
+   参考实现也是这个思路：它把 hover:none 直接算进"要不要挂这个按钮"的条件里。 */
+@media (hover:none){.sb-more{display:inline-flex}.pl-row-ops{opacity:1}}
 .pl-steps-mini{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
 .pl-step-chip{display:inline-block;padding:1px 6px;border-radius:var(--r-1);background:var(--bg-sunken);
   font-size:var(--fs-meta);color:var(--ink-3);white-space:nowrap;max-width:190px;overflow:hidden;text-overflow:ellipsis}
@@ -780,7 +799,7 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
   color:var(--ink-2);font-size:var(--fs-sub);line-height:1.7;white-space:pre-wrap;word-break:break-word}
 
 /* 底部输入面板（Codex composer） */
-.composer{position:sticky;bottom:0;z-index:30;padding:0 24px 18px;pointer-events:none}
+.composer{position:sticky;bottom:0;z-index:var(--z-composer);padding:0 24px 18px;pointer-events:none}
 .composer-inner{pointer-events:auto;max-width:var(--content-w);margin:0 auto;
   background:var(--bg-composer);border:1px solid var(--line);border-radius:var(--r-5);
   box-shadow:var(--shadow-composer);overflow:hidden}
@@ -859,7 +878,7 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
 /* ---------- 转录日志（诊断） ---------- */
 .lg-name{font-family:var(--font-mono);font-size:var(--fs-micro);color:var(--ink-3);font-weight:400;
   min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.lg-bar{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:10px;
+.lg-bar{position:sticky;top:0;z-index:var(--z-sticky);display:flex;align-items:center;gap:10px;
   padding:9px 16px;font-size:var(--fs-meta);color:var(--ink-4);
   background:var(--bg-float);border-bottom:1px solid var(--line-soft)}
 .lg-bar .spacer{flex:1}
@@ -899,7 +918,7 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
 .pv-head{display:flex;align-items:center;gap:9px;min-width:0}
 
 /* ---------- 弹窗 ---------- */
-.modal{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
+.modal{position:fixed;inset:0;z-index:var(--z-modal);display:none;align-items:center;justify-content:center;
   background:rgba(0,0,0,.55);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
 html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .modal.open{display:flex;animation:viewIn .16s var(--ease) both}
@@ -921,7 +940,7 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .sk-view-modal{width:min(920px,94vw);max-height:88vh}
 
 /* ---------- 提示 / 加载 ---------- */
-.toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,14px);z-index:90;padding:8px 15px;
+.toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,14px);z-index:var(--z-toast);padding:8px 15px;
   border-radius:var(--r-pill);background:var(--btn-ink);color:var(--ink-inv);font-size:var(--fs-sub);opacity:0;
   pointer-events:none;box-shadow:var(--shadow-pop);max-width:min(560px,90vw);
   transition:opacity .18s var(--ease),transform .18s var(--ease)}
@@ -960,7 +979,7 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .ff-selw.ff-pill .ff-sv{padding-left:13px}
 .ff-selw.ff-pill .ff-sc{width:26px}
 .ff-selw.ff-pill.open .ff-sel{background:var(--bg-active);border-color:var(--line-strong)}
-.ff-menu{position:fixed;z-index:80;min-width:180px;max-width:min(340px,92vw);max-height:320px;
+.ff-menu{position:fixed;z-index:var(--z-menu);min-width:180px;max-width:min(340px,92vw);max-height:320px;
   overflow-y:auto;padding:5px;border-radius:var(--r-4);background:var(--bg-float);
   border:1px solid var(--line-strong);box-shadow:var(--shadow-pop);animation:popIn .12s var(--ease) both}
 .ff-mi{display:flex;align-items:center;gap:8px;width:100%;padding:9px 11px;border:none;
@@ -1075,7 +1094,7 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
    两态：展开是卡片，收起是一枚自适应宽度的胶囊（不是缩小的卡片）。
    图标按钮静止只有图标，指针落到那个按钮上才把文字标签撑开 —— 每个按钮各自展开，
    所以同一时刻只会有一个标签可见。 */
-.proc-card{position:fixed;z-index:40;top:calc(var(--topbar-h) + 16px);right:22px;width:266px;
+.proc-card{position:fixed;z-index:var(--z-float);top:calc(var(--topbar-h) + 16px);right:22px;width:266px;
   background:var(--bg-float);border:1px solid var(--line-strong);border-radius:var(--r-4);
   box-shadow:var(--shadow-pop);overflow:hidden}
 .proc-card.pill{width:auto;max-width:min(420px,calc(100vw - 44px));display:flex;align-items:center;
@@ -1114,7 +1133,7 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .pp-state.bad{color:var(--bad)}
 .pp-t{font-size:var(--fs-sub);color:var(--ink-2);white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis;min-width:0}
-.pc-menu{position:fixed;z-index:80;min-width:186px;padding:5px;background:var(--bg-float);
+.pc-menu{position:fixed;z-index:var(--z-menu);min-width:186px;padding:5px;background:var(--bg-float);
   border:1px solid var(--line-strong);border-radius:var(--r-4);box-shadow:var(--shadow-pop)}
 .pcm-item{display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;border:none;
   border-radius:var(--r-2);background:transparent;color:var(--ink-2);font-family:inherit;
@@ -1229,7 +1248,7 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 @media (max-width:860px){
   .app{flex-direction:column;height:auto;min-height:100vh}
   .sidebar{width:100%;flex-direction:row;align-items:center;gap:8px;padding:8px 10px;
-    border-right:0;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:40;overflow-x:auto}
+    border-right:0;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:var(--z-float);overflow-x:auto}
   .sb-top,.sb-group,.sb-foot{display:none}
   .sb-scroll{display:flex;flex-direction:row;align-items:center;gap:2px;overflow:visible}
   .sb-nav{flex-direction:row}

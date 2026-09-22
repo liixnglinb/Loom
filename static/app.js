@@ -670,8 +670,22 @@ let SET_SECTION = 'appearance';
 let SET_Q = '';
 let PATH_EDIT = '';
 
+/* 拼音首字母：中文界面上人打的是"mx"，不是"模型"的原文 —— 纯子串匹配命中不了。
+   表只覆盖 ui.js 中文案出现过的 570 个字（离线用 Intl.Collator 的 pinyin 排序生成，
+   生成器不进仓库），表里没有的字直接跳过。全拼要整张字典，为这个搜索框不值当。 */
+const PY_GROUPS = "A:安按案暗|B:本把步边版败保并包编闭别标背不帮遍报表板部贝补绑必变比被|C:程操查此产侧存出错成创除从材拆词持次车策称场测充才参衬尺寸窗彩传超吃残插磁常|D:地的当多档到调单读点打断定掉导带洞段短大动待等订对第端叠都道度电低登代弹但|E:额|F:放份发副返分付方法复符范费风峰服|G:工个更归过观关刚果给告改功高跟挂规管共格感光该各钩官孤供|H:或还回换候击后会含和画核合划户好耗灰黄恢忽唤环活缓话获|J:技记建近件即检继己接将辑角就景交今据结进假夹具胶截经基加见既级机际计捷键局聚焦界间距积旧金兼径几较监|K:库开看可空拷快框宽控口槛考|L:流录来栏留零料理论落里逻漏量浏览了类令列略轮连裸离立另累蓝路力络两链|M:没目们码么每明名面秒描母默模吗密满某门命|N:能内哪囊你那拿|P:匹配跑排批偏盘判|Q:前去起取切强擎清请求确启器区全其契缺浅气抢趋|R:任认入人染日如润容让仍软|S:水设搜索色上是失稍尚始它双删刷时首什试赛数示说少实送输收手束述适随识审生使所受式深缩事树省沙身势他市算思商|T:体台挑条同态停退替天题图提太推头填套添统通特跳听|W:务文物外未完无我问唯为位尾网围万|X:线行新项消下现续序小享绪想些写形先修显渲选需信息型效系性须校响箱协|Y:运与有一已语言引用页由源右样要研原依应也英意预优于约移硬钥云验影阅沿越议域忆亿月义|Z:织智作置在最这址载状正知中装重自直骤钟字执子整至则只止指展早志转终制择主做找暂再准注长窄逐走专折住值周柱占真支之着增";
+const PY_CHAR = {};
+PY_GROUPS.split('|').forEach(gp => {
+  const i = gp.indexOf(':'), L = gp.slice(0, i).toLowerCase();
+  for (const ch of gp.slice(i + 1)) PY_CHAR[ch] = L;
+});
+function pyInit(s){ let r = ''; for (const ch of String(s||'')){ const v = PY_CHAR[ch]; if (v) r += v; } return r; }
+/* 搜索键的唯一出口：原文小写 + 一串首字母，两边拼在同一个 data-k 里，
+   过滤器只看 includes，不需要知道拼音这件事存在。 */
+function kAttr(v){ const t = String(v == null ? '' : v).toLowerCase(); return esc(t + ' ' + pyInit(t)); }
+
 const srow = (title, desc, ctl, extra='') => `
-  <div class="st-row" data-k="${esc(((title||'')+' '+(desc||'')+' '+extra).toLowerCase())}">
+  <div class="st-row" data-k="${kAttr((title||'')+' '+(desc||'')+' '+extra)}">
     <div class="st-row-main"><div class="st-t">${title}</div>
       ${desc?`<div class="st-d">${desc}</div>`:''}</div>
     <div class="st-ctl">${ctl||''}</div>
@@ -686,7 +700,7 @@ const spanel = (rows, label='', actions='') => `
     <div class="st-panel">${rows}</div></div>`;
 /* 标题带说明在上、输入框整行铺开在卡片内；宽度归容器，不用内联 style 凑 */
 const stIn = (title, desc, id, val, ph, saveFn, extra='', mono=true, acts='') => `
-  <div class="st-row" data-k="${esc(((title||'')+' '+(desc||'')+' '+extra).toLowerCase())}">
+  <div class="st-row" data-k="${kAttr((title||'')+' '+(desc||'')+' '+extra)}">
     <div class="st-row-main"><div class="st-t">${title}</div>
       ${desc?`<div class="st-d">${desc}</div>`:''}</div>
     <div class="st-ctl"><button class="st-btn" onclick="${saveFn}">${esc(t('c.save'))}</button>${acts}</div>
@@ -695,7 +709,7 @@ const stIn = (title, desc, id, val, ph, saveFn, extra='', mono=true, acts='') =>
     placeholder="${esc(ph||'')}" value="${esc(val||'')}"></div>`;
 /* 一整块控件（磁贴 / 色板）放不下右侧的，就自己占一行铺在标题下面 */
 const sblk = (title, desc, body, extra='') => `
-  <div class="st-row st-row-col" data-k="${esc(((title||'')+' '+(desc||'')+' '+extra).toLowerCase())}">
+  <div class="st-row st-row-col" data-k="${kAttr((title||'')+' '+(desc||'')+' '+extra)}">
     <div class="st-row-main"><div class="st-t">${title}</div>
       ${desc?`<div class="st-d">${desc}</div>`:''}</div>${body}</div>`;
 /* 设置页的「多选一」：跟 ssel 同一个盒子形状，只是还能带一个参数（语言/引擎按行切换） */
@@ -895,7 +909,7 @@ function secShortcuts(){
     ['Esc', t('sc.close'), t('sc.closeD'), 'g', 'shortcut close escape'],
     ['/', t('sc.search'), t('sc.searchD'), 's', 'shortcut search focus'],
     ['Enter', t('sc.send'), t('sc.sendD'), 'i', 'shortcut send enter revise'],
-  ].map(([k,tt,d,sc,x])=>`<div class="sc-tr" data-k="${esc((tt+' '+k+' '+x+' '+t('sc.scope.'+sc)).toLowerCase())}">
+  ].map(([k,tt,d,sc,x])=>`<div class="sc-tr" data-k="${kAttr(tt+' '+k+' '+x+' '+t('sc.scope.'+sc))}">
       <div class="sc-td"><span class="sc-name">${esc(tt)}</span>
         <span class="sc-desc">${esc(d)}</span></div>
       <div class="sc-td sc-td-k"><span class="st-keys">${k.split(' ').map(skey).join('')}</span></div>
@@ -1062,20 +1076,33 @@ function tokenHeat(daily, mode){
   const m = mode || 'day';
   const hv = hmValues(daily, m);
   const cols = hv.cols, val = hv.val;
-  const vals = Object.values(val).filter(v => v > 0).sort((a, b) => a - b);
-  const q = f => vals.length ? vals[Math.min(vals.length-1, Math.floor(vals.length*f))] : 0;
-  const t1 = q(.25), t2 = q(.5), t3 = q(.75);
-  const lvl = v => !v ? 0 : v <= t1 ? 1 : v <= t2 ? 2 : v <= t3 ? 3 : 4;
-  const grid = cols.map(one => '<div class="hm-col">' + one.map(iso => {
-    if (!iso) return '<i class="hm-cell hm-out"></i>';
-    const v = val[iso] || 0, e = (daily||{})[iso] || {};
-    // 悬停走自研提示：原生 title 有一秒延迟、样式跟系统、而且只能一行。
-    // 两行之间用 &#10; 分隔 —— 属性值里的裸换行会被归一化成空格。
-    const l1 = m === 'week' ? `${stDateLong(one[0])} – ${stDateLong(one[6] || one[0])}` : stDateLong(iso);
-    const l2 = m === 'cum' ? `${esc(t('st.cumTo'))} ${fmtTok(v)} tokens`
-                           : `${fmtTok(v)} tokens · ${e.turns || 0} ${esc(t('st.msgs'))}`;
-    return `<i class="hm-cell ${'hm-l'+lvl(v)}" data-tip-any="1" data-tip="${esc(l1)}&#10;${l2}"></i>`;
-  }).join('') + '</div>').join('');
+  // 分档按峰值等比（ceil(v/max*4)），不用分位数：分位数会把每个轻活日都推到 1~2 档，
+  // 一整年看过去永远"满屏有色"，恰好抹掉了"哪天是我最好的一天"这个唯一信号。
+  let mx = 1;
+  cols.forEach(one => one.forEach(iso => { if (iso) mx = Math.max(mx, val[iso] || 0); }));
+  const lvl = v => !v ? 0 : Math.min(4, Math.max(1, Math.ceil(v / mx * 4)));
+  const colVal = one => { for (let i = one.length - 1; i >= 0; i--){ if (one[i]) return val[one[i]] || 0; } return 0; };
+  const colTurns = one => one.reduce((a, iso) => a + (iso ? ((daily||{})[iso]||{}).turns || 0 : 0), 0);
+  const grid = cols.map(one => {
+    /* 周/累计档整列一个值，格子自下而上填（周日在顶、周六在底）—— 一列就是一根
+       条形图。整列铺同一档会把"这周多少"读成"这周每天都这么多"。 */
+    const cv = m === 'day' ? 0 : colVal(one);
+    const fill = m === 'day' ? 7 : Math.max(cv > 0 ? 1 : 0, Math.ceil(cv / mx * 7));
+    return '<div class="hm-col">' + one.map((iso, i) => {
+      if (!iso) return '<i class="hm-cell hm-out"></i>';
+      const v = val[iso] || 0, e = (daily||{})[iso] || {};
+      const on = m === 'day' || i >= 7 - fill;
+      // 悬停走自研提示：原生 title 有一秒延迟、样式跟系统、而且只能一行。
+      // 两行之间用 &#10; 分隔 —— 属性值里的裸换行会被归一化成空格。
+      const l1 = m === 'week' ? `${stDateLong(one[0])} – ${stDateLong(one[6] || one[0])}` : stDateLong(iso);
+      /* 轮数只能按档求和：后端没有累计轮数序列，累加档里干脆不报这一项，
+         也不要拿"这一天的轮数"配"整周/累计的 token 数"糊在一起。 */
+      const l2 = m === 'cum' ? `${esc(t('st.cumTo'))} ${fmtTok(cv)} tokens`
+             : m === 'week' ? `${fmtTok(cv)} tokens · ${colTurns(one)} ${esc(t('st.msgs'))}`
+             : `${fmtTok(v)} tokens · ${(e.turns || 0)} ${esc(t('st.msgs'))}`;
+      return `<i class="hm-cell ${'hm-l'+(on ? lvl(m === 'day' ? v : cv) : 0)}" data-tip-any="1" data-tip="${esc(l1)}&#10;${l2}"></i>`;
+    }).join('') + '</div>';
+  }).join('');
   // 月份轴和列在同一个循环里产出。以前是两套循环各数各的，
   // 27 对 27 只是巧合，谁动一边轴就会整体错位。
   // 标签槽只有 12px（文字靠 nowrap 溢出），所以两档之间至少隔两列才放得下 ——
@@ -1100,9 +1127,9 @@ function stNoData(){
 }
 
 /* 手写 SVG：这个项目没有构建步骤也不联网，为两张图引一个图表库不值当。
-   配色走 --chart-1..5（分类色，不随强调色变），超过五份的模型并成"其他"，
-   图例、折线、环形、清单四处共用同一份分组结果，免得四张脸对不上。 */
-const CHART_N = 5;
+   配色走 --chart-1..6（分类色，不随强调色变），图例、折线、环形、四处共用
+   同一份分组结果，免得四张脸对不上。 */
+const CHART_N = 6;
 /* 参考图的图例与清单都只写模型名 —— 加上 "claude · " 前缀后五个条目就撑成两行了。
    只有同名模型挂在两个引擎下时才补引擎，否则那一条本来就说不清是谁的。 */
 function stModelNames(rows){
@@ -1115,10 +1142,13 @@ function stModelNames(rows){
 
 function stSeries(byModel){
   const rows = (byModel || []).filter(b => b && (b.tokens || b.steps));
-  const top = rows.slice(0, CHART_N), names = stModelNames(rows);
+  /* 正好六条时六条全画 —— 第 7 档没有颜色了，但"六条 + 其他"那种一行只剩
+     "其他"两个字的图例更难看。所以合并的触发条件是"超过六条"，切成 5 具名 + 其他。 */
+  const split = rows.length > CHART_N ? CHART_N - 1 : rows.length;
+  const top = rows.slice(0, split), names = stModelNames(rows);
   const out = top.map((b, i) => ({
     name: names[i], daily: b.daily || {}, tokens: b.tokens || 0, turns: b.turns || 0}));
-  const rest = rows.slice(CHART_N);
+  const rest = rows.slice(split);
   if (rest.length){
     const d = {};
     rest.forEach(b => { Object.keys(b.daily || {}).forEach(k => { d[k] = (d[k] || 0) + b.daily[k]; }); });
@@ -1464,7 +1494,7 @@ window.renderSettings = async function(section){
 
   const navHtml = SET_SECTIONS.map(g=>`<div class="st-grp">${esc(t(g.grp))}</div>`
     + g.items.map(([id,key,ic])=>`<button type="button" class="st-item ${(!SET_Q&&id===SET_SECTION)?'active':''}"
-        data-nav="${id}" data-k="${esc((t(key)+' '+key).toLowerCase())}" onclick="setGo('${id}')">
+        data-nav="${id}" data-k="${kAttr(t(key)+' '+key)}" onclick="setGo('${id}')">
         ${ico(ic)}<span>${esc(t(key))}</span></button>`).join('')).join('');
 
   const keep = document.querySelector('.st-main');
@@ -1509,9 +1539,10 @@ function applySearch(){
         // 热力图、实时预览这类卡里一行 .st-row 都没有，没法按行过滤。
         // 一律留下是不行的：那样随便敲一串乱码它也算命中，"没有匹配"永远出不来。
         // 折中是拿卡自己的标题文案比一次 —— "token" 命中热力图标题，"zzzz" 谁都不命中。
-        const k = [...bl.querySelectorAll('.st-label,.hm-title,.spv-title,.st-t,.st-d')]
+        // 卡标题用的是 .st-pttl（统计页那六张），漏进这份清单就等于那张卡搜不到。
+        const k = [...bl.querySelectorAll('.st-label,.hm-title,.spv-title,.st-pttl,.st-t,.st-d')]
           .map(e=>e.textContent).join(' ').toLowerCase();
-        const on = !q || k.includes(q);
+        const on = !q || k.includes(q) || pyInit(k).includes(q);
         bl.classList.toggle('st-hidden', !on);
         if(on){ inSec++; hitRows++; }
         return;
