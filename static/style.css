@@ -40,6 +40,11 @@
   --accent-soft:#EAF1FD;
   --accent-line:rgba(47,111,228,.34);
   --on-accent:#FFFFFF;
+  /* 分类色板：只给趋势图的线与环形图的扇区用。第一档跟着 --accent 的蓝，
+     后面四档是数据用的绿/紫/红/橙 —— 不参与主题强调色切换，
+     否则两张图会随强调色一起变，读者以为数据变了。 */
+  --chart-1:#2F6FE4; --chart-2:#2FA35F; --chart-3:#7A5AF8;
+  --chart-4:#E0483D; --chart-5:#E08A1E;
   --on-solid:#FFFFFF;   /* 实色填充（报错 / 成功）上的文字；暗色那套另给近黑，见下 */
 
   --good:#1A8B4C;   --good-soft:#E9F5EE;
@@ -123,6 +128,8 @@ html[data-theme="dark"]{
   --accent-soft:rgba(77,139,247,.15);
   --accent-line:rgba(77,139,247,.45);
   --on-accent:#0A1425;
+  --chart-1:#4D8BF7; --chart-2:#4CC77E; --chart-3:#9B87FF;
+  --chart-4:#FF6B5E; --chart-5:#F0A840;
   --on-solid:#0E1512;   /* 暗色这套 good/bad 偏亮，白字只有 2.5:1；改近黑后 7.4 / 5.8 */
 
   --good:#4EB77C;   --good-soft:rgba(78,183,124,.13);
@@ -251,19 +258,52 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 .st-chart{display:block;width:100%;height:74px}
 .st-tb{fill:var(--accent)}
 .st-tb0{fill:var(--line-strong)}
-.st-cx{display:flex;justify-content:space-between;margin-top:4px;
-  font-size:var(--fs-micro);color:var(--ink-4)}
+/* 两端对齐而不是让首末标签压出去；下面再留 19px —— 参考图量到标签墨迹离卡片
+   底边还有 31px，只靠 padding 会贴到边框上。 */
+.st-cx{display:flex;justify-content:space-between;gap:12px;margin:12px 18px 19px;
+  font-size:var(--fs-meta);color:var(--ink-4);white-space:nowrap}
 .st-nodata{display:flex;flex-direction:column;align-items:center;gap:6px;padding:44px 10px;
   border:1px dashed var(--line);border-radius:var(--r-3);background:var(--bg-pill)}
 .st-nodata b{font-size:var(--fs-body);font-weight:500;color:var(--ink-2)}
 .st-nodata span{font-size:var(--fs-sub);color:var(--ink-4)}
-.st-mrow{display:grid;grid-template-columns:minmax(0,1fr) 2fr auto;align-items:center;
-  gap:10px;padding:5px 0}
-.st-mname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  font-size:var(--fs-meta);color:var(--ink-2)}
-.st-mtrack{display:block;height:6px;border-radius:var(--r-pill);background:var(--bg-hover)}
-.st-mtrack i{display:block;height:100%;border-radius:var(--r-pill);background:var(--accent)}
-.st-mval{font-size:var(--fs-meta);color:var(--ink-3);white-space:nowrap}
+/* ---- 趋势图：多模型多条线 ---- */
+.st-lgd{display:flex;flex-wrap:wrap;gap:8px 18px;padding:0 18px;margin:11px 0 19px}
+.st-lgdi{display:inline-flex;align-items:center;gap:7px;font-size:var(--fs-body);color:var(--ink-2)}
+.st-dot{width:8px;height:8px;border-radius:var(--r-pill);flex:none}
+.st-plot{padding:0 18px}
+.st-lines{display:block;width:100%;height:186px}
+.st-gline{stroke:var(--line);stroke-dasharray:2 4;stroke-width:1}
+.st-line{fill:none;stroke-width:1.7;stroke-linejoin:round;stroke-linecap:round}
+.st-base{stroke:var(--line-strong);stroke-width:1}
+.st-c1{background:var(--chart-1)}.st-c2{background:var(--chart-2)}
+.st-c3{background:var(--chart-3)}.st-c4{background:var(--chart-4)}
+.st-c5{background:var(--chart-5)}
+.st-s1{stroke:var(--chart-1)}.st-s2{stroke:var(--chart-2)}
+.st-s3{stroke:var(--chart-3)}.st-s4{stroke:var(--chart-4)}
+.st-s5{stroke:var(--chart-5)}
+
+/* ---- 模型用量：左边环形，右边清单 ---- */
+/* 标题与内容之间留 19px：参考图量到卡片总高 338，不给这段就只到 315 */
+.st-donutrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);
+  gap:24px;align-items:center;padding:19px 18px 18px}
+.st-donut{position:relative;width:192px;height:192px;margin:0 auto}
+.st-donut svg{display:block;width:100%;height:100%}
+.st-dmid{position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;pointer-events:none}
+.st-dmid b{font-family:var(--font-mono);font-size:var(--fs-stat);font-weight:600;
+  color:var(--ink);line-height:1.4}
+.st-dmid span{font-size:var(--fs-meta);color:var(--ink-4);line-height:1.4}
+.st-mlist{display:flex;flex-direction:column;min-width:0}
+.st-mrow{display:flex;align-items:flex-start;gap:10px;padding:7px 0;
+  border-bottom:1px solid var(--line-soft)}
+.st-mrow:last-child{border-bottom:none}
+.st-mrow .st-dot{margin-top:8px}
+.st-mmain{flex:1;min-width:0}
+.st-mname{font-family:var(--font-mono);font-size:var(--fs-body);color:var(--ink);
+  line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st-msub{font-size:var(--fs-meta);color:var(--ink-4);line-height:1.5}
+.st-mpct{font-size:var(--fs-meta);color:var(--ink-3);white-space:nowrap;
+  line-height:1.5;padding-top:3px}
 .st-foot{display:flex;justify-content:flex-end;margin-top:19px}
 /* ---------- 基础 ---------- */
 *,*::before,*::after{box-sizing:border-box}

@@ -218,3 +218,26 @@ def test_step_meta_records_the_model(dbsession):
     import inspect
     src = inspect.getsource(runner)
     assert '"model": conf["model"]' in src, "step.meta 里没有 model 这个键"
+
+
+def test_model_buckets_carry_a_daily_series(dbsession, fresh_runs):
+    """趋势图要按模型画多条线，所以每个模型桶都得带自己的逐日序列；
+    只有总量的话第二张卡能画，第一张卡画不出来。"""
+    today = date.today().isoformat()
+    yest = (date.today() - timedelta(days=1)).isoformat()
+    steps = [
+        {"key": "a", "status": "done", "meta": {"tokens": {"total": 100}, "turns": 2,
+                                                "day": today, "engine": "claude",
+                                                "model": "m-a"}},
+        {"key": "b", "status": "done", "meta": {"tokens": {"total": 40}, "turns": 1,
+                                                "day": yest, "engine": "claude",
+                                                "model": "m-a"}},
+        {"key": "c", "status": "done", "meta": {"tokens": {"total": 7}, "turns": 1,
+                                                "day": today, "engine": "codex",
+                                                "model": "m-b"}},
+    ]
+    db.create_run("run-series", "p", "t", steps)
+    db.update_run("run-series", status="done", steps=steps)
+    bm = {(b["engine"], b["model"]): b for b in runner.usage_stats()["by_model"]}
+    assert bm[("claude", "m-a")]["daily"] == {today: 100, yest: 40}
+    assert bm[("codex", "m-b")]["daily"] == {today: 7}

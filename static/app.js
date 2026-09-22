@@ -948,6 +948,13 @@ const stSeg = (opts, cur, fn) => `<div class="st-seg" role="group">`
 
 const hmKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
+/* 轴上的刻度不带年份（参考图是 "8月22日"），悬停卡片才带全年 */
+function stDateShort(iso){
+  const p = iso.split('-');
+  return (window.APP && window.APP.lang) === 'en'
+    ? `${t('mon.'+(+p[1]-1))} ${+p[2]}` : `${+p[1]}月${+p[2]}日`;
+}
+
 function stDateLong(iso){
   const p = iso.split('-');
   return (window.APP && window.APP.lang) === 'en'
@@ -1024,37 +1031,118 @@ function stNoData(){
     <span>${esc(t('st.noDataD'))}</span></div>`;
 }
 
-/* 手写 SVG 柱状：不引图表库（无构建步骤 + 离线跑），viewBox 归一到 100×46 由 CSS 拉宽 */
-function stTrend(daily, range){
+/* 手写 SVG：这个项目没有构建步骤也不联网，为两张图引一个图表库不值当。
+   配色走 --chart-1..5（分类色，不随强调色变），超过五份的模型并成"其他"，
+   图例、折线、环形、清单四处共用同一份分组结果，免得四张脸对不上。 */
+const CHART_N = 5;
+/* 参考图的图例与清单都只写模型名 —— 加上 "claude · " 前缀后五个条目就撑成两行了。
+   只有同名模型挂在两个引擎下时才补引擎，否则那一条本来就说不清是谁的。 */
+function stModelNames(rows){
+  const seen = {};
+  rows.forEach(b => { const k = b.model || ''; seen[k] = (seen[k] || 0) + 1; });
+  return rows.map(b => (b.model && seen[b.model] > 1)
+    ? (b.engine || '?') + ' · ' + b.model
+    : (b.model || t('st.noModelInjected')));
+}
+
+function stSeries(byModel){
+  const rows = (byModel || []).filter(b => b && (b.tokens || b.steps));
+  const top = rows.slice(0, CHART_N), names = stModelNames(rows);
+  const out = top.map((b, i) => ({
+    name: names[i], daily: b.daily || {}, tokens: b.tokens || 0, turns: b.turns || 0}));
+  const rest = rows.slice(CHART_N);
+  if (rest.length){
+    const d = {};
+    rest.forEach(b => { Object.keys(b.daily || {}).forEach(k => { d[k] = (d[k] || 0) + b.daily[k]; }); });
+    out.push({name: t('st.others'), daily: d,
+              tokens: rest.reduce((a, b) => a + (b.tokens || 0), 0),
+              turns: rest.reduce((a, b) => a + (b.turns || 0), 0)});
+  }
+  return out;
+}
+
+function stDays(range){
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const days = [];
-  for (let i = range - 1; i >= 0; i--){ const d = new Date(today); d.setDate(d.getDate() - i); days.push(hmKey(d)); }
-  const vals = days.map(k => ((daily||{})[k]||{}).tokens || 0);
-  if (!vals.some(v => v > 0)) return stNoData();
-  const mx = Math.max.apply(null, vals.concat([1]));
-  const bw = 100 / days.length;
-  const bars = days.map((k, i) => {
-    const h = vals[i] > 0 ? Math.max(1.6, 46 * vals[i] / mx) : 0.8;
-    return `<rect class="${vals[i] > 0 ? 'st-tb' : 'st-tb0'}" x="${(i*bw + bw*0.16).toFixed(2)}" `
-      + `y="${(46-h).toFixed(2)}" width="${(bw*0.68).toFixed(2)}" height="${h.toFixed(2)}"></rect>`;
-  }).join('');
-  return `<svg class="st-chart" viewBox="0 0 100 46" preserveAspectRatio="none" role="img" `
-    + `aria-label="${esc(t('st.trendAria'))}">${bars}</svg>`
-    + `<div class="st-cx"><span>${esc(stDateLong(days[0]))}</span>`
-    + `<span>${esc(stDateLong(days[days.length-1]))}</span></div>`;
+  for (let i = range - 1; i >= 0; i--){
+    const d = new Date(today); d.setDate(d.getDate() - i); days.push(hmKey(d));
+  }
+  return days;
 }
 
-function stModels(list){
-  const rows = (list || []).filter(b => b && (b.tokens || b.steps));
+/* 水平控制点的三次曲线：峰是圆的，和参考图那种折角分明的折线不是一回事 */
+function stPath(vals, mx, W, H){
+  const n = vals.length;
+  if (!n) return '';
+  const x = i => n === 1 ? W / 2 : i * (W / (n - 1));
+  const y = v => H - Math.min(H, mx ? H * v / mx : 0);
+  let d = `M${x(0).toFixed(1)},${y(vals[0]).toFixed(1)}`;
+  for (let i = 1; i < n; i++){
+    const cx = ((x(i - 1) + x(i)) / 2).toFixed(1);
+    d += ` C${cx},${y(vals[i-1]).toFixed(1)} ${cx},${y(vals[i]).toFixed(1)} ${x(i).toFixed(1)},${y(vals[i]).toFixed(1)}`;
+  }
+  return d;
+}
+
+function stTrend(byModel, range){
+  const series = stSeries(byModel);
+  const days = stDays(range);
+  const vals = series.map(b => days.map(k => b.daily[k] || 0));
+  const mx = Math.max.apply(null, [1].concat.apply([1], vals));
+  if (!series.some((b, i) => vals[i].some(v => v > 0))) return stNoData();
+  const W = 1000, H = 186;
+  let grid = '';
+  for (let g = 1; g <= 3; g++){
+    const yy = (H * g / 4).toFixed(1);
+    grid += `<line class="st-gline" x1="0" y1="${yy}" x2="${W}" y2="${yy}"></line>`;
+  }
+  grid += `<line class="st-base" x1="0" y1="${H}" x2="${W}" y2="${H}"></line>`;
+  const lines = series.map((b, i) =>
+    `<path class="st-line ${'st-s'+(i % CHART_N + 1)}" vector-effect="non-scaling-stroke" d="${stPath(vals[i], mx, W, H)}"></path>`
+  ).join('');
+  const legend = `<div class="st-lgd">` + series.map((b, i) =>
+    `<span class="st-lgdi"><i class="st-dot ${'st-c'+(i % CHART_N + 1)}"></i>${esc(b.name)}</span>`).join('') +
+    `</div>`;
+  // 首末标签贴绘图区两端（已经跟着卡片留了 18px），再多就压到卡片边框上了
+  const step = Math.max(1, Math.round((days.length - 1) / 6));
+  const ticks = [];
+  for (let i = 0; i < days.length; i += step) ticks.push(days[i]);
+  if (ticks[ticks.length - 1] !== days[days.length - 1]) ticks.push(days[days.length - 1]);
+  return legend + `<div class="st-plot"><svg class="st-lines" viewBox="0 0 ${W} ${H}" `
+    + `preserveAspectRatio="none" role="img" aria-label="${esc(t('st.trendAria'))}">`
+    + grid + lines + `</svg></div>`
+    + `<div class="st-cx">` + ticks.map(k => `<span>${esc(stDateShort(k))}</span>`).join('') + `</div>`;
+}
+
+/* 环形用一圈 <circle> 的 dasharray 拼出来：比手算弧形的 path 短，
+   段与段之间留 1 单位空白，就是参考图上那道细缝。 */
+function stModels(byModel){
+  const rows = stSeries(byModel);
   if (!rows.length) return stNoData();
-  const mx = Math.max.apply(null, rows.map(b => b.tokens || 0).concat([1]));
-  const total = rows.reduce((a, b) => a + (b.tokens || 0), 0) || 1;
-  return rows.map(b => `<div class="st-mrow">
-      <span class="st-mname mono">${esc((b.engine || '?') + ' · ' + (b.model || t('st.noModelInjected')))}</span>
-      <span class="st-mtrack"><i style="width:${Math.max(1, (b.tokens||0)/mx*100).toFixed(1)}%"></i></span>
-      <span class="st-mval">${esc(fmtTok(b.tokens))} · ${Math.round((b.tokens||0)/total*100)}%</span></div>`).join('');
+  const total = rows.reduce((a, b) => a + b.tokens, 0);
+  const R = 79.5, C = 2 * Math.PI * R, D = 96;
+  let acc = 0;
+  const arcs = rows.map((b, i) => {
+    const f = total ? b.tokens / total : 0;
+    const on = Math.max(0, C * f - 1), off = C - on;
+    const el = `<circle class="${'st-s'+(i % CHART_N + 1)}" cx="${D}" cy="${D}" r="${R}" fill="none" `
+      + `stroke-width="33" vector-effect="non-scaling-stroke" `
+      + `stroke-dasharray="${on.toFixed(2)} ${off.toFixed(2)}" `
+      + `stroke-dashoffset="${(-C * acc).toFixed(2)}" transform="rotate(-90 ${D} ${D})"></circle>`;
+    acc += f;
+    return el;
+  }).join('');
+  const donut = `<div class="st-donut"><svg viewBox="0 0 192 192" role="img" `
+    + `aria-label="${esc(t('st.donutAria'))}">${arcs}</svg>`
+    + `<div class="st-dmid"><b>${esc(fmtTok(total))}</b><span>tokens</span></div></div>`;
+  const list = `<div class="st-mlist">` + rows.map((b, i) =>
+    `<div class="st-mrow"><i class="st-dot ${'st-c'+(i % CHART_N + 1)}"></i>`
+    + `<div class="st-mmain"><div class="st-mname">${esc(b.name)}</div>`
+    + `<div class="st-msub">${esc(fmtTok(b.tokens))} tokens</div></div>`
+    + `<span class="st-mpct">${total ? Math.round(b.tokens / total * 100) : 0}%</span></div>`).join('')
+    + `</div>`;
+  return `<div class="st-donutrow">${donut}${list}</div>`;
 }
-
 
 function secStats(){
   const s = ST.stats || {};
@@ -1078,7 +1166,7 @@ function secStats(){
   const rangeRow = `<div class="st-rangerow"><span>${esc(t('st.range'))}</span>`
     + stSeg([['7', t('st.last7')], ['30', t('st.last30')]], String(ST_RANGE), 'stSetRange')
     + `</div>`;
-  const trend = stCard(t('st.trend'), stTrend(s.daily || {}, ST_RANGE));
+  const trend = stCard(t('st.trend'), stTrend(s.by_model, ST_RANGE));
   const models = stCard(t('st.models'), stModels(s.by_model));
   const usage = stCard(t('st.grpUsage'),
       srow(t('st.runs'), t('st.runsD',{done:bs.done||0, failed:bs.failed||0,

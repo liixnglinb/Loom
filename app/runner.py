@@ -328,11 +328,14 @@ def usage_stats() -> dict:
             eng = str(m.get("engine") or st.get("engine_used") or "")
             b = by_model.setdefault((eng, model), {"engine": eng, "model": model,
                                                    "tokens": 0, "turns": 0, "steps": 0,
-                                                   "cost_usd": 0.0})
+                                                   "cost_usd": 0.0, "daily": {}})
             b["tokens"] += n
             b["turns"] += s_turns
             b["steps"] += 1
             b["cost_usd"] += float(m.get("cost_usd") or 0)
+            if day:
+                # 趋势图按模型画多条线，所以每个桶自带逐日序列
+                b["daily"][day] = b["daily"].get(day, 0) + n
             peak_dur = max(peak_dur, int(m.get("duration_ms") or 0))
     streak_now, streak_best = _streaks(daily)
     ws_bytes, ws_dirs = workspace_bytes()
