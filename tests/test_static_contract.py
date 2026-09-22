@@ -524,6 +524,21 @@ def test_action_menu_closes_on_escape_before_the_other_popups():
     assert order[:1] == ["ffMenu"], f"Esc 先关的不是动作菜单：{order[:3]}"
 
 
+def test_geometry_never_uses_rem():
+    """rem 跟着 html{font-size} 走，而那是「文字大小」设置在改的东西。图标、内边距、
+    行高一旦用 rem，选「特大」就等于把整个界面放大 26% —— 这几轮量出来的像素节奏
+    （66 的条卡、14 的节距、15 的轴距）只在默认档成立，而且和「界面缩放」职责重叠。
+    所以：rem 只准出现在 --fs-* 那八档，几何一律 px。"""
+    bad = []
+    for ln in CSS.splitlines():
+        for m in re.finditer(r"([a-zA-Z-]+|--[a-z0-9-]+)\s*:\s*[^;{}\n]*[0-9.]rem[^;{}\n]*", ln):
+            if not m.group(1).startswith("--fs-"):
+                bad.append(m.group(0).strip())
+    assert not bad, f"这些声明又用回 rem 了（几何必须 px）：{bad[:6]}"
+    fs = re.findall(r"--fs-[a-z0-9]+:([0-9.]+rem);", CSS)
+    assert len(fs) == 8 and "1rem" in fs, f"字号刻度应当是 8 档全用 rem，实际：{fs}"
+
+
 def test_archived_flows_stay_visible_in_the_workflows_list():
     """归档只把它们从侧栏那一栏撤走。工作流页要是也跟着藏，人就成了「东西不见了」，
     而且再没有入口把它捞回来 —— 所以行要留着、挂状态牌、⋯ 里给「取消归档」。"""
@@ -626,3 +641,17 @@ def test_chart_palette_has_six_slots_and_merges_only_past_six():
     assert CSS.count("--chart-6:") == 2, "--chart-6 必须明暗各一份"
     assert ".st-c6{background:var(--chart-6)}" in CSS and ".st-s6{stroke:var(--chart-6)}" in CSS
     assert "rows.length > CHART_N ? CHART_N - 1 : rows.length" in APP_JS, "合并规则不再是「超过六条才并」"
+
+
+def test_no_window_handler_without_a_caller():
+    """内联 onclick 只能调挂到 window 上的名字，所以那批函数必须导出；但反方向没人管 ——
+    「把弹层改成首页」时 ✕ 按钮没了，tkHideSugs 就成了没人调的孤儿，几百条测试一条不红。
+    引用数按整个 static/ 加 index.html 算，ffSelect 那种传函数名字符串的也算调用方。"""
+    src = {f.name: f.read_text(encoding="utf-8") for f in JS_FILES}
+    hay = "\n".join(src.values()) + INDEX_HTML
+    dead = []
+    for fname, body in src.items():
+        for m in re.finditer(r"window\.([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function", body):
+            if len(re.findall(r"\b" + re.escape(m.group(1)) + r"\b", hay)) <= 1:
+                dead.append(f"{fname}:{m.group(1)}")
+    assert not dead, f"这些导出的处理函数没有任何调用方：{dead}"

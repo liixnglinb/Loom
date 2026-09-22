@@ -632,7 +632,6 @@ function tkPaintSugs(){
   }).join('');
 }
 window.tkShuffle = function(){ TK_SUG_OFF = (TK_SUG_OFF+3) % TK_SUG_KEYS.length; tkPaintSugs(); };
-window.tkHideSugs = function(){ const b=document.getElementById('tkSugs'); if(b) b.remove(); };
 window.tkUseSug = function(btn){
   const ta = document.getElementById('tkBrief'); if(!ta) return;
   ta.value = btn.textContent.trim(); ta.focus(); tkHint();
@@ -653,7 +652,6 @@ window.taskStart = async function(){
   toast(t('task.started'), true);
   nav.go('run/'+r.run.id);
 };
-window.plRun = async function(name){ taskModal(name); };
 
 /* ================= 设置：Codex 式两栏外壳 ================= */
 const SET_SECTIONS = [
