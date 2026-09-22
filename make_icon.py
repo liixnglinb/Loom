@@ -2,11 +2,11 @@
 """生成 assets/loom.ico 与配套 PNG（和 static/logo.svg 同一套几何数值）。
 
 为什么用代码画而不是转 SVG：本机没有 cairosvg / inkscape，而这个图标只有
-圆角方块 + 圆 + 渐变四样东西，按 SVG 里的坐标复画比引一个渲染依赖更可控。
+圆角方块 + 两个矩形，按 SVG 里的坐标复画比引一个渲染依赖更可控。
 
-小尺寸不是从大图缩出来的。16/20/24 这三档改成按目标像素网格硬对齐来画：
-一张 8~11px 的卡里塞两只眼睛，缩放出来的边会落在像素中间，任务栏上就是一团糊的。
-每档的圆角、卡片、眼睛、圆点都是各自定过整数的，见 SMALL。
+小尺寸不是从大图缩出来的。16/20/24/32/40 各自按目标像素网格硬对齐来画：
+一根 2px 的笔画缩到半像素上，任务栏里就是一条灰边。每档的圆角和笔画宽度
+都是各自定过整数的，见 SMALL。
  ICO 一次写 16/20/24/32/40/48/64/128/256 九档 —— 少了 20/24/40，
 Windows 在 125%/150%/175% 缩放下就没得挑，只能把 32 强行缩成 24，那才是"图标发虚"的主因。
 """
@@ -19,26 +19,27 @@ from PIL import Image, ImageDraw
 BASE = Path(__file__).resolve().parent
 OUT = BASE / "assets"
 SIZE = 1024                      # 大图的画布，圆角边缘靠它才不会锯齿
-TOP = (0x5B, 0x96, 0xF9)
-BOT = (0x2C, 0x62, 0xD6)
-LIGHT = (0xF2, 0xF6, 0xFD)
+# 黑底 + 白字标 L。底不是纯黑而是极浅的自上而下渐变：纯 #000 压在深色任务栏上
+# 会整颗消失，留一点顶亮底暗才有边界。
+TOP = (0x1F, 0x1F, 0x1F)
+BOT = (0x00, 0x00, 0x00)
+LIGHT = (0xFF, 0xFF, 0xFF)
+# 母版几何（viewBox 120）：竖笔 + 横脚两个矩形拼，交集处重叠不会露缝
+STEM = (34, 26, 50, 94)
+FOOT = (34, 78, 88, 94)
 
 ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
 
 # 小尺寸全部按整数像素各自定，坐标是 (x0,y0,x1,y1) 闭区间。
-# 为什么不一律缩放原几何：两只眼睛在 viewBox 里只差 9/120，缩到 32px 就只剩 2.4px，
-# 中间那道"鼻梁"会糊成一整条嘴 —— 小图必须把眼距拉开，这是画法问题不是分辨率问题。
+# 为什么不一律缩放原几何：16px 上母版那 14/120 的笔画只剩 1.87px，落在半个像素上，
+# 任务栏里就是一条灰边。每一档的笔画都取整数（16/20 用 2px，24 用 3px，32/40 用 5~6px），
+# 并且让 L 的包围盒在画布里光学居中（L 左重，所以整体比几何中心略偏右）。
 SMALL = {
-    16: dict(tile_r=3, card=(2, 6, 10, 14), card_r=2,
-             eye=(3, 9, 4, 10), eye2=(8, 9, 9, 10), dot=None),
-    20: dict(tile_r=4, card=(2, 7, 13, 18), card_r=3,
-             eye=(4, 11, 6, 13), eye2=(9, 11, 11, 13), dot=None),
-    24: dict(tile_r=5, card=(3, 9, 15, 21), card_r=4,
-             eye=(5, 13, 7, 15), eye2=(11, 13, 13, 15), dot=(17, 4, 21, 8)),
-    32: dict(tile_r=7, card=(3, 11, 19, 27), card_r=6,
-             eye=(5, 17, 8, 20), eye2=(14, 17, 17, 20), dot=(21, 4, 28, 11)),
-    40: dict(tile_r=9, card=(4, 14, 25, 35), card_r=8,
-             eye=(7, 22, 11, 26), eye2=(18, 22, 22, 26), dot=(26, 5, 35, 14)),
+    16: dict(tile_r=3, stem=(4, 3, 5, 12), foot=(4, 11, 12, 12)),
+    20: dict(tile_r=4, stem=(5, 4, 7, 16), foot=(5, 14, 15, 16)),
+    24: dict(tile_r=5, stem=(6, 4, 9, 19), foot=(6, 16, 18, 19)),
+    32: dict(tile_r=7, stem=(9, 6, 13, 26), foot=(9, 22, 24, 26)),
+    40: dict(tile_r=9, stem=(11, 7, 17, 33), foot=(11, 28, 30, 33)),
 }
 
 
@@ -65,17 +66,9 @@ def build(size: int = SIZE, samples: int = 4) -> Image.Image:
     img.paste(strip, (0, 0), mask)
 
     d = ImageDraw.Draw(img)
-    k = size / 120.0
-    d.rounded_rectangle([12 * k * samples, 42 * k * samples,
-                         (12 + 62) * k * samples, (42 + 62) * k * samples],
-                        radius=22 * k * samples, fill=LIGHT + (255,))
-    # 眼睛取底色的渐变值，视觉上就是"挖穿"，和 SVG 里 fill=url(#loom) 等价
-    hole = grad(71) + (255,)
-    for cx in (31, 55):
-        d.ellipse([(cx - 7.5) * k * samples, (71 - 7.5) * k * samples,
-                   (cx + 7.5) * k * samples, (71 + 7.5) * k * samples], fill=hole)
-    d.ellipse([(93 - 13) * k * samples, (27 - 13) * k * samples,
-               (93 + 13) * k * samples, (27 + 13) * k * samples], fill=LIGHT + (255,))
+    k = size / 120.0 * samples
+    for x0, y0, x1, y1 in (STEM, FOOT):
+        d.rectangle([x0 * k, y0 * k, x1 * k - 1, y1 * k - 1], fill=LIGHT + (255,))
     if samples > 1:
         img = img.resize((size, size), Image.LANCZOS)
     return img
@@ -84,7 +77,7 @@ def build(size: int = SIZE, samples: int = 4) -> Image.Image:
 def build_snapped(n: int) -> Image.Image:
     """小尺寸：外轮廓可以软（那是跟透明背景交界，本来就该有），里面全部硬边、
     全部落在网格上。缩放原几何会同时毁掉这两件事 —— 轮廓带出一圈灰边，
-    五官又全都压在半个像素上。"""
+    笔画又全都压在半个像素上。"""
     g = SMALL[n]
     k = 4
     tile = Image.new("RGBA", (n * k, n * k), (0, 0, 0, 0))
@@ -98,15 +91,8 @@ def build_snapped(n: int) -> Image.Image:
     # 整数倍 BOX 降采样就是纯面积平均，不会像 LANCZOS 那样在轮廓外侧振出一圈灰边
     img = tile.resize((n, n), Image.BOX)
     d = ImageDraw.Draw(img)
-
-    cx0, cy0, cx1, cy1 = g["card"]
-    d.rounded_rectangle([cx0, cy0, cx1, cy1], radius=g["card_r"], fill=LIGHT + (255,))
-    hole = grad((cy0 + cy1 + 1) / 2 * 120 / n) + (255,)
-    for box in (g["eye"], g["eye2"]):
-        if box:
-            d.rectangle(box, fill=hole)
-    if g["dot"]:
-        d.ellipse(list(g["dot"]), fill=LIGHT + (255,))
+    for box in (g["stem"], g["foot"]):
+        d.rectangle(box, fill=LIGHT + (255,))
     return img
 
 
@@ -118,30 +104,19 @@ def render(n: int) -> Image.Image:
 
 
 def svg_snapped(n: int) -> str:
-    """把 SMALL[n] 那套整数几何写成 SVG —— 侧边栏那颗只有 20 CSS px，
-    在 150% 缩放下也就 30 个设备像素，矢量原图 9/120 的眼距会被糊成一条嘴。
-    大图那套原样留在 logo.svg / loom-256.png，这里只是同一张脸的小尺寸版本。"""
+    """把 SMALL[n] 那套整数几何写成 SVG —— 侧边栏那颗只有 20 CSS px，标签页那档
+    在 150% 缩放下约 24 个设备像素，缩放母版会让笔画落在半个像素上。
+    大图那套原样留在 logo.svg，这里只是同一个记号的小尺寸版本。"""
     g = SMALL[n]
-    cx0, cy0, cx1, cy1 = g["card"]
-    eyes = [b for b in (g["eye"], g["eye2"]) if b]
-    hole = grad((cy0 + cy1 + 1) / 2 * 120 / n)
-    body = [
-        f'<rect width="{n}" height="{n}" rx="{g["tile_r"]}" fill="url(#loom)"/>',
-        f'<rect x="{cx0}" y="{cy0}" width="{cx1 - cx0 + 1}" height="{cy1 - cy0 + 1}"'
-        f' rx="{g["card_r"]}" fill="#F2F6FD"/>',
-    ]
-    for x0, y0, x1, y1 in eyes:
-        w, h = x1 - x0 + 1, y1 - y0 + 1
-        body.append(f'<rect x="{x0}" y="{y0}" width="{w}" height="{h}"'
-                    f' rx="{min(w, h) // 2}" fill="rgb{hole}"/>')
-    if g["dot"]:
-        x0, y0, x1, y1 = g["dot"]
-        body.append(f'<circle cx="{(x0 + x1 + 1) / 2:g}" cy="{(y0 + y1 + 1) / 2:g}"'
-                    f' r="{(x1 - x0 + 1) / 2:g}" fill="#F2F6FD"/>')
+    body = [f'<rect width="{n}" height="{n}" rx="{g["tile_r"]}" fill="url(#loom)"/>']
+    for x0, y0, x1, y1 in (g["stem"], g["foot"]):
+        body.append(f'<rect x="{x0}" y="{y0}" width="{x1 - x0 + 1}"'
+                    f' height="{y1 - y0 + 1}" fill="#FFFFFF"/>')
+    parts = body + ['</svg>']
     return ('<svg xmlns="http://www.w3.org/2000/svg" width="{0}" height="{0}" viewBox="0 0 {0} {0}">'
             '<defs><linearGradient id="loom" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="{0}">'
-            '<stop offset="0" stop-color="#5B96F9"/><stop offset="1" stop-color="#2C62D6"/>'
-            '</linearGradient></defs>' + "\n".join(body) + '</svg>').replace("{0}", str(n))
+            '<stop offset="0" stop-color="#1F1F1F"/><stop offset="1" stop-color="#000000"/>'
+            '</linearGradient></defs>').replace("{0}", str(n)) + "".join(parts)
 
 
 def main() -> int:

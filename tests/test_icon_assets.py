@@ -2,7 +2,7 @@
 """图标资产本身的清晰度契约。
 
 这些是"图标看着发虚"真正的守门条件：ico 少了某一档，Windows 在 150% 缩放下
-就会拿 32 强缩成 24；小尺寸里两只眼睛隔得太近，任务栏上就糊成一条嘴。
+就会拿 32 强缩成 24；黑底白字标的竖笔一旦掉到 2 列以下，任务栏上先没的就是它。
 两者都不会被别的测试碰到。
 """
 import io
@@ -46,52 +46,24 @@ def test_ico_declares_every_size_it_actually_carries():
 
 
 @pytest.mark.parametrize("n", [16, 20, 24, 32, 40])
-def test_small_faces_keep_the_two_eyes_apart(n):
-    """沿每一行看卡片内部：必须正好挖出两段洞，且中间隔着 >=2 列卡片色。
-
-    只数"有没有暗像素"是不够的 —— 底板本身也是暗的，所以只在卡片两端之间找洞；
-    眼距太窄时两段洞仍然在，但中间那段短到读不出是两只眼睛。
-    """
-    img = _frames()[n][0]
-    px = img.load()
+def test_small_marks_read_as_an_l(n):
+    """黑底白字标在任务栏上的可读条件：竖笔至少 2 列、横脚至少是竖笔的两倍宽、
+    记号高度占画面一半以上，而且竖笔与横脚左端对齐（否则就成了 T 或 I）。
+    缩略图糊掉通常不是"认不出是 L"，而是竖笔先没 —— 所以盯的是最窄那一行。"""
+    px = _frames()[n][0].load()
 
     def light(x, y):
         r, g, b, a = px[x, y]
         return a >= 40 and r > 200 and g > 200 and b > 200
 
-    def solid(x, y):
-        return px[x, y][3] >= 40
-
-    best = None
-    for y in range(n):
-        run = [x for x in range(n) if light(x, y)]
-        if len(run) < 4:
-            continue
-        holes = [x for x in range(run[0], run[-1] + 1)
-                 if not light(x, y) and solid(x, y)]
-        groups, cur = [], []
-        for x in holes:
-            if cur and x == cur[-1] + 1:
-                cur.append(x)
-            else:
-                if cur:
-                    groups.append(cur)
-                cur = [x]
-        if cur:
-            groups.append(cur)
-        if len(groups) != 2:
-            continue
-        left, right = groups
-        bridge = right[0] - left[-1] - 1
-        if not all(light(x, y) for x in range(left[-1] + 1, right[0])):
-            continue
-        cand = (bridge, min(len(left), len(right)))
-        if best is None or cand > best:
-            best = cand
-    assert best is not None, f"{n}px 上找不到分得开的两只眼睛"
-    bridge, eye_w = best
-    assert bridge >= 2, f"{n}px 两眼之间只剩 {bridge} 列，糊成一条嘴了"
-    assert eye_w >= 2, f"{n}px 眼睛只有 {eye_w} 列，撑不住"
+    rows = [[x for x in range(n) if light(x, y)] for y in range(n)]
+    glyph = [r for r in rows if r]
+    assert len(glyph) >= n * 0.5, f"{n}px 上记号只占 {len(glyph)} 行高，太小了"
+    stem = min(len(r) for r in glyph)
+    foot = max(len(r) for r in glyph)
+    assert stem >= 2, f"{n}px 竖笔只有 {stem} 列，任务栏上会先没"
+    assert foot >= stem * 2, f"{n}px 横脚 {foot} 列 / 竖笔 {stem} 列，读不出是 L"
+    assert glyph[0][0] == glyph[-1][0],         f"{n}px 竖笔左端 {glyph[0][0]} 与横脚左端 {glyph[-1][0]} 不齐"
 
 
 def test_small_favicons_are_exported_for_the_browser_tab():
@@ -117,7 +89,6 @@ def test_generated_small_svg_matches_the_snapped_table():
 
     svg = (STATIC / "logo-sm.svg").read_text(encoding="utf-8")
     g = make_icon.SMALL[20]
-    cx0, cy0, cx1, cy1 = g["card"]
-    assert f'<rect x="{cx0}" y="{cy0}" width="{cx1 - cx0 + 1}" height="{cy1 - cy0 + 1}"' in svg
-    for box in (g["eye"], g["eye2"]):
-        assert f'<rect x="{box[0]}" y="{box[1]}"' in svg
+    for x0, y0, x1, y1 in (g["stem"], g["foot"]):
+        frag = f'<rect x="{x0}" y="{y0}" width="{x1 - x0 + 1}" height="{y1 - y0 + 1}" fill="#FFFFFF"/>'
+        assert frag in svg, f"logo-sm.svg 与 SMALL[20] 漂了，缺：{frag}"

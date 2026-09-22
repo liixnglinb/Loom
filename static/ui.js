@@ -21,7 +21,7 @@ const DICT = {
     'sb.archivedEmpty': '没有归档的流程', 'sb.archivedToast': '已归档「{name}」',
     'sb.unarchivedToast': '已把「{name}」放回项目', 'sb.noRunYet': '这条流程还没有运行过，没有产物可看。',
     'sb.stepsN': '{n} 步', 'sb.toggle': '切换侧边栏',
-    'foot.theme': '外观', 'foot.accent': '强调色', 'foot.lang': '语言', 'foot.engines': '智能体引擎',
+    'foot.theme': '外观', 'foot.lang': '语言', 'foot.engines': '智能体引擎',
     'up.grp': '更新', 'up.url': '更新清单地址', 'up.urlD': '留空即用内置地址（COS 上的 latest.json），下载页读的是同一份',
     'up.urlPh': 'https://…/latest.json', 'up.status': '更新状态', 'up.statusD': '当前版本 v{v}',
     'up.check': '检查更新', 'up.avail': '更新', 'up.ready': '已下载', 'up.failed': '更新失败',
@@ -48,7 +48,6 @@ const DICT = {
     'home.recentEmpty': '还没有运行记录', 'home.engineNone': '智能体未就绪',
 
     /* 工作台（首页） */
-    'task.title': '下一个任务',
     'task.briefPh': '目标、背景、已有材料、想交付成什么样。',
     'tk.greet': '今天要跑哪条流程？', 'tk.cps': '此流程含 {n} 个检查点', 'tk.noCp': '此流程不带检查点',
     'tk.tryThese': '试试这些任务', 'tk.shuffle': '换一批',
@@ -167,8 +166,6 @@ const DICT = {
     'ap.zoom': '界面缩放', 'ap.zoomD': '整页等比缩放，含间距与图标。',
     'ap.width': '内容宽度', 'ap.widthD': '正文列最大宽度，窗口变窄时自动让位。',
     'ap.width.narrow': '窄', 'ap.width.medium': '中', 'ap.width.wide': '宽', 'ap.width.full': '全宽',
-    'ap.accent': '强调色', 'ap.accentD': '选中、焦点、进度与运行中用的彩色；大面积仍是中性灰。',
-    'ap.accent.blue': '电光蓝', 'ap.accent.gold': '旧金黄',
     'ap.grpLang': '语言', 'ap.grpLook': '观感', 'ap.grpPreview': '实时预览',
     'ap.grpSize': '界面尺寸', 'ap.reset': '恢复默认外观', 'ap.resetDone': '外观已恢复默认',
     'ap.pvTitle': '步骤标题', 'ap.pvBody': '智能体把产物写进本次运行的工作区。',
@@ -287,7 +284,7 @@ const DICT = {
     'sb.archivedEmpty': 'No archived workflows', 'sb.archivedToast': 'Archived “{name}”',
     'sb.unarchivedToast': 'Moved “{name}” back to projects', 'sb.noRunYet': 'This workflow has not run yet — nothing to show.',
     'sb.stepsN': '{n} steps', 'sb.toggle': 'Toggle sidebar',
-    'foot.theme': 'Theme', 'foot.accent': 'Accent', 'foot.lang': 'Language', 'foot.engines': 'Agent engines',
+    'foot.theme': 'Theme', 'foot.lang': 'Language', 'foot.engines': 'Agent engines',
     'up.grp': 'Updates', 'up.url': 'Update manifest URL', 'up.urlD': 'Leave empty to use the built-in COS latest.json — the download page reads the same file',
     'up.urlPh': 'https://…/latest.json', 'up.status': 'Update status', 'up.statusD': 'Running v{v}',
     'up.check': 'Check now', 'up.avail': 'Update', 'up.ready': 'Downloaded', 'up.failed': 'Update failed',
@@ -314,7 +311,6 @@ const DICT = {
     'home.recentEmpty': 'No runs yet', 'home.engineNone': 'No agent engine',
 
     /* Bench (home) */
-    'task.title': 'New task',
     'task.briefPh': 'Goal, context, material you already have, what the deliverable should look like.',
     'tk.greet': 'Which workflow should we run?', 'tk.cps': '{n} checkpoints in this workflow', 'tk.noCp': 'No checkpoints in this workflow',
     'tk.tryThese': 'Try these', 'tk.shuffle': 'Shuffle',
@@ -433,8 +429,6 @@ const DICT = {
     'ap.zoom': 'UI zoom', 'ap.zoomD': 'Scales the whole page, spacing and icons included.',
     'ap.width': 'Content width', 'ap.widthD': 'Max width of the text column; yields when the window narrows.',
     'ap.width.narrow': 'Narrow', 'ap.width.medium': 'Medium', 'ap.width.wide': 'Wide', 'ap.width.full': 'Full',
-    'ap.accent': 'Accent', 'ap.accentD': 'Colour for selection, focus, progress and live runs; surfaces stay neutral.',
-    'ap.accent.blue': 'Electric blue', 'ap.accent.gold': 'Legacy gold',
     'ap.grpLang': 'Language', 'ap.grpLook': 'Look', 'ap.grpPreview': 'Live preview',
     'ap.grpSize': 'Interface size', 'ap.reset': 'Reset appearance', 'ap.resetDone': 'Appearance restored to defaults',
     'ap.pvTitle': 'Step title', 'ap.pvBody': 'The agent writes artifacts into this run’s workspace.',
@@ -648,14 +642,13 @@ function t(key, params) {
 }
 
 const THEMES = ['light', 'dark', 'auto'];
-const ACCENTS = ['blue', 'gold'];
 const FONTS = ['default', 'os', 'mono', 'serif'];
 const TEXT_SIZES = { s: 0.92, m: 1, l: 1.12, xl: 1.26 };
 const ZOOMS = { '90%': 0.9, '100%': 1, '110%': 1.1, '125%': 1.25 };
 const WIDTHS = { narrow: '900px', medium: '1180px', wide: '1440px', full: 'none' };
 
 const APP = {
-  lang: 'zh', theme: 'dark', font: 'default', accent: 'blue',
+  lang: 'zh', theme: 'dark', font: 'default',
   textSize: 'm', uiZoom: '100%', contentWidth: 'medium', sidebar: 'expanded',
   procPanel: 'idle',
 };
@@ -668,14 +661,13 @@ function applyAppearance() {
   }
   html.dataset.theme = theme;
   html.dataset.font = APP.font;
-  html.dataset.accent = APP.accent === 'gold' ? 'gold' : 'blue';
   html.dataset.sidebar = APP.sidebar === 'collapsed' ? 'collapsed' : 'expanded';
   html.lang = APP.lang === 'en' ? 'en' : 'zh-CN';
   html.style.setProperty('--text-scale', String(TEXT_SIZES[APP.textSize] || 1));
   html.style.setProperty('--ui-zoom', String(ZOOMS[APP.uiZoom] || 1));
   html.style.setProperty('--content-w', WIDTHS[APP.contentWidth] || '1180px');
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = theme === 'dark' ? '#181818' : '#FFFFFF';
+  if (meta) meta.content = theme === 'dark' ? '#161616' : '#F8F8F8';
   LANG = APP.lang;
   document.title = t('brand.full');
   const bn = document.getElementById('brandName');
@@ -790,5 +782,5 @@ window.setAppearance = setAppearance;
 window.previewAppearance = previewAppearance;
 window.loadAppearance = loadAppearance;
 window.mdToHtml = mdToHtml;
-window.AP_OPTS = { THEMES, FONTS, TEXT_SIZES, ZOOMS, WIDTHS, ACCENTS };
+window.AP_OPTS = { THEMES, FONTS, TEXT_SIZES, ZOOMS, WIDTHS };
 })();

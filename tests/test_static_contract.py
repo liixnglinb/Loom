@@ -205,8 +205,18 @@ def test_appearance_controls_read_from_the_option_maps():
     for key, table in (("textSize", "TEXT_SIZES"), ("uiZoom", "ZOOMS"), ("contentWidth", "WIDTHS")):
         assert f"{key}: () => Object.keys(window.AP_OPTS.{table})" in APP_JS, f"{key} 滑块没走 {table}"
         assert f"'{key}'" in UI_JS, f"loadAppearance 的白名单里没有 {key}"
-    for key in ("THEMES", "ACCENTS"):
-        assert f"window.AP_OPTS.{key}.map" in APP_JS, f"{key} 磁贴/色板没走 AP_OPTS"
+    for key in ("THEMES",):
+        assert f"window.AP_OPTS.{key}.map" in APP_JS, f"{key} 磁贴没走 AP_OPTS"
+
+
+def test_accent_setting_is_gone_for_good():
+    """品牌位交给黑白反转之后，"可换强调色"就没有可换的东西了 —— 留着它是一个
+    拖了没人存的控件。这类"设置项还在、值还落库、代码不再读"的孤儿键以前踩过，
+    所以把退场清单钉死：任何一处复活都要连带改回另外三处。"""
+    for blob, name in ((APP_JS, "app.js"), (UI_JS, "ui.js"),
+                       (INDEX_HTML, "index.html"), (CSS, "style.css")):
+        for token in ("ACCENTS", "apAccent", "ui_accent", 'data-accent', "ap.accent"):
+            assert token not in blob, f"{name} 里又出现了 {token}"
 
 
 APP_JS = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
@@ -230,9 +240,13 @@ def test_router_highlights_the_matching_nav_item():
     nav_ids = set(re.findall(r"\{id:'([\w-]+)',\s*icon:'[\w-]+',\s*label:t\('nav\.", APP_JS))
     assert nav_ids == {"pipelines", "skills", "runs"}, f"导航项变了：{nav_ids}"
     # 工作台已删（和「新建任务」弹层重复）；旧链接 #/home 由路由兜到工作流
-    assert "home" not in nav_ids, "工作台不该再是导航项"
-    assert "renderHome" not in APP_JS, "工作台的渲染代码还在"
-    stray = set(calls.values()) - nav_ids - {"settings"}
+    # 首页回来了，但只作为默认路由：入口是侧栏那颗「新建任务」，不再单列导航项
+    # （2026-09-22 用户要求 composer 直接长在首页，别弹小窗）。
+    assert "home" not in nav_ids, "首页不该是导航项 —— 入口只有「新建任务」那颗"
+    assert "view==='home') await run(window.renderHome" in APP_JS, "首页路由没了"
+    assert "!raw) raw = 'home'" in APP_JS, "默认路由不再是首页"
+    assert 'class="modal open" role="dialog"' not in APP_JS or "taskModalRoot" not in APP_JS, "输入台又退回弹层了"
+    stray = set(calls.values()) - nav_ids - {"settings", "home"}
     assert stray == set(), f"高亮键指向了不存在的导航项：{sorted(stray)}"
 
 
@@ -458,16 +472,11 @@ def test_stats_page_keeps_the_measured_rhythm():
     改回去不会弄坏任何功能，只会悄悄不像 —— 所以只能靠断言钉住。"""
     need = {
         ".st-strip>div{background:var(--bg-panel);padding:9px 10px":
-            "顶部条卡上下 9px（整条量到 66，参考 65）",
-        ".st-strip span{display:block;margin-top:6px;font-size:var(--fs-body)":
-            "数字→标签 6px、标签 13px（参考 13）",
-        ".hm-grid{display:flex;gap:3px 2px}":
-            "横向节距 14 = 12 格 + 2 缝（参考 14.3），52 列才铺得下还留得住两侧内边距",
-        ".hm-axis{display:flex;gap:2px;margin-top:15px}":
-            "网格→月份轴 15px，且轴的节距必须跟格子一致，否则轴会逐列偏掉",
-        ".hm-wrap{overflow-x:auto;padding:0 18px 2px}":
-            "网格与卡片标题同一条左线（18px）",
-        ".st-stats .st-block{margin-bottom:19px}":
+            "顶部条卡上下 9px（整条量到 66，参考 65）", ".st-strip span{display:block;margin-top:6px;font-size:var(--fs-body)":
+            "数字→标签 6px、标签 13px（参考 13）", ".hm-grid{display:flex;gap:3px 2px}":
+            "横向节距 14 = 12 格 + 2 缝（参考 14.3），52 列才铺得下还留得住两侧内边距", ".hm-axis{display:flex;gap:2px;margin-top:15px}":
+            "网格→月份轴 15px，且轴的节距必须跟格子一致，否则轴会逐列偏掉", ".hm-wrap{overflow-x:auto;padding:0 18px 2px}":
+            "网格与卡片标题同一条左线（18px）", ".st-stats .st-block{margin-bottom:19px}":
             "统计页卡片之间 19px（别的分区仍走 28px）",
     }
     for frag, why in need.items():
@@ -558,19 +567,23 @@ def test_heatmap_buckets_are_peak_relative_and_weeks_fill_bottom_up():
         assert gone not in APP_JS, f"分位数分档又回来了：{gone}"
 
 
-def test_heatmap_ramp_mixes_in_oklab_into_a_solid_surface():
+def test_heatmap_ramp_uses_a_fixed_blue_not_the_brand_color():
     """srgb 插值在低百分比上偏灰，四档前密后疏；混 transparent 会让格子随卡片底色变，
-    明暗两套下深浅不等价。混进 --bg-sunken（也就是 0 档那格的实色）才接得上。"""
+    明暗两套下深浅不等价 —— 所以是 oklab 混 --bg-sunken（0 档那格本身）。
+    基色必须是 --chart-1：品牌位 --accent 已经交给黑白反转，跟着它整张热力图会
+    退成灰度图，四档根本读不出来。参考实现的色阶同样是固定蓝（sky-500/400）。"""
     for pct, n in ((18, 1), (36, 2), (58, 3), (82, 4)):
-        frag = f".hm-l{n}{{background:color-mix(in oklab, var(--accent) {pct}%, var(--bg-sunken))}}"
+        frag = f".hm-l{n}{{background:color-mix(in oklab, var(--chart-1) {pct}%, var(--bg-sunken))}}"
         assert frag in CSS, f"色阶第 {n} 档被改动：{frag}"
+        back = f".hm-l{n}{{background:color-mix(in oklab, var(--accent)"
+        assert back not in CSS, f"色阶第 {n} 档又去跟品牌色了"
     assert "in srgb, var(--accent)" not in CSS, "srgb 混色又回来了"
 
 
 def test_z_index_goes_through_the_scale_and_orders_menu_on_top():
     """裸数字写 z-index 迟早撞车：以前提示(95)压在菜单(80)上，⋯ 一开，
     上一格留下的提示就糊在菜单第一项上。顺序规定是"正在操作的那层在最上"。"""
-    assert CSS.count("z-index:") == CSS.count("z-index:var(--z-"),         "有 z-index 没走 --z-* 刻度"
+    assert CSS.count("z-index:") == CSS.count("z-index:var(--z-"), "有 z-index 没走 --z-* 刻度"
     tok = dict(re.findall(r"--z-([a-z]+):([0-9]+);", CSS))
     want = ["sticky", "composer", "float", "modal", "toast", "tip", "menu"]
     assert set(tok) == set(want), f"层叠刻度变了：{sorted(tok)}"
@@ -581,7 +594,7 @@ def test_z_index_goes_through_the_scale_and_orders_menu_on_top():
 def test_row_actions_survive_devices_without_hover():
     """⋯ 和行内按钮原本只认 :hover —— 触屏/平板模式压根没有 hover 这回事，
     等于把动作对这类设备整个藏掉。"""
-    assert "@media (hover:none){.sb-more{display:inline-flex}.pl-row-ops{opacity:1}}" in CSS,         "没有 hover 的设备上行内动作不可达"
+    assert "@media (hover:none){.sb-more{display:inline-flex}.pl-row-ops{opacity:1}}" in CSS, "没有 hover 的设备上行内动作不可达"
 
 
 def test_pinyin_initial_table_actually_resolves():
@@ -612,4 +625,4 @@ def test_chart_palette_has_six_slots_and_merges_only_past_six():
     assert "const CHART_N = 6;" in APP_JS, "分类色档数变了，--chart-* 得同步"
     assert CSS.count("--chart-6:") == 2, "--chart-6 必须明暗各一份"
     assert ".st-c6{background:var(--chart-6)}" in CSS and ".st-s6{stroke:var(--chart-6)}" in CSS
-    assert "rows.length > CHART_N ? CHART_N - 1 : rows.length" in APP_JS,         "合并规则不再是「超过六条才并」"
+    assert "rows.length > CHART_N ? CHART_N - 1 : rows.length" in APP_JS, "合并规则不再是「超过六条才并」"

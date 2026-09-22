@@ -1,44 +1,52 @@
 /* ==========================================================================
-   Loom 织流 · 设计系统 v9 —— Codex 骨架，深色为默认主题
-   深色色值全部取自 Codex 截图实测，层级方向是「侧栏比内容区更亮」：
-     内容 #181818 · 侧栏/顶栏 #202020 · 面板 #232323 · 输入 #353535 · 浮层 #2B2B2B
-     正文 #DFDFDF · 次要 #8A8A8A · 弱化 #656565 · 选中行 #313131 · 分隔线 #323232
-   浅色是同一套层级的镜像（内容白 / 侧栏浅灰 / 分隔线 #E4E4E4）。
-   强调色默认电光蓝（Kimi 实测 #3678F6→#4D8BF7），data-accent="gold" 切回旧金黄。
-   彩色只用于选中、焦点、进度、运行中，大面积一律中性灰。
+   Loom 织流 · 设计系统 v10 —— 表面层级逐值取自开源参考实现 ZCode 的
+   Zai Light / Zai Dark（zai-org/ZCode，packages/ui/src/styles.css）。
+   三条和 v9 不同的规矩：
+     ① 品牌位交给黑白反转（亮 #000 / 暗 #fff），不再是一种色相；
+        蓝色从"品牌"降级成 --accent-soft 那层弱强调底色，图表色板另立。
+     ② 边框 / 悬停 / 选中 / 内凹一律 alpha，不给实色 —— 同一枚令牌压在页面、
+        卡片、浮层上都成立，不必为每层各配一套。
+     ③ 墨色 = 一个基色 + oklab alpha 递减（foreground / subtle / subtlest）。
+   暗色下侧栏与背景同值（#161616），层级靠卡片抬起来，不靠接缝。
    1rem = 13px × 文字缩放；界面缩放走 body{zoom}
    ========================================================================== */
 :root{
   color-scheme: light;
 
-  --bg-page:#FFFFFF;        /* 内容区 */
-  --bg-shell:#F7F7F7;       /* 侧栏 / 顶栏（比内容区略深） */
-  --bg-raised:#FFFFFF;      /* 面板 */
-  --bg-sunken:#F4F4F4;      /* 内凹：代码块、日志、占位 */
-  --bg-inset:#FAFAFA;
-  --bg-hover:#F0F0F0;
-  --bg-active:#E9E9E9;      /* 选中行 */
-  --bg-composer:#FFFFFF;    /* 底部输入面板 */
-  --bg-pill:#F2F2F2;
-  --bg-float:#FFFFFF;
-  --bg-panel:#FFFFFF;       /* 设置分组面板 */
-  --line-panel:#E2E2E2;
-  --bg-ctl:#F2F2F2;         /* 控件底（按钮 / 下拉） */
+  --bg-page:#F8F8F8;        /* background */
+  --bg-shell:#F0F0F0;       /* sidebar：比内容区深一档，容器感靠它而不是接缝 */
+  --bg-raised:#FFFFFF;      /* panel */
+  --bg-sunken:rgba(13,13,13,.03);   /* surface：内凹、代码块、占位 */
+  --bg-inset:rgba(13,13,13,.05);
+  --bg-hover:rgba(13,13,13,.05);
+  --bg-active:rgba(13,13,13,.08);   /* selected。ZCode 亮色下 hover/选中同为 .05，
+                                       我们这里选中要压过悬停（选中行同时不加粗），
+                                       所以刻意抬到 .08 —— 唯一的有意偏离。 */
+  --bg-composer:#FFFFFF;    /* card */
+  --bg-pill:rgba(13,13,13,.05);
+  --bg-float:#FFFFFF;       /* popover */
+  --bg-panel:#FFFFFF;       /* panel */
+  --line-panel:rgba(13,13,13,.1);
+  --bg-ctl:#FFFFFF;         /* input */
 
-  --ink:#1A1A1A;
-  --ink-2:#4A4A4A;
-  --ink-3:#767676;
-  --ink-4:#9C9C9C;
+  /* 墨色只定一个基色，其余三档用 oklab alpha 递减 —— 抄 ZCode 的
+     foreground / -subtle(60%) / -subtlest(40%)。 */
+  --ink:#262626;
+  --ink-2:color-mix(in oklab, var(--ink) 78%, transparent);
+  --ink-3:color-mix(in oklab, var(--ink) 60%, transparent);
+  --ink-4:color-mix(in oklab, var(--ink) 42%, transparent);
   --ink-inv:#FFFFFF;
 
-  --line:#E4E4E4;
-  --line-soft:#EEEEEE;
-  --line-strong:#CFCFCF;
+  --line:rgba(13,13,13,.1);
+  --line-soft:rgba(13,13,13,.06);
+  --line-strong:rgba(13,13,13,.15);
 
-  --accent:#2F6FE4;
-  --accent-deep:#245AB8;
-  --accent-soft:#EAF1FD;
-  --accent-line:rgba(47,111,228,.34);
+  /* 品牌 = 黑。蓝色搬去 --accent-soft 那层弱强调底色（ZCode 的 --color-accent
+     本来就是淡蓝 #ebf4ff / #001d3d），图表色板 --chart-* 独立不受影响。 */
+  --accent:#000000;
+  --accent-deep:#1F1F1F;
+  --accent-soft:#EBF4FF;
+  --accent-line:rgba(13,13,13,.35);
   --on-accent:#FFFFFF;
   /* 分类色板：只给趋势图的线与环形图的扇区用。六档各自独立取色，一律不跟
      --accent —— 参考实现里第一档原本复用品牌色，结果它那套纯黑/纯白主题下
@@ -53,7 +61,7 @@
   --warn:#B0770B;   --warn-soft:#FBF2E0;
   --info:#2F6FD0;   --info-soft:#EBF2FC;
 
-  --btn-ink:#1A1A1A;  --btn-ink-hover:#333333;  --btn-ink-press:#000000;
+  --btn-ink:#000000;  --btn-ink-hover:#262626;
 
   /* 圆角按角色取值，不按元素拍脑袋：
      r-1 微（22px 以下小块、代码 chip、键帽） r-2 控件与列表行
@@ -103,43 +111,46 @@
      所以这几个色值固定写在 :root，故意不随 html[data-theme] 变。 */
   --sw-lite-bg:#FCFCFC;  --sw-lite-line:#DCDCDC;
   --sw-dark-bg:#1F1F1F;  --sw-dark-line:#3A3A3A;
-  --sw-acc-blue:#4D8BF7; --sw-acc-gold:#E0B341;
 }
 
 html[data-theme="dark"]{
   color-scheme: dark;
 
-  /* 全部取自 Codex 深色截图实测。注意方向：侧栏 #202020 比内容区 #181818 更亮，
-     输入面板 #353535 与浮层 #2B2B2B 再往上走一级。 */
-  --bg-page:#181818;
-  --bg-shell:#202020;
-  --bg-raised:#262626;
-  --bg-sunken:#131313;
-  --bg-inset:#1D1D1D;
-  --bg-hover:#272727;
-  --bg-active:#313131;
-  --bg-composer:#353535;
-  --bg-pill:#272727;
+  /* Zai Dark 逐值：背景与侧栏同为 #161616（暗色下没有接缝，层级靠卡片抬起），
+     面板 #202020，卡片 / 浮层 / 输入同为 #2b2b2b —— 它这三层本来就是同一个值，
+     区分靠边框和阴影而不是亮度阶梯。 */
+  --bg-page:#161616;
+  --bg-shell:#161616;
+  --bg-raised:#202020;
+  --bg-sunken:rgba(255,255,255,.05);
+  --bg-inset:rgba(255,255,255,.07);
+  --bg-hover:rgba(255,255,255,.05);
+  --bg-active:rgba(255,255,255,.10);
+  --bg-composer:#2B2B2B;
+  --bg-pill:rgba(255,255,255,.08);
   --bg-float:#2B2B2B;
-  --bg-panel:#232323;
-  --line-panel:#373737;
-  --bg-ctl:#2A2A2A;
+  --bg-panel:#202020;
+  --line-panel:rgba(255,255,255,.1);
+  --bg-ctl:#2B2B2B;
 
-  --ink:#DFDFDF;
-  --ink-2:#B4B4B4;
-  --ink-3:#8A8A8A;
-  --ink-4:#656565;
-  --ink-inv:#181818;
+  --ink:#D4D4D4;
+  --ink-2:color-mix(in oklab, var(--ink) 78%, transparent);
+  --ink-3:color-mix(in oklab, var(--ink) 60%, transparent);
+  --ink-4:color-mix(in oklab, var(--ink) 42%, transparent);   /* ZCode 这里用 30%，
+     但落在 #161616 上只有 2.32:1，比上一轮对比度专项抬上来的
+     #656565（3.04）还低 —— 占位符和弱图标不能更糊，所以刻意停在 42%。 */
+  --ink-inv:#161616;
 
-  --line:#323232;
-  --line-soft:#282828;
-  --line-strong:#484848;
+  --line:rgba(255,255,255,.1);
+  --line-soft:rgba(255,255,255,.065);
+  --line-strong:rgba(255,255,255,.15);
 
-  --accent:#4D8BF7;
-  --accent-deep:#7FAAF9;
-  --accent-soft:rgba(77,139,247,.15);
-  --accent-line:rgba(77,139,247,.45);
-  --on-accent:#0A1425;
+  /* 品牌 = 白：暗色下主按钮是白底黑字（参考图上那颗"重启以更新"）。 */
+  --accent:#FFFFFF;
+  --accent-deep:#E6E6E6;
+  --accent-soft:#001D3D;
+  --accent-line:rgba(255,255,255,.45);
+  --on-accent:#161616;
   --chart-1:#4D8BF7; --chart-2:#4CC77E; --chart-3:#9B87FF;
   --chart-4:#FF6B5E; --chart-5:#F0A840; --chart-6:#3FC8D4;
   --on-solid:#0E1512;   /* 暗色这套 good/bad 偏亮，白字只有 2.5:1；改近黑后 7.4 / 5.8 */
@@ -149,19 +160,9 @@ html[data-theme="dark"]{
   --warn:#D9A441;   --warn-soft:rgba(217,164,65,.13);
   --info:#6BA4E8;   --info-soft:rgba(107,164,232,.13);
 
-  --btn-ink:#DFDFDF;  --btn-ink-hover:#FFFFFF;  --btn-ink-press:#CFCFCF;
+  --btn-ink:#FFFFFF;  --btn-ink-hover:#D8D8D8;
   --shadow-pop:0 18px 44px -12px rgba(0,0,0,.66),0 2px 6px -2px rgba(0,0,0,.5);
   --shadow-composer:0 1px 2px rgba(0,0,0,.3),0 10px 28px -14px rgba(0,0,0,.7);
-}
-
-/* 强调色可切换：默认电光蓝，金黄作为旧偏好保留 */
-html[data-accent="gold"]{
-  --accent:#A87C15; --accent-deep:#8A6510;
-  --accent-soft:#FBF3DF; --accent-line:rgba(168,124,21,.38); --on-accent:#FFFFFF;
-}
-html[data-theme="dark"][data-accent="gold"]{
-  --accent:#E0B341; --accent-deep:#F0C866;
-  --accent-soft:rgba(224,179,65,.13); --accent-line:rgba(224,179,65,.42); --on-accent:#181818;
 }
 
 html[data-font="os"]{ --font-ui:-apple-system,"Segoe UI",system-ui,"PingFang SC","Microsoft YaHei UI","Hiragino Sans GB",sans-serif; }
@@ -172,7 +173,11 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 /* ---------- 下任务：居中工作台 ----------
    外卡 18px 圆角 + 1px 细边，内部再嵌一层输入区（内凹底 + 10px 圆角），
    底部一行左「任务名称」右圆形发送键；建议区挂在外卡下方而不是里面。 */
-.tk-stage{width:min(720px,92vw);margin:auto;display:flex;flex-direction:column}
+/* 首页输入台。它以前住在弹层里、靠 flex 的 margin:auto 居中；搬到页面上就得自己
+   定位。参考图里大标题落在视口约 1/3 处，所以给的是上偏的 padding 而不是垂直
+   居中 —— 居中会把输入台推到屏幕正中，看着仍像个弹层。 */
+.home-stage{width:min(720px,92vw);margin:0 auto;
+  padding:clamp(56px,22vh,260px) 0 40px;display:flex;flex-direction:column}
 .tk-greet{font-size:var(--fs-h1);font-weight:600;letter-spacing:-.01em;color:var(--ink);
   margin:0 0 22px;text-align:center}
 .tk-card{width:100%;background:var(--bg-panel);border:1px solid var(--line);border-radius:var(--r-5);
@@ -182,7 +187,7 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 .tk-field{padding:8px 10px 2px}
 .tk-input{width:100%;border:1px solid var(--line-soft);border-radius:var(--r-3);background:var(--bg-sunken);
   padding:9px 11px;font-family:inherit;font-size:var(--fs-body);color:var(--ink);resize:none;line-height:1.6}
-.tk-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.tk-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent)}
 .tk-input::placeholder{color:var(--ink-4)}
 .tk-foot{display:flex;align-items:center;gap:8px;padding:8px 10px 10px}
 .tk-name{flex:1;min-width:0;border:none;background:transparent;color:var(--ink);font-family:inherit;
@@ -249,14 +254,14 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 .hm-cell{display:block;width:12px;height:12px;background:var(--bg-sunken);
   box-shadow:inset 0 0 0 1px var(--line-soft)}
 .hm-out{background:transparent;box-shadow:none}
-/* 色阶混进 --bg-sunken（也就是 0 档那格的实色）而不是 transparent：
-   混 transparent 的话格子颜色会随卡片底色变，明暗两套下深浅并不等价。
-   用 oklab 而不是 srgb —— srgb 插值在低百分比上偏灰，四档看着前密后疏。
-   百分比取参考实现的 18/36/58/82（它也是按峰值等比分四档，档位含义一致）。 */
-.hm-l1{background:color-mix(in oklab, var(--accent) 18%, var(--bg-sunken))}
-.hm-l2{background:color-mix(in oklab, var(--accent) 36%, var(--bg-sunken))}
-.hm-l3{background:color-mix(in oklab, var(--accent) 58%, var(--bg-sunken))}
-.hm-l4{background:color-mix(in oklab, var(--accent) 82%, var(--bg-sunken))}
+/* 色阶混进 --bg-sunken（也就是 0 档那格）而不是 transparent：混 transparent 的话
+   格子颜色会随卡片底色变，明暗两套下深浅并不等价。
+   基色用 --chart-1 而不是 --accent —— 品牌位现在是黑白反转，跟着它整张热力图会
+   退成灰度图，四档之间根本读不出来。百分比取参考实现的 18/36/58/82。 */
+.hm-l1{background:color-mix(in oklab, var(--chart-1) 18%, var(--bg-sunken))}
+.hm-l2{background:color-mix(in oklab, var(--chart-1) 36%, var(--bg-sunken))}
+.hm-l3{background:color-mix(in oklab, var(--chart-1) 58%, var(--bg-sunken))}
+.hm-l4{background:color-mix(in oklab, var(--chart-1) 82%, var(--bg-sunken))}
 .hm-axis{display:flex;gap:2px;margin-top:15px}
 .hm-mo{width:12px;flex-shrink:0;font-size:var(--fs-meta);color:var(--ink-3);white-space:nowrap}
 /* 统计页的视图开关（每日/每周/累计、近 7/近 30）。格子保持无圆角，见上面那条注释 */
@@ -693,7 +698,7 @@ code{font-family:var(--font-mono);font-size:.92em}
   background:var(--bg-page);color:var(--ink);font-size:var(--fs-body);
   transition:border-color var(--slide),background var(--slide),box-shadow var(--slide)}
 .pv-input:hover{border-color:var(--line-strong)}
-.pv-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.pv-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent)}
 .pv-input::placeholder{color:var(--ink-4)}
 textarea.pv-input{resize:vertical;line-height:1.6;min-height:60px}
 select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
@@ -1012,7 +1017,7 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .st-search{display:flex;align-items:center;gap:8px;margin:14px 0 4px;padding:0 11px;height:36px;
   border-radius:var(--r-3);background:var(--bg-active);border:1px solid transparent;
   transition:border-color var(--slide),box-shadow var(--slide),background var(--slide)}
-.st-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);background:var(--bg-raised)}
+.st-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);background:var(--bg-raised)}
 .st-search .ic{color:var(--ink-4);width:1.125rem;height:1.125rem;stroke-width:1.8}
 .st-search input{flex:1;min-width:0;border:none;background:transparent;font-size:var(--fs-body)}
 .st-search input:focus{outline:none}
@@ -1066,7 +1071,7 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
   color:var(--ink);font-family:var(--font-ui);font-size:var(--fs-sub);
   transition:border-color var(--slide),box-shadow var(--slide)}
 .st-input:hover{border-color:var(--line-strong)}
-.st-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.st-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent)}
 .st-input::placeholder{color:var(--ink-4)}
 .st-input.mono{font-family:var(--font-mono);letter-spacing:.01em}
 .st-chips{display:flex;flex-wrap:wrap;gap:6px}
@@ -1207,16 +1212,6 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .st-tile-prev[data-prev="auto"]::after{background:var(--sw-dark-line)}
 .st-tile-name{font-size:var(--fs-sub);color:var(--ink-2);text-align:center}
 .st-tile.active .st-tile-name{color:var(--ink);font-weight:600}
-.st-swatches{display:flex;gap:8px}
-.st-swatch{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;
-  border:1px solid var(--line-panel);border-radius:var(--r-pill);background:var(--bg-ctl);
-  font-size:var(--fs-sub);color:var(--ink-2);cursor:pointer;
-  transition:border-color var(--slide),color var(--slide)}
-.st-swatch:hover{border-color:var(--line-strong);color:var(--ink)}
-.st-swatch.active{border-color:var(--accent);color:var(--ink);font-weight:600}
-.sw-dot{width:14px;height:14px;flex-shrink:0;border-radius:50%;box-shadow:inset 0 0 0 1px var(--line-strong)}
-.sw-blue{background:var(--sw-acc-blue)}
-.sw-gold{background:var(--sw-acc-gold)}
 .st-slider{display:flex;align-items:center;gap:12px}
 .st-range{-webkit-appearance:none;appearance:none;width:172px;height:4px;border-radius:var(--r-pill);
   background:var(--bg-active);outline:none;cursor:pointer}

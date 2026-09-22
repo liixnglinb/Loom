@@ -6,12 +6,16 @@
 窗口壳只是体验差异，不该成为启动失败的理由。
 
 其他行为：
-  - 单实例：端口已被占用时，把已有窗口拉到前台，而不是再起一份服务。
+  - 单实例：靠一个命名互斥体判定，**不是**靠端口占用 —— 端口占用只能说明
+    "有人在这个口上"，说明不了那是不是 Loom（一台跑着开发服务的机器上，
+    前者天天成立、后者未必）。已有实例时把它的窗口拉到前台并退出。
   - 冻结态 console=False 时 stdout/stderr 是 None：先重定向到内存流，
     否则任何一句 print 都会 AttributeError 把启动打断。
   - 启动异常弹原生消息框并落盘 data/boot-error.log，用户看得见、你查得到。
 
-端口取 LOOM_PORT 环境变量（默认 8000），int 强校验后才拼进 URL。
+端口：LOOM_PORT（或默认 8000）只是**首选**，被占就往后找空闲的，找到才开。
+桌面软件没有理由因为别人占了 8000 就打不开 —— 端口是实现细节，不是用户
+要关心的东西。int 强校验后才拼进 URL。
 """
 import io
 import os
@@ -60,17 +64,101 @@ def _port_busy(port: int) -> bool:
     return busy
 
 
-def _focus_existing() -> bool:
+MUTEX_NAME = "Local\\LoomZhiLiu.SingleInstance"
+_MUTEX_HANDLE = None      # 必须一直攥在手里：句柄一被回收，锁就散了，第二个实例会当成没人跑
+
+
+def acquire_single_instance_lock() -> bool:
+    """True = 这个进程是唯一的实例；False = 已经有 Loom 在跑。
+
+    拿"端口能不能连"当单实例判据是错的：它既会误报（别的程序占了 8000，
+    其实 Loom 没在跑），也会漏报（Loom 跑在 8001，端口判据看不见）。"""
+    global _MUTEX_HANDLE
     try:
         import ctypes
-        hwnd = ctypes.windll.user32.FindWindowW(None, WINDOW_TITLE)
-        if hwnd:
-            ctypes.windll.user32.ShowWindow(hwnd, 9)          # SW_RESTORE
-            ctypes.windll.user32.SetForegroundWindow(hwnd)
-            return True
+        ERROR_ALREADY_EXISTS = 183
+        ctypes.windll.kernel32.CreateMutexW.restype = wintypes_handle()
+        handle = ctypes.windll.kernel32.CreateMutexW(None, False, MUTEX_NAME)
+        if not handle:
+            return True                      # 拿不到句柄就别拦人，照常启动
+        _MUTEX_HANDLE = handle
+        return ctypes.windll.kernel32.GetLastError() != ERROR_ALREADY_EXISTS
     except Exception:
-        pass
-    return False
+        return True
+
+
+def wintypes_handle():
+    import ctypes
+    return ctypes.c_void_p
+
+
+def focus_existing() -> bool:
+    """把已经在跑的那个实例的窗口带到前台。
+
+    按标题找是对的，但必须排掉自己 —— 而且不能用 FindWindowW：它连不可见的
+    窗口一起找，也会撞上另一个实例弹出来的错误框（那个框的标题就是同一串字）。
+    所以自己枚举：只认「可见 + 标题匹配 + 不是本进程」。"""
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        found = []
+        me = os.getpid()
+        Proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+        @Proc
+        def cb(hwnd, _lparam):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            n = user32.GetWindowTextLengthW(hwnd)
+            if not n:
+                return True
+            buf = ctypes.create_unicode_buffer(n + 1)
+            user32.GetWindowTextW(hwnd, buf, n + 1)
+            if buf.value != WINDOW_TITLE:
+                return True
+            pid = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value != me:
+                found.append(hwnd)
+            return True
+
+        user32.EnumWindows(cb, 0)
+        if not found:
+            return False
+        hwnd = found[0]
+        SW_RESTORE = 9
+        user32.ShowWindow(hwnd, SW_RESTORE)
+        user32.SetForegroundWindow(hwnd)
+        return True
+    except Exception:
+        return False
+
+
+def _port_free(port: int) -> bool:
+    """用 bind 而不是 connect：connect 只问"有没有人在监听"，bind 才问
+    "这个口我现在能不能拿到"，后者才是我们要的。"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def pick_port(preferred: int, tries: int = 24) -> int:
+    """首选口被占就往后找；连找 24 个都不空就交给系统随机发一个（0 = 让内核挑）。
+    走到最后一步仍然能开起来，只是端口不再好看。"""
+    for port in range(preferred, preferred + tries):
+        if _port_free(port):
+            return port
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
 
 
 def _validated_port() -> int:
@@ -118,17 +206,18 @@ def main():
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     _fix_streams()
     try:
-        port = _validated_port()
+        preferred = _validated_port()
     except ValueError as e:
         _alert(str(e))
         return 2
 
-    if _port_busy(port):
-        if _focus_existing():
-            return 0
-        _alert(f"端口 {port} 已被其他程序占用，Loom 起不来。\n\n"
-               f"可以：① 结束占用该端口的程序；② 设置环境变量 LOOM_PORT 换端口后重试。")
-        return 1
+    if not acquire_single_instance_lock():
+        # 已经有实例在跑：把它的窗口带回来，本进程退出。拉不到窗口也照样退出 ——
+        # 再起一份就是两个进程写同一个 SQLite，那比"双击没反应"难查得多。
+        focus_existing()
+        return 0
+
+    port = pick_port(preferred)
 
     url = f"http://127.0.0.1:{port}"
     print(f"Loom 织流 启动 {url}")

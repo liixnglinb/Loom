@@ -322,9 +322,6 @@ function footRows(){
     <button class="sb-prow" onclick="footCycle('theme')">${ico('appearance')}
       <span>${esc(t('foot.theme'))}</span>
       <span class="sb-pv">${esc(t('ap.theme.'+A.theme))}</span>${ico('chevronRight','ic-chev')}</button>
-    <button class="sb-prow" onclick="footCycle('accent')">${ico('spark')}
-      <span>${esc(t('foot.accent'))}</span>
-      <span class="sb-pv">${esc(t('ap.accent.'+(A.accent||'blue')))}</span>${ico('chevronRight','ic-chev')}</button>
     <button class="sb-prow" onclick="footCycle('lang')">${ico('lang')}
       <span>${esc(t('foot.lang'))}</span>
       <span class="sb-pv">${esc(A.lang==='en'?'English':'简体中文')}</span>${ico('chevronRight','ic-chev')}</button>
@@ -356,7 +353,7 @@ window.closeFootMenu = function(){
 };
 window.footCycle = async function(key){
   const A = window.APP;
-  const CYCLE = { theme:['light','dark','auto'], accent:['blue','gold'], lang:['zh','en'] };
+  const CYCLE = { theme:['light','dark','auto'], lang:['zh','en'] };
   const list = CYCLE[key]; if(!list) return;
   // 这条路径直接 nav.resolve() 重绘整页，绕开了 nav.go 上那道未保存守卫 ——
   // 在流程编辑器里换个主题就能把没存的步骤改动冲没。所以先问守卫，再动设置。
@@ -502,7 +499,7 @@ const nav = {
   resolve(){
     const seq=++NAV_SEQ;
     let raw = (location.hash||'').replace(/^#\/?/,'');
-    if(!raw) raw = 'pipelines';
+    if(!raw) raw = 'home';
     const [view, ...rest] = raw.split('/');
     const extra = rest.join('/');
     viewTransitionOut().then(async ()=>{
@@ -511,14 +508,15 @@ const nav = {
       const v = $('#view'); if(v) v.classList.remove('with-composer');
       if(view!=='settings') delete $('#app').dataset.shell;
       const run = async (fn, key)=>{ await fn(); renderNav(key); paintChrome(); };
-      if(view==='skills') await run(window.renderSkills,'skills');
+      if(view==='home') await run(window.renderHome,'home');
+      else if(view==='skills') await run(window.renderSkills,'skills');
       else if(view==='skill-edit') await run(()=>window.renderSkillEdit(extra),'skills');
       else if(view==='pipelines') await run(window.renderPipelines,'pipelines');
       else if(view==='pipeline-edit') await run(()=>window.renderPipelineEdit(extra),'pipelines');
       else if(view==='settings') await run(()=>renderSettings(extra),'settings');
       else if(view==='runs') await run(window.renderRuns,'runs');
       else if(view==='run') await run(()=>window.renderRunConsole(extra),'runs');
-      else await run(window.renderPipelines,'pipelines');   /* 含旧的 #/home：一律落到工作流 */
+      else await run(window.renderHome,'home');   /* 认不出来的一律回首页输入台 */
       if(seq===NAV_SEQ){ viewTransitionIn(); renderSidebarLists(); }
     });
   },
@@ -526,49 +524,85 @@ const nav = {
 window.nav = nav;
 window.addEventListener('hashchange', ()=>nav.resolve());
 
-/* ---------------- 下任务 ---------------- */
-window.taskModal = async function(presetFlow){
-  const pr = await api('/api/pipelines').catch(()=>({pipelines:[]}));
-  const tpls = pr.pipelines||[];
-  if(!tpls.length){ toast(t('task.noFlow')); nav.go('pipeline-edit/new'); return; }
-  document.body.style.overflow='hidden';
-  const root = document.createElement('div');
-  root.id='taskModalRoot';
-  const cur = tpls.find(p=>p.name===(presetFlow||tpls[0].name)) || tpls[0];
-  TK_CPS = {}; tpls.forEach(p=>{ TK_CPS[p.name] = (p.steps||[]).filter(s=>s.checkpoint).length; });
-  const cps = TK_CPS[cur.name] || 0;
-  root.innerHTML = `<div class="modal open" role="dialog" aria-label="${esc(t('task.title'))}"
-      onclick="if(event.target===this)taskClose()">
-    <div class="tk-stage">
-      <h2 class="tk-greet">${esc(t('tk.greet'))}</h2>
-      <div class="tk-card">
-        <div class="tk-top">
-          ${ffSelect(tpls.map(p=>({v:p.name, label:(p.label||p.name),
-                                   note:p.steps.length+' '+t('c.steps')})),
-                     presetFlow||tpls[0].name, {id:'tkFlow', icon:'flow', onChange:'tkHint'})}
-          <span class="tk-meta" id="tkMeta">${cps ? esc(t('tk.cps',{n:cps})) : esc(t('tk.noCp'))}</span>
-        </div>
-        <div class="tk-field">
-          <textarea class="tk-input" id="tkBrief" rows="4" placeholder="${esc(t('task.briefPh'))}"
-            oninput="tkHint()"></textarea>
-        </div>
-        <div class="tk-foot">
-          <input class="tk-name" id="tkLabel" placeholder="${esc(t('task.labelPh'))}">
-          <button class="cp-send" onclick="taskStart()" aria-label="${esc(t('task.start'))}"
-            title="${esc(t('task.start'))}">${ico('send')}</button>
-        </div>
+/* ---------------- 下任务：首页就是输入台 ----------------
+   以前它是一个居中小弹层，打开时整个应用被遮罩盖住。参考实现把输入台直接
+   长在主页上（大标题 + 卡片），所以这里改成渲染进 #view —— 六个调用点
+   （侧栏「新建任务」、Ctrl+K、⋯ 菜单、流程行「运行」、页头「下任务」）
+   仍然统一走 taskModal()，只是它现在做的是"回到首页并把这条流程选中"。 */
+function tkStageHtml(tpls, flow){
+  const cps = TK_CPS[flow] || 0;
+  return `<div class="home-stage">
+    <h1 class="tk-greet">${esc(t('tk.greet'))}</h1>
+    <div class="tk-card">
+      <div class="tk-top">
+        ${ffSelect(tpls.map(p=>({v:p.name, label:(p.label||p.name),
+                                 note:p.steps.length+' '+t('c.steps')})),
+                   flow, {id:'tkFlow', icon:'flow', onChange:'tkHint'})}
+        <span class="tk-meta" id="tkMeta">${cps ? esc(t('tk.cps',{n:cps})) : esc(t('tk.noCp'))}</span>
       </div>
-      <div class="tk-hint" id="tkHintBox">${esc(t('task.briefHint'))}</div>
-      <div class="tk-sugs" id="tkSugs">
-        <div class="tk-sug-head"><span>${esc(t('tk.tryThese'))}</span><span class="spacer"></span>
-          <button class="tk-op" onclick="tkShuffle()">${esc(t('tk.shuffle'))}</button>
-          <button class="tk-op" aria-label="${esc(t('c.close'))}" onclick="tkHideSugs()">${ico('close')}</button></div>
-        <div id="tkSugList"></div>
+      <div class="tk-field">
+        <textarea class="tk-input" id="tkBrief" rows="4" placeholder="${esc(t('task.briefPh'))}"
+          oninput="tkHint()"></textarea>
       </div>
-    </div></div>`;
-  document.body.appendChild(root);
-  tkPaintSugs();          // 必须在挂进文档之后：里面靠 getElementById 找容器，提前调是查空的
-  setTimeout(()=>{ const b=document.getElementById('tkBrief'); if(b) b.focus(); }, 60);
+      <div class="tk-foot">
+        <input class="tk-name" id="tkLabel" placeholder="${esc(t('task.labelPh'))}">
+        <button class="cp-send" onclick="taskStart()" aria-label="${esc(t('task.start'))}"
+          title="${esc(t('task.start'))}">${ico('send')}</button>
+      </div>
+    </div>
+    <div class="tk-hint" id="tkHintBox">${esc(t('task.briefHint'))}</div>
+    <div class="tk-sugs" id="tkSugs">
+      <div class="tk-sug-head"><span>${esc(t('tk.tryThese'))}</span><span class="spacer"></span>
+        <button class="tk-op" onclick="tkShuffle()">${esc(t('tk.shuffle'))}</button></div>
+      <div id="tkSugList"></div>
+    </div>
+  </div>`;
+}
+
+function tkFlows(){
+  const pr = ST.flows || [];
+  TK_CPS = {}; pr.forEach(p => { TK_CPS[p.name] = (p.steps||[]).filter(s=>s.checkpoint).length; });
+  return pr;
+}
+
+window.renderHome = async function(){
+  window.viewLoading();
+  let tpls = ST.flows;
+  if(!tpls || !tpls.length){
+    const pr = await api('/api/pipelines').catch(()=>({pipelines:[]}));
+    tpls = pr.pipelines || [];
+  }
+  ST.flows = tpls;
+  window.__chrome = {title:'', icon:'', actions:''};
+  if(!tpls.length){
+    $('#view').innerHTML = `<div class="home-stage"><h1 class="tk-greet">${esc(t('tk.greet'))}</h1>
+      <div class="pf-empty">${esc(t('task.noFlow'))}</div></div>`;
+    return;
+  }
+  tkFlows();
+  $('#view').innerHTML = tkStageHtml(tpls, TK_PICK || tpls[0].name);
+  TK_PICK = '';
+  tkPaintSugs();
+  const b = document.getElementById('tkBrief'); if(b) b.focus();
+};
+
+window.taskModal = function(presetFlow){
+  if(presetFlow) TK_PICK = presetFlow;
+  // 已经在首页：不重新渲染（那会清掉用户正在写的草稿），只换选中的流程并聚焦。
+  if((location.hash||'').replace(/^#\/?/,'').split('/')[0] === 'home'){
+    const hid = document.getElementById('tkFlow');
+    if(hid && presetFlow){
+      // 必须连按钮上那行文字一起换：ffSetValue 只写隐藏 input 的话，
+      // 芯片还显示着上一条流程 —— 这个坑以前踩过一次。
+      const p = (ST.flows||[]).find(x=>x.name===presetFlow);
+      window.ffSetValue('tkFlow', presetFlow,
+        p ? ffFlat({label:(p.label||p.name), note:p.steps.length+' '+t('c.steps')}) : presetFlow);
+    }
+    tkHint();
+    const b = document.getElementById('tkBrief'); if(b) b.focus();
+    return;
+  }
+  nav.go('home');
 };
 function tkHint(){
   const hint = document.getElementById('tkHintBox');
@@ -584,7 +618,8 @@ function tkHint(){
   hint.style.color = (brief.length>0 && brief.length<20) ? 'var(--warn)' : '';
 }
 window.tkHint = tkHint;
-let TK_CPS = {};   /* 流程名 -> 检查点数：弹层里换流程时右侧那行提示要跟着变 */
+let TK_CPS = {};   /* 流程名 -> 检查点数：换流程时右侧那行提示要跟着变 */
+let TK_PICK = '';  /* taskModal 带进来的预选流程：由 renderHome 消费一次就清空 */
 const TK_SUG_KEYS = ['tk.sug1','tk.sug2','tk.sug3','tk.sug4','tk.sug5','tk.sug6'];
 const TK_SUG_ICONS = ['search','file','chart','play','edit','flag'];
 let TK_SUG_OFF = 0;
@@ -602,10 +637,6 @@ window.tkUseSug = function(btn){
   const ta = document.getElementById('tkBrief'); if(!ta) return;
   ta.value = btn.textContent.trim(); ta.focus(); tkHint();
 };
-window.taskClose = function(){
-  const r=document.getElementById('taskModalRoot'); if(r) r.remove();
-  document.body.style.overflow='';
-};
 window.taskStart = async function(){
   const flow = (document.getElementById('tkFlow')||{}).value||'';
   const brief = ((document.getElementById('tkBrief')||{}).value||'').trim();
@@ -614,7 +645,11 @@ window.taskStart = async function(){
   const r = await post('/api/pipelines/'+encodeURIComponent(flow)+'/run', {brief, label})
     .catch(e=>({detail:String(e)}));
   if(r.detail){ toast(r.detail); return; }
-  taskClose();
+  // 输入台现在长在页面上，没有"关掉窗口"这回事了 —— 起跑后把草稿清空，
+  // 免得回到首页时上一条任务的话还挂在框里。
+  const ta = document.getElementById('tkBrief'); if(ta) ta.value = '';
+  const lb = document.getElementById('tkLabel'); if(lb) lb.value = '';
+  tkHint();
   toast(t('task.started'), true);
   nav.go('run/'+r.run.id);
 };
@@ -762,14 +797,8 @@ const apTiles = () => `<div class="st-tiles" id="stTiles">${window.AP_OPTS.THEME
     aria-pressed="${on?'true':'false'}" onclick="apTile('${v}')">
     <span class="st-tile-prev" data-prev="${v}"></span>
     <span class="st-tile-name">${esc(t('ap.theme.'+v))}</span></button>`;}).join('')}</div>`;
-const apSwatches = () => `<div class="st-swatches" id="stAcc">${window.AP_OPTS.ACCENTS.map(v=>{
-  const on = window.APP.accent===v;
-  return `<button type="button" class="st-swatch${on?' active':''}" data-v="${v}"
-    aria-pressed="${on?'true':'false'}" onclick="apAccent('${v}')">
-    <i class="sw-dot sw-${v}"></i><span>${esc(t('ap.accent.'+v))}</span></button>`;}).join('')}</div>`;
 /* 磁贴/色板点了不能重渲染：整页重绘会丢滚动位置，也让 CSS 变量看起来「闪」了一下 */
 window.apTile = function(v){ pickIn('#stTiles', 'st-tile', 'theme', v); };
-window.apAccent = function(v){ pickIn('#stAcc', 'st-swatch', 'accent', v); };
 function pickIn(sel, cls, key, v){
   document.querySelectorAll(sel+' .'+cls).forEach(b=>{
     const on = b.dataset.v===v;
@@ -779,7 +808,7 @@ function pickIn(sel, cls, key, v){
   window.apSet(key, v);
 }
 window.apReset = async function(){
-  await window.setAppearance({theme:'dark', font:'default', accent:'blue',
+  await window.setAppearance({theme:'dark', font:'default',
     textSize:'m', uiZoom:'100%', contentWidth:'medium'});
   toast(t('ap.resetDone'), true);
   renderSettings(SET_SECTION);
@@ -795,7 +824,6 @@ function secAppearance(){
     sblk(t('ap.theme'), t('ap.themeD'), apTiles(), 'theme dark light system 明暗'),
     srow(t('ap.font'), t('ap.fontD'),
       ssel(window.AP_OPTS.FONTS.map(v=>[v,t('ap.font.'+v)]), A.font, 'apSetFont'), 'font typeface'),
-    sblk(t('ap.accent'), t('ap.accentD'), apSwatches(), 'accent colour color blue gold'),
   ].join(''), t('ap.grpLook'));
   const size = spanel([
     srow(t('ap.textSize'), t('ap.textSizeD'), sslider('textSize', A.textSize), 'text size font 字号'),
