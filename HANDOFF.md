@@ -196,6 +196,7 @@ loom.spec              PyInstaller。**excludes 里那串重库别删**，见 ma
 installer.iss          Inno。装 {localappdata}\Programs\Loom，卸载保留 data\
 make_release.py        一键出 setup.exe + latest.json；拒绝把开发机 data/ 打进包
 upload_cos.py          上传 + 设公有读 + 匿名回读验证（签名成功 ≠ 公网能下）
+sync_landing.py        发版第 5 步：下载页兜底版本号/体积，锚点 + 计数断言都写死在里面
 make_icon.py           PIL 画图标（本机无 SVG 渲染器）。大档走矢量几何，16/20/24/32/40
                        走 SMALL 表按目标像素网格各画一遍 —— 别改回"画 1024 再缩放"，
                        眼距 9/120 缩到 16px 只剩 1 列，任务栏上就是一团糊的。
@@ -227,8 +228,12 @@ git -c http.curloptResolve=github.com:443:140.82.113.3 push origin main
 PYTHONUTF8=1 "$PY" upload_cos.py
 
 # 5. 同步下载页的兜底版本号与体积（fetch 失败时用户看到的就是这些值）
-#    D:\Voyra 个人网站\public\modelflow\index.html —— 6 处版本号 + 3 处体积，
-#    必须用 Python 脚本替换并断言计数（见第 3 节那条）
+#    python sync_landing.py <旧版本> <新版本> [新体积MB]   ← 6 处版本号 + 3 处体积，
+#    锚点写死在脚本里（heroSize / btnSize / "安装包约 N MB"），带计数断言。
+#    体积没变就不传第三个参数。别按"约 N MB"宽匹配 —— 页里还有 2.4 MB 的 mock
+#    日志和"约 200 MB 磁盘"，宽匹配会把它们一起改掉。
+#    文件在 D:\Voyra 个人网站\public\modelflow\index.html，用 Edit/Write 会
+#    Native execution failed，只能脚本改。
 #    改完 npm run build → commit → push（Cloudflare 1~2 分钟上线）
 
 # 6. 线上验证：第 0 节那三条 curl + 装一次新机看「检查更新」
