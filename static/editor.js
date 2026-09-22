@@ -282,10 +282,11 @@ window.renderPipelines = async function(){
   window.viewLoading();
   await plLoad();
   const row = p => `
-    <div class="pl-card-row" onclick="nav.go('pipeline-edit/${esc(p.name)}')">
+    <div class="pl-card-row${p.archived?' archived':''}" onclick="nav.go('pipeline-edit/${esc(p.name)}')">
       <div class="pl-row-main">
         <div class="pl-row-title"><span class="pl-row-name">${esc(p.label||p.name)}</span>
           <code>${esc(p.name)}</code>
+          ${p.archived?`<span class="pl-arch-tag">${esc(t('sb.archived'))}</span>`:''}
           ${p.desc?`<span class="pf-url">${esc(p.desc)}</span>`:''}</div>
         <div class="pl-row-meta"><span>${p.steps.length} ${esc(t('c.steps'))}</span>
           <span class="pl-steps-mini">${p.steps.map((s,i)=>
@@ -331,12 +332,25 @@ window.plDelete = async function(name){
 /* 行操作收进 ⋯：副本 / 导出 / 删除都不是每次都点的，
    摊在行上是三个按钮，删除还和「运行」挨在一起。 */
 window.plRowMore = function(e, name){
+  const p = PL_TPLS.find(x=>x.name===name);
   const items = [
     {v:'dup', label:t('c.duplicate'), run:()=>plDuplicate(name)},
     {v:'exp', label:t('c.export'), run:()=>plExport(name)},
   ];
+  /* 归档的开关在侧栏那一栏，这里只给「这一条要不要回到侧栏」，
+     不再复制一个视图切换 —— 同一个动作留一个入口。 */
+  if (p && p.archived) items.push({v:'unarch', label:t('sb.unarchive'), run:()=>plArchive(name, false)});
+  else items.push({v:'arch', label:t('sb.archive'), run:()=>plArchive(name, true)});
   items.push({v:'del', label:t('c.delete'), danger:true, run:()=>plDelete(name)});
   window.ffActionMenu(e, items);
+};
+window.plArchive = async function(name, flag){
+  const p = PL_TPLS.find(x=>x.name===name);
+  const r = await _post(`/api/pipelines/${encodeURIComponent(name)}/archive`, {archived:flag})
+    .catch(e=>({detail:e.message}));
+  if(r && r.detail){ toast(r.detail); return; }
+  toast(t(flag ? 'sb.archivedToast' : 'sb.unarchivedToast', {name:(p&&p.label)||name}), true);
+  renderPipelines();
 };
 window.plExport = function(name){
   const a = document.createElement('a');

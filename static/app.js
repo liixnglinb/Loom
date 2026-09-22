@@ -177,6 +177,8 @@ const RUN_ICON = {
   pending:  {ic:'circle',  cls:'sb-idle',   sp:0},
 };
 
+let SB_ARCH = false;      /* 侧栏「项目」这一栏当前看的是未归档还是已归档（切换钮和行菜单都读它） */
+
 async function renderSidebarLists(){
   const box = $('#sbLists');
   if(!box) return;
@@ -190,17 +192,37 @@ async function renderSidebarLists(){
   const cur = (location.hash.split('/')[2]||'');
   const live = runs.filter(u=>u.status==='running'||u.status==='revising'||u.status==='waiting').length;
 
-  let html = `<div class="sb-group"><span>${esc(t('sb.flows'))}</span>
-      <button class="sb-gadd" data-tip-any="1" data-tip="${esc(t('sb.newFlow'))}"
-        aria-label="${esc(t('sb.newFlow'))}"
-        onclick="nav.go('pipeline-edit/new')">${ico('plus')}</button></div>`
-    + (flows.length ? flows.map(p=>`<a class="sb-run ${('pipeline-edit/'+p.name)===cur?'active':''}"
+  const proj = flows.filter(p=>!p.archived);
+  /* 归档列表必须走同一个 flows 口径：否则「没跑过的流程」从没在侧栏出现过，
+     却在归档视图里凭空冒出来。能归档的前提是它先是一行。 */
+  const arch = flows.filter(p=>p.archived);
+  const row = (p) => `<div class="sb-row">
+      <a class="sb-run ${('pipeline-edit/'+p.name)===cur?'active':''}"
         href="#/pipeline-edit/${esc(p.name)}" data-tip="${esc(p.label||p.name)}"
         aria-label="${esc(p.label||p.name)}"
         ${('pipeline-edit/'+p.name)===cur?'aria-current="page"':''}>
         <span class="sb-rico">${ico('flow')}</span>
-        <span class="sb-rname">${esc(p.label||p.name)}</span></a>`).join('')
-      : `<div class="sb-empty">${esc(t('sb.noProject'))}</div>`);
+        <span class="sb-rname">${esc(p.label||p.name)}</span></a>
+      <button class="sb-more" data-tip-any="1" data-tip="${esc(t('sb.rowMore'))}"
+          aria-label="${esc(t('sb.rowMore'))}"
+          onclick="sbRowMore(event,'${jsq(p.name)}')">${ico('more')}</button>
+    </div>`;
+  /* 归档清空后切换钮必须还在 —— 否则人就困在「已归档」这一栏里出不来了。 */
+  const garch = (arch.length || SB_ARCH) ? `<button class="sb-garch" data-tip-any="1"
+      data-tip="${esc(SB_ARCH ? t('sb.backToProjects') : t('sb.showArchived'))}"
+      aria-label="${esc(SB_ARCH ? t('sb.backToProjects') : t('sb.showArchived'))}"
+      aria-pressed="${SB_ARCH ? 'true' : 'false'}"
+      onclick="sbToggleArchived()">${ico('package')}${SB_ARCH ? '' : `<span class="sb-badge">${arch.length}</span>`}</button>` : '';
+  let html = `<div class="sb-group"><span>${esc(SB_ARCH ? t('sb.archived') : t('sb.flows'))}</span>
+      ${garch}
+      <button class="sb-gadd" data-tip-any="1" data-tip="${esc(t('sb.newFlow'))}"
+        aria-label="${esc(t('sb.newFlow'))}"
+        onclick="nav.go('pipeline-edit/new')">${ico('plus')}</button></div>`
+    + (SB_ARCH
+        ? (arch.length ? arch.map(row).join('')
+                       : `<div class="sb-empty">${esc(t('sb.archivedEmpty'))}</div>`)
+        : (proj.length ? proj.map(row).join('')
+                       : `<div class="sb-empty">${esc(t('sb.noProject'))}</div>`));
 
   html += `<div class="sb-group"><span>${esc(t('sb.recent'))}</span>
       ${live?`<span class="sb-gcount">${live}</span>`:''}</div>`
@@ -513,16 +535,18 @@ window.taskModal = async function(presetFlow){
   const root = document.createElement('div');
   root.id='taskModalRoot';
   const cur = tpls.find(p=>p.name===(presetFlow||tpls[0].name)) || tpls[0];
-  const cps = (cur.steps||[]).filter(st=>st.checkpoint).length;
+  TK_CPS = {}; tpls.forEach(p=>{ TK_CPS[p.name] = (p.steps||[]).filter(s=>s.checkpoint).length; });
+  const cps = TK_CPS[cur.name] || 0;
   root.innerHTML = `<div class="modal open" role="dialog" aria-label="${esc(t('task.title'))}"
       onclick="if(event.target===this)taskClose()">
     <div class="tk-stage">
       <h2 class="tk-greet">${esc(t('tk.greet'))}</h2>
       <div class="tk-card">
         <div class="tk-top">
-          ${ffSelect(tpls.map(p=>({v:p.name, label:(p.label||p.name)+' · '+p.steps.length+' '+t('c.steps')})),
-                     presetFlow||tpls[0].name, {id:'tkFlow', onChange:'tkHint'})}
-          <span class="tk-meta">${cps ? esc(t('tk.cps',{n:cps})) : esc(t('tk.noCp'))}</span>
+          ${ffSelect(tpls.map(p=>({v:p.name, label:(p.label||p.name),
+                                   note:p.steps.length+' '+t('c.steps')})),
+                     presetFlow||tpls[0].name, {id:'tkFlow', icon:'flow', onChange:'tkHint'})}
+          <span class="tk-meta" id="tkMeta">${cps ? esc(t('tk.cps',{n:cps})) : esc(t('tk.noCp'))}</span>
         </div>
         <div class="tk-field">
           <textarea class="tk-input" id="tkBrief" rows="4" placeholder="${esc(t('task.briefPh'))}"
@@ -548,12 +572,19 @@ window.taskModal = async function(presetFlow){
 };
 function tkHint(){
   const hint = document.getElementById('tkHintBox');
+  const meta = document.getElementById('tkMeta');
+  if(meta){
+    const f = ((document.getElementById('tkFlow')||{}).value)||'';
+    const n = TK_CPS[f] || 0;
+    meta.textContent = n ? t('tk.cps',{n}) : t('tk.noCp');
+  }
   if(!hint) return;
   const brief = ((document.getElementById('tkBrief')||{}).value||'').trim();
   hint.textContent = (brief.length>0 && brief.length<20) ? t('task.briefShort') : t('task.briefHint');
   hint.style.color = (brief.length>0 && brief.length<20) ? 'var(--warn)' : '';
 }
 window.tkHint = tkHint;
+let TK_CPS = {};   /* 流程名 -> 检查点数：弹层里换流程时右侧那行提示要跟着变 */
 const TK_SUG_KEYS = ['tk.sug1','tk.sug2','tk.sug3','tk.sug4','tk.sug5','tk.sug6'];
 const TK_SUG_ICONS = ['search','file','chart','play','edit','flag'];
 let TK_SUG_OFF = 0;
@@ -598,6 +629,43 @@ const SET_SECTIONS = [
   {grp:'set.grp.data', items:[['dirs','set.dirs','folder'],['stats','set.stats','chart'],
                               ['update','set.update','download'],['about','set.about','info']]},
 ];
+window.sbToggleArchived = function(){ SB_ARCH = !SB_ARCH; renderSidebarLists(); };
+window.sbRowMore = function(e, name){
+  const items = [{v:'files', label:t('sb.viewFiles'), run:()=>sbShowFiles(name)}];
+  if (SB_ARCH) {
+    items.push({v:'unarch', label:t('sb.unarchive'), run:()=>sbArchive(name, false)});
+    items.push({v:'del', label:t('c.delete'), danger:true, run:()=>sbDelete(name)});
+  } else {
+    items.push({v:'task', label:t('sb.newTaskHere'), run:()=>taskModal(name)});
+    items.push({v:'arch', label:t('sb.archive'), run:()=>sbArchive(name, true)});
+  }
+  window.ffActionMenu(e, items);
+};
+/* 项目没有自己的工作区目录，产物在每次运行的工作区里 —— 「查看文件」开的是最近那次。 */
+window.sbShowFiles = async function(name){
+  const p = (ST.sbFlows||[]).find(x=>x.name===name);
+  const id = p && p.last_run && p.last_run.id;
+  if (!id){ toast(t('sb.noRunYet')); return; }
+  const r = await post('/api/reveal?which=run&run_id='+encodeURIComponent(id))
+    .catch(e=>({detail:String(e)}));
+  if (r && r.detail) toast(r.detail);
+};
+window.sbArchive = async function(name, flag){
+  const r = await post('/api/pipelines/'+encodeURIComponent(name)+'/archive', {archived:flag})
+    .catch(e=>({detail:String(e)}));
+  if (r && r.detail){ toast(r.detail); return; }
+  /* toast 上给人看的是他认得的那个名字，不是库里的 slug */
+  const p = (ST.sbFlows||[]).find(x=>x.name===name);
+  toast(t(flag ? 'sb.archivedToast' : 'sb.unarchivedToast', {name:(p&&p.label)||name}), true);
+  renderSidebarLists();
+};
+window.sbDelete = async function(name){
+  if (!confirm(t('list.deleteConfirm',{name}))) return;
+  const r = await del('/api/pipelines/'+encodeURIComponent(name)).catch(e=>({detail:String(e)}));
+  if (r && r.detail){ toast(r.detail); return; }
+  renderSidebarLists();
+};
+
 let SET_SECTION = 'appearance';
 let SET_Q = '';
 let PATH_EDIT = '';
@@ -1697,16 +1765,24 @@ window.pfTest=async function(id){
 const FF_SEL = {};
 let FF_N = 0;
 
+/* note 在菜单里右对齐成第二列，在按钮上只能并成一行 —— .ff-sv 自带省略号，
+   所以并起来也不会把长名字顶出按钮。 */
+function ffFlat(o){
+  if(!o) return '';
+  return o.note ? `${o.label} · ${o.note}` : (o.label || '');
+}
+
 function ffSelect(opts, cur, cfg){
   cfg = cfg || {};
   const id = cfg.id || ('ffs'+(++FF_N));
   const key = 'ff'+id;
   FF_SEL[key] = {opts, id, onChange:cfg.onChange, arg:cfg.arg, action:!!cfg.action};
   const hit = opts.find(o=>String(o.v)===String(cur));
-  const label = hit ? hit.label : (cfg.placeholder || (opts[0] && opts[0].label) || '');
+  const label = ffFlat(hit) || cfg.placeholder || ffFlat(opts[0]) || '';
   return `<span class="ff-selw${cfg.mono?' ff-mono':''}${cfg.cls?' '+cfg.cls:''}">
     <input type="hidden" id="${esc(id)}" value="${esc(cur==null?'':cur)}">
     <button type="button" class="ff-sel" data-k="${esc(key)}" onclick="ffOpen(event,'${esc(key)}')">
+      ${cfg.icon ? `<span class="ff-sic">${ico(cfg.icon)}</span>` : ''}
       <span class="ff-sv">${esc(label)}</span>
       <span class="ff-sdiv"></span>
       <span class="ff-sc">${ico('chevron')}</span>
@@ -1741,7 +1817,7 @@ window.ffOpen = function(e, key){
   const cur = cfg.action ? null : (btn.parentElement.querySelector('input[type=hidden]')||{}).value;
   m.dataset.k = key;
   m.innerHTML = cfg.opts.map(o=>`<button type="button" class="ff-mi${String(o.v)===String(cur)?' on':''}"
-      data-v="${esc(o.v)}">${esc(o.label)}${o.note?`<i>${esc(o.note)}</i>`:''}</button>`).join('');
+      data-v="${esc(o.v)}"><span class="ff-ml">${esc(o.label)}</span>${o.note?`<i>${esc(o.note)}</i>`:''}</button>`).join('');
   m.hidden = false;
   const r = btn.getBoundingClientRect();
   const mw = m.offsetWidth, mh = m.offsetHeight;
@@ -1758,7 +1834,10 @@ window.ffOpen = function(e, key){
     const v = el.dataset.v;
     if(!cfg.action){
       const hid = document.getElementById(cfg.id); if(hid) hid.value = v;
-      btn.querySelector('.ff-sv').textContent = el.textContent;
+      /* 不能用 el.textContent：菜单项现在是 <span>名字</span><i>注</i>，
+         拼起来会少了中间那个分隔符。回到选项本身取。 */
+      const o = cfg.opts.find(x=>String(x.v)===String(v));
+      btn.querySelector('.ff-sv').textContent = ffFlat(o) || el.textContent;
     }
     ffClose();
     if(typeof cfg.onChange === 'function') cfg.onChange(v, cfg.arg);
@@ -1814,6 +1893,10 @@ document.addEventListener('keydown', (e)=>{
     if(k===',' && !e.shiftKey){ e.preventDefault(); nav.go('settings'); return; }
   }
   if(e.key==='Escape'){
+    /* ff-menu（下拉 + 动作菜单）最先吃 Escape：它压在别的浮层之上，
+       不先关就会一路 Esc 把底下的弹窗也带走。 */
+    const fm = document.getElementById('ffMenu');
+    if(fm && !fm.hidden){ e.preventDefault(); ffClose(); return; }
     const fd = document.getElementById('sbFind');
     if(fd && !fd.hidden){ e.preventDefault(); fd.hidden = true; return; }
     const pop = document.getElementById('sbPop');

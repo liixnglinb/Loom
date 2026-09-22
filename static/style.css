@@ -406,6 +406,25 @@ code{font-family:var(--font-mono);font-size:.92em}
 .sb-rtag{flex-shrink:0;font-family:var(--font-mono);font-size:var(--fs-micro);letter-spacing:.015em;color:var(--ink-3);
   max-width:64px;overflow:hidden;text-overflow:ellipsis}
 .sb-run:hover .sb-rtag{color:var(--ink-3)}
+/* 项目行的 ⋯：只在 hover 或键盘聚焦时出现。它压在行右侧，而名字那一栏是
+   flex:1 铺满的 —— 不预留出按钮的 24px，长名字的省略号就会钻到按钮底下。
+   底色跟行 hover 同色，否则透明底会让名字从按钮底下透出来。 */
+.sb-row{position:relative}
+.sb-row .sb-rname{padding-right:18px}
+.sb-more{position:absolute;right:4px;top:50%;transform:translateY(-50%);display:none;
+  align-items:center;justify-content:center;width:20px;height:20px;border:none;
+  border-radius:var(--r-1);background:var(--bg-hover);color:var(--ink-3);cursor:pointer}
+.sb-row:hover .sb-more,.sb-row:focus-within .sb-more{display:inline-flex}
+.sb-more:hover{background:var(--bg-active);color:var(--ink)}
+.sb-more .ic{width:.95rem;height:.95rem;stroke-width:2}
+/* 归档切换：有归档项、或正停在归档视图里，都要渲染（出不去就麻烦了）。
+   两个按钮都要贴右，所以 auto 边距给前一个 */
+.sb-garch{display:inline-flex;align-items:center;justify-content:center;position:relative;
+  width:18px;height:18px;margin-left:auto;border:none;border-radius:var(--r-1);
+  background:transparent;color:var(--ink-4);cursor:pointer}
+.sb-garch + .sb-gadd{margin-left:0}
+.sb-garch[aria-pressed="true"]{background:var(--bg-active);color:var(--ink)}
+.sb-garch .ic{width:.95rem;height:.95rem;stroke-width:2}
 .sb-live{color:var(--accent)}
 .sb-live .ic,.ic.sp{animation:spin .9s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -507,6 +526,8 @@ code{font-family:var(--font-mono);font-size:.92em}
   html[data-sidebar="collapsed"] .sb-item span,
   html[data-sidebar="collapsed"] .sb-group>span,
   html[data-sidebar="collapsed"] .sb-gcount,
+  html[data-sidebar="collapsed"] .sb-garch,
+  html[data-sidebar="collapsed"] .sb-more,
   html[data-sidebar="collapsed"] .sb-gadd,
   html[data-sidebar="collapsed"] .sb-rname,
   html[data-sidebar="collapsed"] .sb-rtag,
@@ -598,6 +619,12 @@ code{font-family:var(--font-mono);font-size:.92em}
 /* min-width:0 不能省：flex 项默认 min-width:auto，长名字撑住就不给省略号，直接压到右边的操作按钮上 */
 .pl-row-name{font-size:var(--fs-body);font-weight:600;color:var(--ink);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pl-row-title code{font-family:var(--font-mono);font-size:var(--fs-meta);color:var(--ink-3)}
+/* 已归档：列表里不藏（藏了就成了找不到的东西），只把名字压回次级色 + 挂一枚状态牌。
+   整行调 opacity 会让副文案掉到对比度线以下，所以逐元素改色。
+   牌子用 --ink-2：--ink-3 落在 --bg-sunken 上（亮色）只有 4.13:1，够不到小字 4.5。 */
+.pl-arch-tag{flex-shrink:0;padding:1px 6px;border-radius:var(--r-pill);background:var(--bg-sunken);
+  font-size:var(--fs-micro);color:var(--ink-2);white-space:nowrap}
+.pl-card-row.archived .pl-row-name{color:var(--ink-3)}
 .pl-row-meta{display:flex;align-items:center;gap:10px;margin-top:2px;font-size:var(--fs-meta);color:var(--ink-3);flex-wrap:wrap}
 .pl-row-ops{display:flex;align-items:center;gap:4px;flex-shrink:0;opacity:0;transition:opacity var(--slide)}
 /* 键盘走到行内任何一个按钮都要能看见操作，光靠 hover 等于对键盘隐藏 */
@@ -913,6 +940,8 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
   cursor:pointer;max-width:100%;
   transition:background var(--slide),border-color var(--slide)}
 .ff-sel:hover{background:var(--bg-hover);border-color:var(--line-strong)}
+.ff-sic{display:inline-flex;align-items:center;padding-left:10px;color:var(--ink-4);flex:none}
+.ff-sic .ic{width:1rem;height:1rem;stroke-width:1.9}
 .ff-sv{padding:0 10px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ff-sdiv{width:1px;align-self:stretch;margin:5px 0;background:var(--line-panel);flex-shrink:0}
 .ff-sc{display:inline-flex;align-items:center;justify-content:center;width:26px;flex-shrink:0;color:var(--ink-4)}
@@ -939,6 +968,9 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
   cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   transition:background var(--slide)}
 .ff-mi:hover{background:var(--bg-active)}
+/* .ff-mi 是 flex：text-overflow 对匿名 flex 项（裸文本节点）不生效，长标签会被
+   直接裁掉而不是省略号。标签必须包一层，min-width:0 才能收缩。 */
+.ff-mi .ff-ml{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .ff-mi.on{background:var(--bg-active);font-weight:600}
 .ff-mi-danger{color:var(--bad)}
 .ff-mi-danger:hover{background:var(--bad-soft)}

@@ -48,6 +48,8 @@ def init_db():
     )""")
     _add_column(c, "pipeline_definitions", "builtin",
                 "builtin INTEGER NOT NULL DEFAULT 0")  # 1=出厂内置（可恢复出厂）
+    _add_column(c, "pipeline_definitions", "archived",
+                "archived INTEGER NOT NULL DEFAULT 0")  # 1=归档：侧栏不摊开，东西一样不删
     c.execute("""CREATE TABLE IF NOT EXISTS settings(
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -331,6 +333,31 @@ def count_active_runs():
     ).fetchone()[0]
     conn.close()
     return int(n or 0)
+
+
+def set_pipeline_archived(name, flag):
+    """只翻归档那一位。删除是另一条路（delete_pipeline），这里碰不到它。"""
+    conn = get_conn()
+    c = conn.execute("UPDATE pipeline_definitions SET archived=?, updated_at=? WHERE name=?",
+                     (1 if flag else 0, _now(), name))
+    conn.commit()
+    n = c.rowcount
+    conn.close()
+    return n > 0
+
+
+def last_runs():
+    """每条流程最近一次运行（id + 时间）。侧栏「查看文件」要打开的就是这个工作区。
+
+    取 rowid 最大那条：runs 是按插入顺序自增的，created_at 也是插入时写的，
+    所以"最后插入"与"最新"在这里等价 —— 比按 created_at 排序省一次全表扫。
+    """
+    conn = get_conn()
+    rows = conn.execute("""SELECT r.pipeline AS pipeline, r.id AS id, r.created_at AS created_at
+        FROM runs r JOIN (SELECT pipeline, MAX(rowid) m FROM runs GROUP BY pipeline) t
+          ON r.rowid = t.m""").fetchall()
+    conn.close()
+    return {r["pipeline"]: {"id": r["id"], "created_at": r["created_at"]} for r in rows}
 
 
 def list_runs(pipeline=None, limit=50):

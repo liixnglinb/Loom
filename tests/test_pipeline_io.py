@@ -97,3 +97,45 @@ def test_the_skill_source_survives_the_roundtrip(client, fixture_flow):
     assert back["execute"]["skill_src"] == "claude"
     assert back["clarify"]["skill_src"] == ""
     db.delete_pipeline("src-flow")
+
+
+def test_archive_hides_but_deletes_nothing(client, dbsession):
+    """归档只是从侧栏收起来。步骤、运行、工作区都得原样在 ——
+    这条钉的是"归档不是删除的别名"。"""
+    from app import runner
+    dbsession.create_pipeline("arch-me", label="要归档", steps=[{"key": "a", "out": "A.md"}])
+    dbsession.create_run("run-archme01", "arch-me", steps=[{"key": "a", "status": "done"}])
+    runner.workspace_dir("run-archme01")
+    r = client.post("/api/pipelines/arch-me/archive", json={"archived": True})
+    assert r.status_code == 200, r.text
+    p = [x for x in client.get("/api/pipelines").json()["pipelines"] if x["name"] == "arch-me"][0]
+    assert p["archived"] == 1 and p["runs"] == 1
+    assert p["last_run"]["id"] == "run-archme01"
+    assert dbsession.get_pipeline("arch-me")["steps"], "步骤被归档弄没了"
+    assert dbsession.get_run("run-archme01"), "运行记录被归档弄没了"
+    assert runner.workspace_dir("run-archme01").is_dir(), "工作区被归档弄没了"
+    client.post("/api/pipelines/arch-me/archive", json={"archived": False})
+    p2 = [x for x in client.get("/api/pipelines").json()["pipelines"] if x["name"] == "arch-me"][0]
+    assert p2["archived"] == 0
+    client.post("/api/pipelines/arch-me/archive", json={"archived": True})
+    assert client.post("/api/pipelines/nope-nope/archive", json={"archived": True}).status_code == 404
+    dbsession.delete_run("run-archme01")
+    dbsession.delete_pipeline("arch-me")
+    import shutil
+    shutil.rmtree(runner._ws_path("run-archme01"), ignore_errors=True)
+
+
+def test_last_run_is_the_newest_per_pipeline(client, dbsession, fresh_runs):
+    dbsession.create_pipeline("lr-a", steps=[{"key": "a"}])
+    dbsession.create_pipeline("lr-b", steps=[{"key": "b"}])
+    for i in range(3):
+        dbsession.create_run(f"run-lr{i}", "lr-a", steps=[])
+    dbsession.create_run("run-lrb0", "lr-b", steps=[])
+    by = {p["name"]: p for p in client.get("/api/pipelines").json()["pipelines"]}
+    assert by["lr-a"]["last_run"]["id"] == "run-lr2", "取的不是最近一次"
+    assert by["lr-b"]["last_run"]["id"] == "run-lrb0"
+    assert by["lr-a"]["runs"] == 3
+    conn = dbsession.get_conn()
+    conn.execute("DELETE FROM runs WHERE pipeline IN ('lr-a','lr-b')")
+    conn.execute("DELETE FROM pipeline_definitions WHERE name IN ('lr-a','lr-b')")
+    conn.commit(); conn.close()

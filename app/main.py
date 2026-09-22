@@ -85,12 +85,14 @@ def list_pipelines():
     """返回全部流程模板（步骤清单完整返回，供编排器/新建页展示）。
     runs = 被跑过的次数，侧栏「项目」用它筛掉从没开工的流程。"""
     counts = db.run_counts()
+    last = db.last_runs()
     out = []
     for p in db.list_pipelines():
         out.append({"template": p["name"], "name": p["name"], "label": p["label"],
                     "desc": p["desc"], "emoji": p["emoji"], "g": p["g"],
-                    "builtin": int(p.get("builtin") or 0),
+                    "archived": int(p.get("archived") or 0),
                     "runs": int(counts.get(p["name"], 0)),
+                    "last_run": last.get(p["name"]),
                     "steps": p.get("steps") or []})
     return {"pipelines": out}
 
@@ -133,6 +135,21 @@ def delete_pipeline(name: str):
         return JSONResponse({"detail": "not found"}, 404)
     db.delete_pipeline(name)
     return {"ok": True}
+
+
+class ArchiveIn(BaseModel):
+    archived: bool = True
+
+
+@app.post("/api/pipelines/{name}/archive")
+def archive_pipeline(name: str, a: ArchiveIn):
+    """归档 = 从侧栏「项目」里收起来，不删任何东西：步骤、运行记录、工作区全留着。
+    真删是 DELETE /api/pipelines/{name} 那一条，走的是另一个确认框。"""
+    if not db.get_pipeline(name):
+        return JSONResponse({"detail": "not found"}, 404)
+    if not db.set_pipeline_archived(name, bool(a.archived)):
+        return JSONResponse({"detail": "not found"}, 404)
+    return {"ok": True, "name": name, "archived": 1 if a.archived else 0}
 
 
 @app.post("/api/pipelines/{name}/duplicate")

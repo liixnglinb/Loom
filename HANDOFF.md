@@ -150,6 +150,8 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
   `C:\Users\李星历\AppData\Local\Programs\Python\Python312\python.exe`，并且带 `PYTHONUTF8=1`。
 - **uvicorn 没有热重载**：改了 `app/*.py` 必须重启服务，否则你验的是旧代码（上一任在这上面被骗过两次）。
   静态文件不用重启，但浏览器侧还有一层缓存 —— 改 `static/` 后要升 `index.html` 里的 `?v=` 令牌。
+  令牌算法（**别把 `index.html` 算进去**，否则改令牌会改哈希，永远追不上）：
+  `md5(relpath + bytes)` 累加 `static/**` 里的 `.js/.css/.svg/.png`，取前 8 位。
 - `db.get_setting` 有**进程内缓存**：绕过 API 直接改库，正在跑的服务看不见。
 - Git Bash 里 `taskkill` 要写 `taskkill //PID xxx //F`（双斜杠）。
 - **D 盘那些仍是单行压缩的 HTML（部分下载页）用 Edit/Write 工具会 Native execution failed**，必须用 Python 脚本做字符串替换 + **计数断言**（不断言就会静默漏替换）。

@@ -225,7 +225,8 @@ def test_router_highlights_the_matching_nav_item():
     calls = dict(re.findall(r"view==='([\w-]+)'\)\s*await run\([^,]+,\s*'([\w-]+)'\)", APP_JS))
     wrong = {v: (calls.get(v), want) for v, want in NAV_OF_VIEW.items() if calls.get(v) != want}
     assert not wrong, f"路由高亮键不对 {wrong}"
-    nav_ids = set(re.findall(r"\{id:'([\w-]+)',\s*icon:", APP_JS))
+    # 只认导航项那种三件套；下拉框配置（ffSelect 的 {id, icon, onChange}）同形不同职
+    nav_ids = set(re.findall(r"\{id:'([\w-]+)',\s*icon:'[\w-]+',\s*label:t\('nav\.", APP_JS))
     assert nav_ids == {"pipelines", "skills", "runs"}, f"导航项变了：{nav_ids}"
     # 工作台已删（和「新建任务」弹层重复）；旧链接 #/home 由路由兜到工作流
     assert "home" not in nav_ids, "工作台不该再是导航项"
@@ -315,6 +316,8 @@ RAIL_HIDDEN = {
     ".sb-name": "侧栏品牌字", ".sb-new span": "新建任务", ".sb-item span": "主导航",
     ".sb-group>span": "分组标题", ".sb-gcount": "在跑计数",
     ".sb-gadd": "分组加号（和顶栏创建流程重复，轨道里两个加号分不清）",
+    ".sb-garch": "归档切换（图标按钮，56px 轨道里和加号挤成一行）",
+    ".sb-more": "行菜单（图标按钮，轨道里整行只剩一个图标）",
     ".sb-rname": "行标题",
     ".sb-rtag": "行右侧标签", ".sb-empty": "空态文案", ".sb-me-name": "引擎名",
     ".sb-me-chev": "齿轮后的箭头", ".sb-up-tx": "更新胶囊文字",
@@ -479,3 +482,61 @@ def test_durations_are_localised_in_js_not_hardcoded():
     for k in ("unit.sec", "unit.min", "unit.hour"):
         assert f"t('{k}')" in code, f"fmtDur 的中文分支不再取 {k}"
     assert "'en'" in code, "英文分支（h/m/s）也得留着"
+
+
+def test_sidebar_archive_view_always_offers_a_way_back():
+    """归档视图里最后一条被取消归档后列表就空了 —— 切换钮要是跟着消失，
+    人就困在「已归档」这一栏里出不来（只能刷新页面）。"""
+    guard = re.search(r"const garch = \((.*?)\) \?", APP_JS, re.S)
+    assert guard, "找不到侧栏归档切换钮的渲染条件"
+    cond = guard.group(1)
+    assert "SB_ARCH" in cond and "arch.length" in cond, f"条件该是「有归档项 或 正在归档视图」：{cond}"
+    assert "sb.archivedEmpty" in APP_JS, "归档空态文案没了"
+
+
+def test_sidebar_row_menu_matches_the_view_it_is_in():
+    """项目视图：查看文件 / 新建任务 / 归档；归档视图：查看文件 / 取消归档 / 删除。
+    「删除」只在归档视图里露 —— 先归档再删，两步隔开，正在用的流程不会被一键抹掉。"""
+    body = re.search(r"window\.sbRowMore = function\(e, name\)\{(.*?)\n\};", APP_JS, re.S)
+    assert body, "找不到 sbRowMore"
+    code = body.group(1)
+    for k in ("sb.viewFiles", "sb.newTaskHere", "sb.archive", "sb.unarchive", "c.delete"):
+        assert f"t('{k}')" in code, f"行菜单少了 {k}"
+    assert "ffActionMenu" in code, "行菜单没走公共外壳"
+    assert "SB_ARCH" in code, "两套菜单被合成一套了"
+
+
+def test_action_menu_closes_on_escape_before_the_other_popups():
+    """.ff-menu 和侧栏搜索、进程浮层共用一条 Esc 处理链。动作菜单压在别人上面，
+    必须第一个吃 Esc —— 顺序反了就会一路按下去把底下的弹窗一起带走。"""
+    esc = APP_JS[APP_JS.index("if(e.key==='Escape'){"):]
+    order = [m.group(1) for m in re.finditer(r"getElementById\('(ffMenu|sbFind|sbPop)'\)", esc)]
+    assert order[:1] == ["ffMenu"], f"Esc 先关的不是动作菜单：{order[:3]}"
+
+
+def test_archived_flows_stay_visible_in_the_workflows_list():
+    """归档只把它们从侧栏那一栏撤走。工作流页要是也跟着藏，人就成了「东西不见了」，
+    而且再没有入口把它捞回来 —— 所以行要留着、挂状态牌、⋯ 里给「取消归档」。"""
+    ed = (STATIC_DIR / "editor.js").read_text(encoding="utf-8")
+    assert "pl-arch-tag" in ed and "t('sb.archived')" in ed, "工作流页不再标已归档"
+    assert "plArchive(name, false)" in ed, "工作流页的 ⋯ 少了取消归档"
+    assert "plArchive(name, true)" in ed, "工作流页的 ⋯ 少了归档"
+    assert ".pl-arch-tag{" in CSS and ".pl-card-row.archived" in CSS, "归档标记没有规则"
+
+
+def test_menu_labels_that_overrun_get_an_ellipsis_not_a_clip():
+    """.ff-mi 是 flex，text-overflow 对裸文本节点（匿名 flex 项）不生效 ——
+    长流程名会被硬裁在边框上。标签必须包成 .ff-ml，且 min-width:0 才能收缩。"""
+    assert '<span class="ff-ml">${esc(o.label)}</span>' in APP_JS, "菜单标签没包 .ff-ml"
+    assert ".ff-mi .ff-ml{min-width:0;overflow:hidden;text-overflow:ellipsis}" in CSS, \
+        ".ff-ml 的省略号规则被改动了"
+
+
+def test_task_modal_checkpoint_hint_follows_the_picked_flow():
+    """弹层里换流程，右边那行「含 N 个检查点」必须跟着换 —— 它一开始只按首选项算，
+    之后再也不更新，于是显示的是另一条流程的检查点。"""
+    body = re.search(r"function tkHint\(\)\{(.*?)\n\}", APP_JS, re.S)
+    assert body, "找不到 tkHint"
+    assert "tkMeta" in body.group(1), "tkHint 不再刷新检查点提示"
+    assert 'id="tkMeta"' in APP_JS, "检查点提示没有挂载点"
+    assert "TK_CPS" in APP_JS, "检查点计数表没了"
