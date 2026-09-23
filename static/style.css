@@ -24,6 +24,10 @@
                                        我们这里选中要压过悬停（选中行同时不加粗），
                                        所以刻意抬到 .08 —— 唯一的有意偏离。 */
   --bg-composer:#FFFFFF;    /* card */
+  /* 输入台顶部那条「选哪条流程」的条带：比 composer 再暗一档。
+     两套主题都是**压黑** —— 不能拿 --bg-sunken 顶替，它在暗色下是压白（会变亮）。
+     实测参考实现：body #2B2B2B，条带 #222222。 */
+  --bg-strip:rgba(13,13,13,.035);
   --bg-pill:rgba(13,13,13,.05);
   --bg-float:#FFFFFF;       /* popover */
   --bg-panel:#FFFFFF;       /* panel */
@@ -129,6 +133,8 @@ html[data-theme="dark"]{
   --bg-hover:rgba(255,255,255,.05);
   --bg-active:rgba(255,255,255,.10);
   --bg-composer:#2B2B2B;
+  /* 压黑 .3：43 → 34 ≈ 实测条带 #222222 */
+  --bg-strip:rgba(13,13,13,.3);
   --bg-pill:rgba(255,255,255,.08);
   --bg-float:#2B2B2B;
   --bg-panel:#202020;
@@ -182,25 +188,43 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
   padding:clamp(56px,22vh,260px) 0 40px;display:flex;flex-direction:column}
 .tk-greet{font-size:var(--fs-h1);font-weight:600;letter-spacing:-.01em;color:var(--ink);
   margin:0 0 22px;text-align:center}
-.tk-card{width:100%;background:var(--bg-panel);border:1px solid var(--line);border-radius:var(--r-5);
-  box-shadow:var(--shadow-composer);overflow:hidden}
-.tk-top{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line-soft)}
+/* 卡片本体 = 实测 715×154、圆角 ~15px。
+   表面用 --bg-composer（暗色 #2B2B2B / 亮色 #FFF），不是 --bg-panel ——
+   之前挂的是 panel，暗色下整块比参考图深一档。
+   边框常态是 --line(.1)：参考图里量到的 #4b4b4b(=.15) 是**聚焦态**的边框
+   （那张截图里光标就在输入框里），不是常态。别把它当常态抄进来。 */
+.tk-card{width:100%;background:var(--bg-composer);border:1px solid var(--line);
+  border-radius:var(--r-5);box-shadow:var(--shadow-composer);overflow:hidden;
+  transition:border-color var(--slide)}
+/* 焦点环画在卡片上，不画在 textarea 上：整张卡就是那个输入区。
+   抬到 --line-strong 正好就是实测的 #4b4b4b —— 既有可见反馈，又不引入彩色光环。 */
+.tk-card:focus-within{border-color:var(--line-strong)}
+/* 顶部条带：实测高 43、比 body 暗一档、下面一条分隔线。
+   .ff-sel 是 30px 高，所以上下各 6px + 1px 线正好落在 43。左内缩实测 21。 */
+.tk-top{display:flex;align-items:center;gap:10px;padding:6px 14px 6px 13px;
+  background:var(--bg-strip);border-bottom:1px solid var(--line-strong)}
 .tk-top .ff-selw{flex:0 1 auto;min-width:0}
 .tk-meta{margin-left:auto;font-size:var(--fs-meta);color:var(--ink-3);white-space:nowrap}
-.tk-field{padding:8px 10px 2px}
-.tk-input{width:100%;border:1px solid var(--line-soft);border-radius:var(--r-3);background:var(--bg-sunken);
-  padding:9px 11px;font-family:inherit;font-size:var(--fs-body);color:var(--ink);resize:none;line-height:1.6}
-.tk-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent)}
+.tk-field{padding:13px 14px 0}
+/* textarea 不再自己画一个内凹盒：卡片就是唯一的表面。
+   边框/底色/圆角全去掉，只留排版 —— 这是"质感"差别的最大一处。 */
+.tk-input{display:block;width:100%;border:none;background:transparent;
+  padding:0;font-family:inherit;font-size:var(--fs-body);color:var(--ink);resize:none;line-height:1.6}
+.tk-input:focus{outline:none}
 .tk-input::placeholder{color:var(--ink-4)}
-/* 下段工具条：动作在左（引擎），发送在右下 —— 参考实现就是这个排布，
-   发送不是通栏大按钮，是长在工具条末端的一枚方正图标键。 */
-.tk-bar{display:flex;align-items:center;gap:8px;padding:8px 12px 12px}
+/* 下段工具条：动作在左（引擎），发送在右下 —— 参考实现就是这个排布。
+   发送键实测 ~28px、距右 14、距下 14；空态是灰的（#959595 压在 #2B2B2B 上），
+   不是成品品牌色 —— 有字了才亮起来，所以这里用 :not(.is-on) 表达"还不能发"。 */
+.tk-bar{display:flex;align-items:center;gap:8px;padding:10px 14px 14px}
 .tk-bar .ff-selw{flex:none}
 .tk-name{flex:1;min-width:0;border:none;background:transparent;color:var(--ink);font-family:inherit;
   font-size:var(--fs-sub);padding:6px 8px;border-radius:var(--r-2)}
 .tk-name:focus{outline:none;background:var(--bg-hover)}
 .tk-name::placeholder{color:var(--ink-4)}
-.tk-bar .cp-send{margin-left:auto;flex:none}
+.tk-bar .cp-send{width:28px;height:28px;margin-left:auto;flex:none;
+  background:color-mix(in oklab, var(--btn-ink) 52%, var(--bg-composer));color:var(--bg-composer)}
+.tk-bar .cp-send.is-on{background:var(--btn-ink);color:var(--ink-inv)}
+.tk-bar .cp-send.is-on:hover{background:var(--btn-ink-hover)}
 .tk-hint{font-size:var(--fs-meta);color:var(--ink-3);padding:8px 4px 0;line-height:1.55}
 .tk-sugs{width:100%;margin-top:18px}
 .tk-sug-head{display:flex;align-items:center;gap:6px;padding:0 4px 8px;font-size:var(--fs-meta);color:var(--ink-3)}

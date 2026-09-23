@@ -881,7 +881,8 @@ LADDER_PX = ["4px", "6px", "8px", "12px", "16px"]
 # 类名 -> 它「应该」用的那一档。父壳和壳内控件成对写，改了一头另一头不许偷偷漂。
 NESTED_RADIUS = {
     ".tk-card": "--r-5",          # 主输入台壳 = 参考实现的四个 2xl 批准例外之一
-    ".tk-input": "--r-3",         # 父壳 ≥ xl → 控件取 lg
+    # .tk-input 故意不在表里：卡片是唯一的表面，textarea 不自己画盒子/圆角
+    # （实测参考图 body 是一整片 #2B2B2B，没有内凹框）。见 test_composer_is_one_surface。
     ".cp-send": "--r-3",          # 图标按钮要方正，不能是正圆
     ".composer-inner": "--r-5",   # 运行台底部那个也是主输入壳
     ".modal-box": "--r-5",        # 对话框壳 = 2xl，且不计入内容层级
@@ -940,3 +941,50 @@ def test_pill_is_reserved_for_deliberate_pills():
         f"多出的正圆：{sorted(round_sels - CIRCLE_50)}；消失的正圆：{sorted(CIRCLE_50 - round_sels)}")
     assert _radius_of(".toast") == "--r-5", "toast 属于 2xl 例外，不是胶囊"
     assert _radius_of(".cp-send") != "--r-pill", "发送键是图标按钮，不是胶囊"
+
+
+# ---------------- 输入台质感（照实测参考图分层） ----------------
+
+def _rule(sel):
+    m = re.search(r"(?:^|[},])\s*" + re.escape(sel) + r"\s*\{([^}]*)\}", CSS, re.M)
+    assert m, f"找不到 {sel} 的规则"
+    return m.group(1)
+
+
+def test_composer_is_one_surface_with_a_darker_strip():
+    """实测参考图：卡片 body 一整片 #2B2B2B，顶部「选流程」那条是更暗的 #222222，
+    中间一条 #4b4b4b 分隔线；textarea 自己不画盒子。
+    差别全在"谁画表面" —— 卡片画，控件不画。"""
+    card = _rule(".tk-card")
+    assert "background:var(--bg-composer)" in card, \
+        "卡片表面要用 composer 那一档（暗色 #2B2B2B）；挂 --bg-panel 会整体暗一档"
+    assert "border:1px solid var(--line)" in card, "常态边框是 .1（参考图量到的 .15 是聚焦态）"
+    assert "border-color:var(--line-strong)" in _rule(".tk-card:focus-within"), \
+        "聚焦抬到 .15 = 实测 #4b4b4b；别换成 --accent-line（.45 太亮，参考图没这么干）"
+    top = _rule(".tk-top")
+    assert "background:var(--bg-strip)" in top, "顶部条带要有自己的底色，不然三段只是靠线分"
+    assert "border-bottom:1px solid var(--line-strong)" in top, "条带下的分隔线同边框一档"
+    inp = _rule(".tk-input")
+    for bad in ("background:var(", "border:1px", "border-radius:"):
+        assert bad not in inp, f"textarea 又自己画表面了：{bad}"
+
+
+def test_bg_strip_is_darker_in_both_themes():
+    """--bg-strip 必须两套主题都是**压黑**。拿 --bg-sunken 顶替是坑：
+    它在暗色下是 rgba(255,255,255,.05)，条带会变亮 —— 亮暗正好反了。"""
+    blocks = CSS.split("html[data-theme=\"dark\"]")
+    assert len(blocks) == 2, "找不到暗色那段，这条测试的切法要跟着改"
+    for name, blk in (("light", blocks[0]), ("dark", blocks[1])):
+        m = re.search(r"--bg-strip:\s*rgba\(13,\s*13,\s*13,\s*([\d.]+)\)", blk)
+        assert m, f"{name} 主题下 --bg-strip 不是压黑的 rgba(13,13,13,α)"
+        assert 0.02 <= float(m.group(1)) <= 0.45, f"{name} 的 --bg-strip alpha={m.group(1)} 不在可用区间"
+
+
+def test_send_button_is_muted_until_there_is_a_brief():
+    """空说明时发送键是灰的（实测 #959595 压在 #2B2B2B 上），有字才亮成品牌色。
+    这是状态，不是装饰：JS 里没有对应的 toggle，按钮就会永远灰着骗人。"""
+    bar = _rule(".tk-bar .cp-send")
+    assert "color-mix(in oklab, var(--btn-ink) 52%, var(--bg-composer))" in bar, \
+        "空态灰要用品牌色压表面混出来，写死 #959595 会在亮色主题下破"
+    assert "is-on" in CSS and ".tk-bar .cp-send.is-on" in CSS, "缺亮起来的那一态"
+    assert "send.classList.toggle('is-on'" in APP_JS, "JS 没接 is-on：按钮会永远灰着"

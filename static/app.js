@@ -699,8 +699,12 @@ function tkHint(){
     const n = TK_CPS[f] || 0;
     meta.textContent = n ? t('tk.cps',{n}) : t('tk.noCp');
   }
-  if(!hint) return;
+  /* 发送键的"还不能发"态：空说明时它是灰的，有字才亮成品牌色。
+     这里顺手管，是因为这个函数已经在每次输入和每次换流程时被调了。 */
   const brief = ((document.getElementById('tkBrief')||{}).value||'').trim();
+  const send = document.querySelector('.tk-bar .cp-send');
+  if(send) send.classList.toggle('is-on', brief.length > 0);
+  if(!hint) return;
   hint.textContent = (brief.length>0 && brief.length<20) ? t('task.briefShort') : t('task.briefHint');
   hint.style.color = (brief.length>0 && brief.length<20) ? 'var(--warn)' : '';
 }
