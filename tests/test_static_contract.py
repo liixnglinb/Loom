@@ -655,3 +655,73 @@ def test_no_window_handler_without_a_caller():
             if len(re.findall(r"\b" + re.escape(m.group(1)) + r"\b", hay)) <= 1:
                 dead.append(f"{fname}:{m.group(1)}")
     assert not dead, f"这些导出的处理函数没有任何调用方：{dead}"
+
+
+# ---------------- 圆角跟嵌套层数走（参考实现 DESIGN.md:285-341） ----------------
+
+LADDER = ["--r-1", "--r-2", "--r-3", "--r-4", "--r-5"]
+# 相对层级是参考实现写进文档的规则；绝对像素这份克隆里读不到（Tailwind 预设没被
+# sparse-checkout 出来），只有一处旁证 DESIGN.md:179 的 16px 壳 / 12px 面板。
+# 所以这里锁"四档递减 + 顶层 16px"，不假装量到了 sm/md/lg 的原值。
+LADDER_PX = ["4px", "6px", "8px", "12px", "16px"]
+
+# 类名 -> 它「应该」用的那一档。父壳和壳内控件成对写，改了一头另一头不许偷偷漂。
+NESTED_RADIUS = {
+    ".tk-card": "--r-5",          # 主输入台壳 = 参考实现的四个 2xl 批准例外之一
+    ".tk-input": "--r-3",         # 父壳 ≥ xl → 控件取 lg
+    ".cp-send": "--r-3",          # 图标按钮要方正，不能是正圆
+    ".composer-inner": "--r-5",   # 运行台底部那个也是主输入壳
+    ".modal-box": "--r-5",        # 对话框壳 = 2xl，且不计入内容层级
+    ".card": "--r-4",             # 第一层圆角容器 = xl
+    ".sc-card": "--r-4",
+    ".st-panel": "--r-4",
+    ".sb-pop": "--r-3",           # 浮层菜单壳 = lg，不是容器 xl
+    ".ff-menu": "--r-3",
+    ".ff-tip": "--r-3",           # 提示也是浮层，跟菜单壳同档
+    ".sb-fi": "--r-2",            # 菜单项 = md
+    ".ff-mi": "--r-2",
+}
+
+
+def _radius_of(sel):
+    """取某个选择器那条规则里的圆角档位；没有规则或非 var() 就返回原文。
+    一个类若有多条规则只认第一条 —— 表里的类必须保持单一圆角来源。"""
+    m = re.search(r"(?<![\w.-])" + re.escape(sel) + r"\s*\{([^}]*)\}", CSS)
+    assert m, f"找不到 {sel} 的规则，NESTED_RADIUS 表该更新了"
+    v = re.search(r"border-radius:\s*([^;}]+)", m.group(1))
+    assert v, f"{sel} 没有 border-radius，表里却写着它"
+    got = v.group(1).strip()
+    return (re.match(r"var\((--[\w-]+)\)", got) or [None, got])[1]
+
+
+def test_radius_ladder_is_a_four_step_nesting_ladder():
+    m = re.search(r"--r-1:([\d.]+px); --r-2:([\d.]+px); --r-3:([\d.]+px);"
+                  r" --r-4:([\d.]+px); --r-5:([\d.]+px)", CSS)
+    assert m, "圆角梯子不再是五个命名档，请连同本测试一起想清楚"
+    assert list(m.groups()) == LADDER_PX, f"梯子漂了：{dict(zip(LADDER, m.groups()))}"
+
+
+def test_radius_follows_the_container_nesting():
+    got = {s: _radius_of(s) for s in NESTED_RADIUS}
+    bad = {k: (v, NESTED_RADIUS[k]) for k, v in got.items() if v != NESTED_RADIUS[k]}
+    assert not bad, f"圆角档位不对（实际, 期望）：{bad}"
+
+
+# 正圆只准留给"真的是个圆"的东西：状态点、滑块圆头。参考实现同一条
+# （DESIGN.md:338 rounded-full 只给故意的胶囊或正圆）。双向锁：新添正圆要过评审。
+CIRCLE_50 = {".sb-pdot", ".adv-dot", ".ws-live i", ".st-state i",
+             ".slider::before", ".st-range::-webkit-slider-thumb",
+             ".st-range::-moz-range-thumb"}
+
+
+def test_pill_is_reserved_for_deliberate_pills():
+    """"按钮、标签、计数器不因类型而获得 rounded-full"（DESIGN.md:336-341）。
+    toast 属于 2xl 例外之一，不是胶囊；发送键是图标按钮，不是正圆。"""
+    round_sels = set()
+    for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", CSS):
+        if re.search(r"border-radius:\s*[^;}]*50%", m.group(2)):
+            round_sels.add(re.sub(r"\s+", " ", re.sub(r"/\*.*?\*/", "", m.group(1))).strip())
+    assert round_sels == CIRCLE_50, (
+        f"多出的正圆：{sorted(round_sels - CIRCLE_50)}；消失的正圆：{sorted(CIRCLE_50 - round_sels)}")
+    assert _radius_of(".toast") == "--r-5", "toast 属于 2xl 例外，不是胶囊"
+    assert _radius_of(".cp-send") != "--r-pill", "发送键是图标按钮，不是胶囊"

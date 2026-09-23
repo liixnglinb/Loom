@@ -64,12 +64,12 @@
 
   --btn-ink:#000000;  --btn-ink-hover:#262626;
 
-  /* 圆角按角色取值，不按元素拍脑袋：
-     r-1 微（22px 以下小块、代码 chip、键帽） r-2 控件与列表行
-     r-3 中型内联块（空态框、提示条） r-4 面板与浮层菜单
-     r-5 大面（输入台 / 对话框） r-pill 胶囊
-     嵌套项一律 calc(外壳 − 外壳 padding)，否则圆角会打架 */
-  --r-1:6px; --r-2:8px; --r-3:10px; --r-4:14px; --r-5:18px; --r-pill:999px;
+  /* 圆角跟"可见圆角容器的嵌套层数"走，不跟元素大小或重要性走（照参考实现 DESIGN.md:285-341）：
+     第一个圆角容器 r-4；往里一层 r-3，再往里 r-2、r-1，r-1 是底线。
+     r-5 只有四个批准例外：主输入台壳 / 对话框壳 / toast / 品牌图标底板。
+     壳里的控件看父壳：父 ≥ r-4 → 控件 r-3；父 r-3 → r-2；父 r-2/r-1 → r-1。
+     r-pill 只给故意的胶囊（进度条、滑块、更新胶囊），按钮/标签/计数器不算。 */
+  --r-1:4px; --r-2:6px; --r-3:8px; --r-4:12px; --r-5:16px; --r-pill:999px;
 /* 字号刻度：内容一律取这 8 档，别再造新数值。
    1rem = 13px（受 --text-scale 缩放），内容四档约 1.09 倍递进。
    这是全站唯一允许用 rem 的地方 —— 几何用 rem 会被字号设置连带放大。 */
@@ -504,7 +504,7 @@ code{font-family:var(--font-mono);font-size:.92em}
 .sb-fres .sb-empty{padding:14px 10px;text-align:center}
 
 /* 左下角配置浮层 */
-.sb-pop{position:fixed;z-index:var(--z-menu);width:242px;padding:6px;border-radius:var(--r-4);
+.sb-pop{position:fixed;z-index:var(--z-menu);width:242px;padding:6px;border-radius:var(--r-3);
   background:var(--bg-float);border:1px solid var(--line-strong);box-shadow:var(--shadow-pop);
   animation:popIn .13s var(--ease) both}
 @keyframes popIn{from{opacity:0;transform:translateY(6px) scale(.985)}to{opacity:1;transform:none}}
@@ -818,7 +818,7 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
   line-height:1.5;resize:none;max-height:160px}
 .cp-input:focus{outline:none}
 .cp-input::placeholder{color:var(--ink-4)}
-.cp-send{width:32px;height:32px;border-radius:50%;border:none;background:var(--btn-ink);color:var(--ink-inv);
+.cp-send{width:32px;height:32px;border-radius:var(--r-3);border:none;background:var(--btn-ink);color:var(--ink-inv);
   display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;
   transition:background var(--slide),transform .16s ease}
 .cp-send:hover{background:var(--btn-ink-hover)}
@@ -949,7 +949,7 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 
 /* ---------- 提示 / 加载 ---------- */
 .toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,14px);z-index:var(--z-toast);padding:8px 15px;
-  border-radius:var(--r-pill);background:var(--btn-ink);color:var(--ink-inv);font-size:var(--fs-sub);opacity:0;
+  border-radius:var(--r-5);background:var(--btn-ink);color:var(--ink-inv);font-size:var(--fs-sub);opacity:0;
   pointer-events:none;box-shadow:var(--shadow-pop);max-width:min(560px,90vw);
   transition:opacity .18s var(--ease),transform .18s var(--ease)}
 .toast.show{opacity:1;transform:translate(-50%,0)}
@@ -988,7 +988,7 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .ff-selw.ff-pill .ff-sc{width:26px}
 .ff-selw.ff-pill.open .ff-sel{background:var(--bg-active);border-color:var(--line-strong)}
 .ff-menu{position:fixed;z-index:var(--z-menu);min-width:180px;max-width:min(340px,92vw);max-height:320px;
-  overflow-y:auto;padding:5px;border-radius:var(--r-4);background:var(--bg-float);
+  overflow-y:auto;padding:5px;border-radius:var(--r-3);background:var(--bg-float);
   border:1px solid var(--line-strong);box-shadow:var(--shadow-pop);animation:popIn .12s var(--ease) both}
 .ff-mi{display:flex;align-items:center;gap:8px;width:100%;padding:9px 11px;border:none;
   border-radius:var(--r-2);background:transparent;color:var(--ink);font-size:var(--fs-sub);text-align:left;
