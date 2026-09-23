@@ -497,6 +497,35 @@ code{font-family:var(--font-mono);font-size:.92em}
 .sb-update.is-ok{background:var(--good);color:var(--on-solid)}
 .sb-update.is-err{background:var(--bad);color:var(--on-solid)}
 
+/* ---------- 更新浮层：居中对话框（胶囊之上的那层） ----------
+   壳走 --r-5（参考实现的 2xl 例外之一就是对话框壳），内容的第一层圆角容器重新从 r-4 起算，
+   所以壳里的进度条走胶囊档、按钮走控件档。 */
+.up-mask{position:fixed;inset:0;z-index:var(--z-modal);
+  background:color-mix(in oklab, var(--ink) 34%, transparent);
+  opacity:0;pointer-events:none;transition:opacity .16s var(--ease)}
+.up-mask[hidden]{display:none}
+/* 关掉时必须让指针穿过去：遮罩是 inset:0 的全屏层，
+   只把 opacity 设成 0 仍然会吃掉整个应用的点击。 */
+body.up-on .up-mask{opacity:1;pointer-events:auto}
+.up-card{position:fixed;left:50%;top:50%;transform:translate(-50%,-46%);z-index:var(--z-modal);
+  width:min(420px,92vw);padding:16px;background:var(--bg-float);border:1px solid var(--line-strong);
+  border-radius:var(--r-5);box-shadow:var(--shadow-pop);
+  opacity:0;pointer-events:none;transition:opacity .16s var(--ease),transform .18s var(--ease)}
+.up-card[hidden]{display:none}
+body.up-on .up-card{opacity:1;transform:translate(-50%,-50%);pointer-events:auto}
+.up-head{display:flex;align-items:center;gap:8px}
+.up-head b{font-size:var(--fs-sub);font-weight:600;color:var(--ink);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.up-x{margin-left:auto;flex:none}
+.up-ver{font-family:var(--font-mono);font-size:var(--fs-meta);color:var(--ink-3);margin-top:4px}
+.up-bar{height:8px;margin-top:12px;border-radius:var(--r-pill);background:var(--bg-sunken);overflow:hidden}
+.up-fill{display:block;height:100%;background:var(--accent);border-radius:var(--r-pill);
+  transition:width .28s var(--ease)}
+.up-mb{font-family:var(--font-mono);font-size:var(--fs-meta);color:var(--ink-3);margin-top:4px;
+  font-variant-numeric:tabular-nums}
+.up-err{font-size:var(--fs-meta);color:var(--bad);margin-top:8px;line-height:1.5}
+.up-btns{display:flex;gap:8px;margin-top:16px}
+
 /* 侧栏搜索面板 */
 .sb-pop.sb-pop-search{width:296px;padding:0}
 .sb-fbox{display:flex;align-items:center;gap:8px;padding:0 11px;height:38px;border-bottom:1px solid var(--line)}

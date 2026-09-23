@@ -412,6 +412,53 @@ def test_picked_engine_is_sent_and_labelled():
     body = APP_JS.split('window.tkEngineSet')[1].split('\n};')[0] if 'window.tkEngineSet' in APP_JS else ''
     assert "TK_ENG = v || ''" in body, f"回填写歪了：{body[:80]}"
 
+# ---------------- 更新：居中三态浮层 ----------------
+
+def test_update_offers_a_centered_dialog_not_just_a_capsule():
+    """胶囊留着当状态指示；三态标题 / 进度条 / MB 读数 / 动作按钮在居中浮层里。
+    参考实现就是"胶囊 + 对话框"两件套（UpdateStatusButton + UpdateStatusDialog）。"""
+    for k in ("upOpen", "upClose", "upDownload", "upApply", "upCheckNow"):
+        assert f"window.{k}" in APP_JS, f"缺 {k}"
+    assert 'id="upCard"' in INDEX_HTML and 'class="up-mask"' in INDEX_HTML
+    assert "z-index:var(--z-modal)" in CSS.split(".up-mask")[1][:200], "遮罩要走 z 刻度"
+    shell = CSS.split(".up-card{")[1][:320]
+    assert "border-radius:var(--r-5)" in shell, "对话框壳属于 2xl 例外档"
+    for key in ("up.tAvailable", "up.tDownloading", "up.tReady"):
+        assert f"t('{key}'" in APP_JS, f"三态标题缺 {key}"
+
+
+def test_update_dialog_shows_real_progress_and_no_fake_buttons():
+    """进度条刻度来自 got/size，不是装饰；后端只有 check/download/apply/url 四条端点，
+    所以参考实现里的「取消下载」「跳过此版本」「自动下载并安装」我们一概不放。"""
+    seg = APP_JS.split('function upCardHtml(')[1].split('\n}\n')[0]
+    assert "up-fill" in seg and "width:${pct}%" in seg, "进度条没接 got/size"
+    assert "mb(u.got" in seg and "mb(u.size" in seg, "缺「已传 / 共」读数"
+    for fake in ("取消下载", "跳过此版本", "skipVersion", "cancelDownload", "自动下载"):
+        assert fake not in seg, f"{fake} 是假按钮：后端没有这个端点"
+    # 更新会退出进程，所以在跑/停在检查点的任务要先拦住（下载和安装两处都要）
+    acts = APP_JS.split('window.upDownload')[1].split('window.upCheckNow')[0]
+    assert "up.busyConfirm" in acts and acts.count("up.busyConfirm") >= 2, \
+        "download / apply 两处至少要各拦一次"
+
+
+def test_update_dialog_refreshes_with_the_poller_and_closes_on_escape():
+    """浮层开着时状态是轮询推来的，不刷就成了过期数字；关掉的路径要有两条。"""
+    pu = APP_JS.split('function paintUpdate()')[1].split('\n}\n')[0]
+    assert "upRepaintDialog()" in pu, "状态变了浮层不跟着刷，用户看到的是过期进度"
+    esc = APP_JS.split("if(e.key==='Escape')")[1][:900]
+    assert "upCard" in esc, "Escape 没关更新浮层"
+    assert esc.index("upCard") < esc.index("ffMenu"), "关闭顺序倒了：先关浮层，再关它下面的菜单"
+    assert 'onclick="upClose()"' in INDEX_HTML, "点遮罩要能关"
+
+
+def test_closed_modal_mask_does_not_swallow_clicks():
+    """.up-mask 是 inset:0 的全屏层。只靠 opacity:0 收起 = 整个应用点不动，
+    而且 DOM 上看不出来，只有手点才知道 —— 所以钉成测试。"""
+    mask = CSS.split(".up-mask{")[1][:240]
+    assert "pointer-events:none" in mask, "遮罩收起时没关指针，会吃掉全屏点击"
+    on = CSS.split("body.up-on .up-mask{")[1][:120]
+    assert "pointer-events:auto" in on, "展开时又忘了把指针还给遮罩"
+
 # ---------------- 侧栏折叠轨道 ----------------
 
 RAIL_HIDDEN = {
@@ -838,6 +885,7 @@ NESTED_RADIUS = {
     ".cp-send": "--r-3",          # 图标按钮要方正，不能是正圆
     ".composer-inner": "--r-5",   # 运行台底部那个也是主输入壳
     ".modal-box": "--r-5",        # 对话框壳 = 2xl，且不计入内容层级
+    ".up-card": "--r-5",          # 更新浮层同样是对话框壳
     ".card": "--r-4",             # 第一层圆角容器 = xl
     ".sc-card": "--r-4",
     ".st-panel": "--r-4",

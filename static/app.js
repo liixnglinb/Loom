@@ -420,7 +420,7 @@ function upView(s){
 function paintUpdate(){
   const b = $('#sbUpdate'); if(!b) return;
   const v = upView(UP);
-  if(!v){ b.hidden = true; b.innerHTML = ''; b.dataset.tip = ''; return; }
+  if(!v){ b.hidden = true; b.innerHTML = ''; b.dataset.tip = ''; window.upClose(); return; }
   b.hidden = false;
   b.className = 'sb-update' + (v.tone ? ' is-' + v.tone : '');
   b.innerHTML = (v.tone === 'dl' ? '<span class="sb-up-bar"></span>' : '')
@@ -429,7 +429,82 @@ function paintUpdate(){
   b.dataset.tip = v.tip;
   b.setAttribute('aria-label', v.tip);
   b.style.setProperty('--p', (v.p || 0) + '%');
+  window.upRepaintDialog();
 }
+
+/* ---------------- 更新浮层（胶囊 + 居中对话框两件套） ----------------
+   三态标题照参考实现（UpdateStatusDialog：New version / Downloading / is ready）。
+   按钮只放后端真支持的：check / download / apply 三条端点，
+   所以「取消下载」「跳过此版本」「自动下载并安装」一概不做。 */
+function upTitle(u){
+  if(u.phase === 'downloading') return t('up.tDownloading', {v: u.latest || ''});
+  if(u.phase === 'ready')       return t('up.tReady', {v: u.latest || ''});
+  if(u.phase === 'error')       return t('up.tFailed');
+  return t('up.tAvailable', {v: u.latest || ''});
+}
+
+function upCardHtml(){
+  const u = UP || {};
+  const pct = u.phase==='ready' ? 100
+            : (u.size ? Math.min(99, Math.floor((u.got||0)*100/u.size)) : 0);
+  const bar = (u.phase==='downloading' || u.phase==='ready')
+    ? `<div class="up-bar"><i class="up-fill" style="width:${pct}%"></i></div>
+       <div class="up-mb">${esc(mb(u.got||0))} / ${esc(mb(u.size||0))}</div>` : '';
+  const err = u.phase==='error' ? `<div class="up-err">${esc(u.error||t('up.unknown'))}</div>` : '';
+  const later = `<button class="btn" onclick="upClose()">${esc(t('up.later'))}</button>`;
+  let btns;
+  if(u.phase === 'available')
+    btns = `<button class="btn btn-primary" onclick="upDownload()">${esc(t('up.downloadNow'))}</button>${later}`;
+  else if(u.phase === 'downloading')
+    btns = later;
+  else if(u.phase === 'ready')
+    btns = `<button class="btn btn-primary" ${u.frozen?'':'disabled'}
+              onclick="upApply()">${esc(t('up.apply'))}</button>${later}`;
+  else
+    btns = `<button class="btn btn-primary" onclick="upCheckNow()">${esc(t('up.recheck'))}</button>${later}`;
+  return `<div class="up-head"><b id="upHeadTtl">${esc(upTitle(u))}</b>
+      <button class="up-x ic-btn" onclick="upClose()" data-tip-any="1"
+        data-tip="${esc(t('up.close'))}" aria-label="${esc(t('up.close'))}">${ico('close')}</button></div>
+    <div class="up-ver">${esc(t('up.nowOn', {v: u.local || ''}))}</div>
+    ${bar}${err}
+    <div class="up-btns">${btns}</div>`;
+}
+
+window.upOpen = function(){
+  const c = document.getElementById('upCard'); if(!c) return;
+  document.body.classList.add('up-on');
+  c.hidden = false;
+  c.innerHTML = upCardHtml();
+  const b = c.querySelector('.up-x'); if(b) b.focus();
+};
+window.upClose = function(){
+  const c = document.getElementById('upCard'); if(!c || c.hidden) return;
+  c.hidden = true;
+  document.body.classList.remove('up-on');
+};
+window.upRepaintDialog = function(){
+  const c = document.getElementById('upCard');
+  if(c && !c.hidden) c.innerHTML = upCardHtml();
+};
+window.upDownload = async function(){
+  const n = (UP && UP.active_runs) || 0;
+  if(n > 0 && !confirm(t('up.busyConfirm', {n}))) return;
+  UP = await post('/api/update/download').catch(()=>({phase:'error', error:t('up.reqFail')}));
+  paintUpdate(); upPoll();
+  if(UP && UP.phase === 'error') toast(UP.error);
+};
+window.upApply = async function(){
+  if(!confirm(t('up.applyGo', {v: (UP && UP.latest) || ''}))) return;
+  const n = (UP && UP.active_runs) || 0;
+  if(n > 0 && !confirm(t('up.busyConfirm', {n}))) return;
+  const r = await post('/api/update/apply').catch(e=>({detail:String(e)}));
+  if(r && r.detail){ toast(r.detail); return; }
+  toast(t('up.applyStarted'), true);
+};
+window.upCheckNow = async function(){
+  UP = await post('/api/update/check').catch(()=>UP);
+  paintUpdate();
+};
 
 function upPoll(){
   if(UP_POLL){ clearInterval(UP_POLL); UP_POLL = null; }
@@ -442,30 +517,12 @@ function upPoll(){
   }, 400);
 }
 
-window.sbUpdateClick = async function(e){
+/* 胶囊只负责"有没有事要你看"，动作全在浮层里 —— 原来点一下就默默开始下载，
+   用户没机会先看版本号和当前在跑几个任务。 */
+window.sbUpdateClick = function(e){
   if(e) e.stopPropagation();
   if(!UP) return;
-  if(UP.phase === 'available'){
-    const n = UP.active_runs || 0;
-    if(n > 0 && !confirm(t('up.busyConfirm', {n}))) return;
-    UP = await post('/api/update/download').catch(()=>({phase:'error', error:t('up.reqFail')}));
-    paintUpdate(); upPoll();
-    if(UP.phase === 'error') toast(UP.error);
-    return;
-  }
-  if(UP.phase === 'error'){
-    UP = await post('/api/update/check').catch(()=>UP); paintUpdate(); return;
-  }
-  if(UP.phase === 'ready'){
-    if(!confirm(t('up.applyGo', {v: UP.latest || ''}))) return;
-    const n = UP.active_runs || 0;
-    if(n > 0 && !confirm(t('up.busyConfirm', {n}))) return;
-    const r = await post('/api/update/apply').catch(e=>({detail:String(e)}));
-    if(r && r.detail){ toast(r.detail); return; }
-    toast(t('up.applyStarted'), true);
-    return;
-  }
-  if(UP.phase === 'downloading'){ toast(t('up.downloading')); }
+  window.upOpen();
 };
 
 async function upInit(){
@@ -2016,8 +2073,10 @@ document.addEventListener('keydown', (e)=>{
   const hit = KEYMAP.find(r => r.scope==='g' && keyMatches(r, e));
   if(hit && hit.id !== 'close'){ e.preventDefault(); KEY_ACTION[hit.id](); return; }
   if(e.key==='Escape'){
-    /* 从最上层往下逐个关：ff-menu（下拉 + 动作菜单）压着别的浮层，
-       不先关就会一路 Esc 把底下的弹窗也带走。 */
+    /* 从最上层往下逐个关：更新浮层压在所有菜单之上，先关它；
+       再关 ff-menu（下拉 + 动作菜单），不先关就会一路 Esc 把底下的弹窗也带走。 */
+    const uc = document.getElementById('upCard');
+    if(uc && !uc.hidden){ e.preventDefault(); window.upClose(); return; }
     const fm = document.getElementById('ffMenu');
     if(fm && !fm.hidden){ e.preventDefault(); ffClose(); return; }
     const fd = document.getElementById('sbFind');
