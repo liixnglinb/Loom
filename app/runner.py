@@ -105,14 +105,21 @@ def is_cancelled(run_id: str) -> bool:
 
 # ==================== 工作区与产物 ====================
 def _ws_path(run_id: str) -> Path:
-    name = run_id if str(run_id).startswith("run-") else f"run-{run_id}"
-    return paths.WORKSPACES_DIR / name
+    return paths.WORKSPACES_DIR / db.ws_dir_name(run_id)
 
 
 def workspace_dir(run_id: str) -> Path:
     d = _ws_path(run_id)
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def _agent_cwd(run: dict, ws: Path) -> Path:
+    """智能体在哪个目录里干活：下任务时选了文件夹就用它，否则用派生工作区。
+    Loom 自己写的东西（转录、给 claude 的系统提示文件、步骤产物）仍旧落进 ws ——
+    所以"选文件夹"不会往用户目录里放下任何一个由我们创建的文件。"""
+    wd = (run.get("workdir") or "").strip()
+    return Path(wd) if wd else ws
 
 
 def _safe_out_name(out: str) -> str | None:
@@ -523,14 +530,10 @@ def compose_skill_prompt(skill_field: str, skill_src: str = "") -> tuple:
 
 
 # ==================== 模型与引擎解析 ====================
-def resolve_agent_config(step: dict) -> dict:
-    """本步用哪个引擎、哪个端点与模型。
-
-    引擎：步级 engine > 设置 default_engine > 本机第一个可用的 CLI。
-    端点/模型阶梯：步级 model 是预设名 > 默认预设的 model_map[步骤key] >
-    步级 model 当裸模型名挂在默认预设上 > 默认预设的 fallback_model > 默认预设。
-    全部留空时不注入任何环境变量，沿用 CLI 自身的登录配置。
-    """
+def resolve_engine(step: dict) -> str:
+    """这一步最终落在哪个引擎：步级 engine > 设置 default_engine > 本机第一个可用的 CLI。
+    两处用它：跑步骤时定配置，和起跑时判断"这条会不会交给 codex"（自定义工作目录
+    那条限制要按同一套解析来判，另写一遍迟早和实际跑的岔开）。"""
     engine = (step.get("engine") or "").strip().lower()
     if engine not in agents.ENGINES:
         engine = (db.get_setting("default_engine") or "").strip().lower()
@@ -540,6 +543,18 @@ def resolve_agent_config(step: dict) -> dict:
         raise RuntimeError(
             "本机未检测到任何智能体 CLI（claude / codex）。装好任意一个，"
             "或在设置页「智能体引擎」里填可执行文件路径。")
+    return engine
+
+
+def resolve_agent_config(step: dict) -> dict:
+    """本步用哪个引擎、哪个端点与模型。
+
+    引擎：见 resolve_engine。
+    端点/模型阶梯：步级 model 是预设名 > 默认预设的 model_map[步骤key] >
+    步级 model 当裸模型名挂在默认预设上 > 默认预设的 fallback_model > 默认预设。
+    全部留空时不注入任何环境变量，沿用 CLI 自身的登录配置。
+    """
+    engine = resolve_engine(step)
 
     conf = {"engine": engine, "provider": "", "api_base": "", "api_key": "",
             "model": "", "wire_api": "", "preset": "", "warn": ""}
@@ -707,6 +722,7 @@ def _run_step(run: dict, idx: int, bus: RunBus, extra_instruction: str = "") -> 
     try:
         res = agents.run_agent(
             conf["engine"], user_text, ws=ws, system_text=sys_arg,
+            cwd=_agent_cwd(run, ws),
             model=conf["model"], api_base=conf["api_base"], api_key=conf["api_key"],
             wire_api=conf["wire_api"], label=f"{idx+1:02d}_{step.get('key')}",
             emit=_emit, cancel_check=lambda: is_cancelled(run_id))
@@ -838,8 +854,29 @@ def _snapshot_steps(pipeline: dict) -> list:
     return steps
 
 
+class BadRunRequest(ValueError):
+    """起跑参数不合法。故意做成 ValueError 的子类：老代码按 ValueError 兜的仍然兜得住，
+    但路由能把它和「流程不存在」分开报 400 而不是 404。"""
+
+
+def check_workdir(p: str) -> str:
+    """下任务时选的文件夹。空串=不选（沿用派生工作区）；非空必须绝对、存在、是目录。
+    只做形状校验，不做"能不能写"的判断 —— 那是智能体自己的沙箱说了算。"""
+    if not p:
+        return ""
+    s = p.strip().strip('"').strip()
+    if not s:
+        raise BadRunRequest("工作文件夹里只有空格：要沿用默认工作区就把它清空")
+    d = Path(s)
+    if not d.is_absolute():
+        raise BadRunRequest(f"「{s}」不是绝对路径，工作文件夹要写完整路径")
+    if not d.is_dir():
+        raise BadRunRequest(f"找不到这个文件夹，或它不是一个目录：{s}")
+    return str(d)
+
+
 def start_run(pipeline_name: str, label: str = "", brief: str = "", engine: str = "",
-              model: str = "") -> dict:
+              model: str = "", workdir: str = "") -> dict:
     p = db.get_pipeline(pipeline_name)
     if not p:
         raise ValueError(f"流程「{pipeline_name}」不存在")
@@ -855,9 +892,18 @@ def start_run(pipeline_name: str, label: str = "", brief: str = "", engine: str 
     if m:
         for s in steps:
             s["model"] = m
+    wd = check_workdir(workdir)
+    if wd:
+        for s in steps:
+            if resolve_engine(s) == "codex":
+                raise BadRunRequest(
+                    "codex 引擎不能指定工作文件夹：它是从运行目录里读 AGENTS.md 拿本步"
+                    "指令的，换到你的文件夹后就读不到 Loom 写的那份了（而把同名文件写进"
+                    "你的目录，等于覆盖你自己的 AGENTS.md）。要么把引擎换成 Claude Code，"
+                    "要么留空用默认工作区。")
     run = db.create_run(run_id, pipeline_name,
                         label or p.get("label") or pipeline_name,
-                        steps, brief=brief)
+                        steps, brief=brief, workdir=wd)
     threading.Thread(target=_run_thread, args=(run_id, 0), daemon=True,
                      name=f"ff-run-{run_id}").start()
     return run
@@ -969,6 +1015,7 @@ def revise_step(run_id: str, index: int, instruction: str) -> dict:
                     bus.publish({**ev, "index": index})
 
             res = agents.run_agent(conf["engine"], prompt, ws=ws, system_text=sys_arg,
+                                   cwd=_agent_cwd(run, ws),
                                    model=conf["model"], api_base=conf["api_base"],
                                    api_key=conf["api_key"], wire_api=conf["wire_api"],
                                    label=f"rev{index+1:02d}_{step.get('key')}",

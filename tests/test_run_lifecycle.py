@@ -251,3 +251,77 @@ def test_revise_clears_a_stale_cancel_flag(dbsession):
     with pytest.raises(ValueError):
         runner.revise_step("run-rev-cancel", 0, "改一下")
     assert "run-rev-cancel" not in runner._CANCEL
+
+
+# ==================== 选工作文件夹（只换智能体的 cwd） ====================
+
+def _start(client, flow, body):
+    return client.post(f"/api/pipelines/{flow}/run", json=body)
+
+
+def test_run_workdir_becomes_the_agent_cwd_only(client, stub_cli, flow,
+                                               workspaces, tmp_path):
+    """Loom 自己的三样东西（转录、步骤产物、给 claude 的系统提示文件）仍旧写在
+    派生工作区里 —— 用户选的那个目录一个字节都不该被我们动过。"""
+    import os
+    d = tmp_path / "我的工程"
+    d.mkdir()
+    r = _start(client, flow, {"brief": "写点什么", "workdir": str(d)})
+    assert r.status_code == 200, r.text
+    run = r.json()["run"]
+    assert os.path.normcase(run["workdir"]) == os.path.normcase(str(d))
+    assert run["workspace"] == runner._ws_path(run["id"]).name, \
+        "库里的派生目录名必须和磁盘上真存在的那个一致"
+    done = _wait(run["id"])
+    assert done["status"] == "done", done["error"]
+    assert list(d.iterdir()) == [], "往用户目录里写了东西：" + str(list(d.iterdir()))
+    assert (runner._ws_path(run["id"]) / "_turn_logs").is_dir()
+
+
+def test_run_workdir_must_be_an_existing_absolute_directory(
+        client, stub_cli, flow, workspaces, tmp_path):
+    d = tmp_path / "ok"
+    d.mkdir()
+    ok = _start(client, flow, {"brief": "x", "workdir": str(d)})
+    assert ok.status_code == 200, ok.text
+    _wait(ok.json()["run"]["id"])
+    for bad in ["", "  ", "relative/dir", str(d / "没有这个子目录"), str(tmp_path / "file.md")]:
+        (tmp_path / "file.md").write_text("文件不是目录", encoding="utf-8")
+        r = _start(client, flow, {"brief": "x", "workdir": bad})
+        if bad:
+            assert r.status_code == 400, f"{bad!r} 竟然收下了"
+            assert "文件夹" in r.json()["detail"] or "目录" in r.json()["detail"]
+        else:
+            assert r.status_code == 200, "留空=不选，必须照常能跑"
+            _wait(r.json()["run"]["id"])
+
+
+def test_codex_refuses_a_run_with_a_custom_workdir(client, dbsession,
+                                                   workspaces, tmp_path):
+    """codex 的项目指令是从 cwd 里读 AGENTS.md 的。换成用户的目录，要么我们的系统提示
+    它一个字都读不到（静默没指令），要么把人家仓库里的 AGENTS.md 覆盖了 —— 两个都不接受，
+    所以这个组合在起跑前就拒，等引擎解析那一步的兜底也没留到以后才补。"""
+    d = tmp_path / "工程"
+    d.mkdir()
+    dbsession.create_pipeline("cx-flow", label="覆盖用例", steps=[
+        {"key": "a", "label": "A", "out": "", "engine": "codex", "skill": ""}])
+    r = _start(client, "cx-flow", {"brief": "x", "workdir": str(d)})
+    assert r.status_code == 400, r.text
+    assert "codex" in r.json()["detail"]
+    assert not d.exists() or list(d.iterdir()) == []
+    dbsession.delete_pipeline("cx-flow")   # 库是共享的，别把这条流程漏给"出厂为空"那条断言
+
+
+def test_deleting_a_run_never_touches_the_chosen_folder(client, stub_cli, flow,
+                                                        workspaces, tmp_path):
+    """delete_run 里那句 rmtree 吃的是派生工作区。这条钉死它别顺手扩到用户目录：
+    删一条运行记录，不该变成删掉人家整个工程。"""
+    d = tmp_path / "工程"
+    d.mkdir()
+    keep = d / "keep.md"
+    keep.write_text("# 用户的文件\n别删\n", encoding="utf-8")
+    run = _start(client, flow, {"brief": "写", "workdir": str(d)}).json()["run"]
+    _wait(run["id"])
+    assert client.delete(f"/api/runs/{run['id']}").status_code == 200
+    assert keep.is_file() and keep.read_text(encoding="utf-8").startswith("# 用户的文件")
+    assert [p.name for p in d.iterdir()] == ["keep.md"]

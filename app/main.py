@@ -492,6 +492,7 @@ class RunStartIn(BaseModel):
     brief: str = ""
     engine: str = ""
     model: str = ""
+    workdir: str = ""
 
 class ReviseIn(BaseModel):
     index: int
@@ -508,7 +509,9 @@ def start_pipeline_run(name: str, b: RunStartIn):
     """启动一次流程运行：返回 run（含 id），前端跳转运行控制台。"""
     try:
         run = runner.start_run(name, b.label or "", b.brief or "", b.engine or "",
-                               b.model or "")
+                               b.model or "", b.workdir or "")
+    except runner.BadRunRequest as e:
+        return JSONResponse({"detail": str(e)}, 400)
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, 404)
     except Exception as e:

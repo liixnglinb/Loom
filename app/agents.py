@@ -478,6 +478,7 @@ def _arg_preview(inp) -> str:
 
 # ==================== 统一入口 ====================
 def run_agent(engine: str, prompt: str, *, ws: Path, system_text: str = "",
+              cwd: Path | None = None,
               model: str = "", api_base: str = "", api_key: str = "",
               wire_api: str = "", timeout: int = 0,
               emit=None, label: str = "", cancel_check=None) -> dict:
@@ -485,6 +486,11 @@ def run_agent(engine: str, prompt: str, *, ws: Path, system_text: str = "",
 
     timeout<=0 时取设置页的单步超时。cancel_check: 可选回调，返回 True 即请求
     中止，抛 AgentCancelled。
+
+    ws 和 cwd 是两件事：ws 是 Loom 自己的落盘处（转录、给 claude 的系统提示文件），
+    cwd 只是智能体在哪个目录里干活（下任务时选的文件夹）。合并成一个的话，
+    "选文件夹"就会连带把我们的文件灌进用户的仓库，而 delete_run 那句 rmtree
+    也跟着吃掉它。
     """
     if timeout <= 0:
         timeout = step_timeout()
@@ -498,6 +504,7 @@ def run_agent(engine: str, prompt: str, *, ws: Path, system_text: str = "",
             "或把该步骤的引擎改成已就绪的那个。")
     ws = Path(ws)
     ws.mkdir(parents=True, exist_ok=True)
+    run_cwd = Path(cwd) if cwd else ws
     system_file = None
     if (system_text or "").strip():
         system_file = ws / "_step_system.txt"
@@ -505,11 +512,11 @@ def run_agent(engine: str, prompt: str, *, ws: Path, system_text: str = "",
 
     isolated = bool((api_base or "").strip() or (api_key or "").strip())
     if engine == "claude":
-        args = _claude_args(ws, system_file, model, isolated)
+        args = _claude_args(run_cwd, system_file, model, isolated)
         env = _claude_env(api_base, api_key)
         parse = _claude_events
     else:
-        args = _codex_args(ws, system_file, model, api_base, api_key, wire_api)
+        args = _codex_args(run_cwd, system_file, model, api_base, api_key, wire_api)
         env = _codex_env(api_base, api_key)
         parse = _codex_events
 
@@ -521,7 +528,7 @@ def run_agent(engine: str, prompt: str, *, ws: Path, system_text: str = "",
     log_path = log_dir / f"{(label or engine)}_{time.strftime('%H%M%S')}.jsonl"
 
     try:
-        proc = subprocess.Popen(_argv(b, args), cwd=str(ws), env=env,
+        proc = subprocess.Popen(_argv(b, args), cwd=str(run_cwd), env=env,
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True,
                                 encoding="utf-8", errors="replace", bufsize=1)

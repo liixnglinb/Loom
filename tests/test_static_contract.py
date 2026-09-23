@@ -1131,3 +1131,15 @@ def test_memory_editor_closes_on_a_window_function_not_a_module_let():
     assert "CAPS_VIEW." not in body.split("oninput=")[1].split(">")[0], \
         "内联事件里直接引用了 IIFE 内的 let"
     assert "window.capsDirty" in APP_JS, "没有那个桥接函数"
+
+
+def test_composer_workdir_field_is_only_a_path_the_server_judges():
+    """选文件夹=只换智能体的 cwd。前端不许自己判合法性（绝对/存在/是不是目录，
+    还有"codex 不接受"那条），服务端 check_workdir 是唯一裁判 —— 两边各判一套，
+    迟早出现"界面能填、起跑才报错"。"""
+    seg = _composer()
+    assert 'id="tkDir"' in seg, "输入台没有工作文件夹这一格"
+    assert "task.dirPh" in seg and "task.dirTip" in seg, "占位和悬停说明得说清留空是什么"
+    body = APP_JS.split("window.taskStart = async function()")[1].split("\n};")[0]
+    assert "workdir: dir" in body, "填了却没发出去 = 装饰"
+    assert "TK_DIR = dir" in body, "重渲染要能把这格带回原值，不然填一半换流程就丢"

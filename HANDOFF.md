@@ -265,6 +265,8 @@ PYTHONUTF8=1 "<python>" -m pytest -q          # 全绿即可，不需网络
 - 圆角跟**嵌套层数**走：第一个圆角容器 `--r-4`，往里 `--r-3 → --r-2 → --r-1`；`--r-5` 只有四个批准例外（主输入台壳 / 对话框壳 / toast / 品牌底板）；胶囊档只给故意的胶囊和正圆（清单是 `NESTED_RADIUS` + `CIRCLE_50`，双向锁）。
 - 侧栏一个入口一件事：同一次运行不在「项目」和另一组「最近」里各出现一次；run 嵌在自己的流程下面。
 - 居中的浮层收起时必须 `pointer-events:none`（`inset:0` 的遮罩只用 opacity 收 = 全屏点不动）。
+- **`ws` 和 `cwd` 是两件事，不许合并。** `ws` 是 Loom 自己的落盘处（派生工作区 `run-<id>`：转录、给 claude 的系统提示文件、步骤产物），`cwd` 只是智能体在哪个目录干活（下任务时选的文件夹）。合成一个的后果是具体的：`delete_run` 里那句 `rmtree(workspace_dir(...))` 会去删用户的工程目录，而 codex 那路会往里面写 `AGENTS.md` 覆盖人家的项目记忆 —— 所以 codex + 自定义文件夹在 `start_run` 就直接拒（按 `resolve_engine` 判，和实际跑的那套同源）。
+- 派生工作区的目录名只有一份规则：`db.ws_dir_name(run_id)`。`runner._ws_path` 和 `create_run` 写进库的那个名字都必须走它 —— 从前是两份各写各的，库里存着 `run-run-<id>` 这种磁盘上根本不存在的名字。
 - 滑块读数说「13px」：`ROOT_PX`（app.js）必须等于 CSS 里 `html{font-size:calc(13px * …)}` 的那个 13，测试钉着。
 - 设置页外观的档位表只有一处真相：`ui.js` 的 `TEXT_SIZES/ZOOMS/WIDTHS/THEMES/ACCENTS`，`APP` 里的键名和
   `loadAppearance` 白名单必须同名（测试钉着），否则滑块会静默停在 0 档。

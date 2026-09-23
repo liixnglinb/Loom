@@ -59,12 +59,16 @@ const DICT = {
     'tk.modelAny': '跟随步骤', 'tk.modelAnyD': '不覆盖，每一步沿用它自己挑的端点',
     'task.labelPh': '留空则用流程名', 'task.start': '开始全自动执行',
     'task.needBrief': '任务说明不能为空', 'task.started': '已启动', 'task.noFlow': '还没有流程，先创建一个',
+    'task.dirPh': '工作文件夹（留空=默认工作区）',
+    'task.dirTip': '只换智能体干活的那个目录：转录、产物、系统提示仍旧落在软件自己的运行工作区。'
+      + 'claude 引擎支持；codex 是从运行目录里读 AGENTS.md 拿本步指令的，指定文件夹会在起跑前就被拒。',
 
     'st.pending': '待执行', 'st.running': '执行中', 'st.waiting': '等待确认', 'st.done': '已完成',
     'st.failed': '失败', 'st.cancelled': '已取消', 'st.revising': '修订中', 'run.stepOf': '已完成 {done} / {total} 步',
     'run.checkpointWait': '· 检查点等待确认', 'run.brief': '任务说明', 'run.briefSub': '每一步提示词的唯一依据',
     'run.artifacts': '工作区文件', 'run.noArtifacts': '还没有文件 —— 智能体一开始写就会出现在这里', 
     'run.wsLive': '实时', 'run.wsOut': '交付物', 'run.wsChg': '刚写入',
+    'run.workedIn': '这条运行是在这个目录里干活的，下面列的是软件自己工作区里的产物：',
     'run.wsBinary': '浏览器里看不了这类文件，下载后用对应程序打开。',
     'run.wsReveal': '在文件夹中显示', 'run.wsRevealFail': '打不开文件夹',
     'run.wsRaw': '原文', 'run.wsRendered': '渲染', 'run.wsTrunc': '（只显示前 400 KB）',
@@ -335,6 +339,8 @@ const DICT = {
     'tk.modelAny': 'Follow steps', 'tk.modelAnyD': "Don't override; each step keeps its own endpoint",
     'task.labelPh': 'defaults to the workflow name', 'task.start': 'Run end to end',
     'task.needBrief': 'Task brief is required', 'task.started': 'Started', 'task.noFlow': 'No workflow yet — create one first',
+    'task.dirPh': 'Working folder (blank = default workspace)',
+    'task.dirTip': 'Only the agent\'s working directory changes — transcripts, artifacts and the system prompt still land in Loom\'s own run workspace. Claude supports it; codex reads AGENTS.md from its run directory to get the step instructions, so a custom folder is refused before the run starts.',
 
     'st.pending': 'Pending', 'st.running': 'Running', 'st.waiting': 'Awaiting', 'st.done': 'Done',
     'st.failed': 'Failed', 'st.cancelled': 'Cancelled', 'st.revising': 'Revising', 'run.stepOf': '{done} / {total} steps done',
@@ -342,6 +348,7 @@ const DICT = {
     'run.briefSub': 'the basis of every step prompt',
     'run.artifacts': 'Workspace files', 'run.noArtifacts': 'No files yet — anything the agent writes shows up here', 
     'run.wsLive': 'live', 'run.wsOut': 'Deliverable', 'run.wsChg': 'just written',
+    'run.workedIn': 'This run worked inside this folder; the list below is what our own workspace holds:',
     'run.wsBinary': 'This file type cannot be previewed in a browser — download it and open it in its own app.',
     'run.wsReveal': 'Show in folder', 'run.wsRevealFail': 'Could not open the folder',
     'run.wsRaw': 'Source', 'run.wsRendered': 'Preview', 'run.wsTrunc': '(first 400 KB only)',

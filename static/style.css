@@ -235,10 +235,28 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
   font-size:var(--fs-meta);padding:4px 8px;border-radius:var(--r-2)}
 .tk-name:focus{outline:none;background:var(--bg-hover)}
 .tk-name::placeholder{color:var(--ink-4)}
+/* 工作文件夹：路径比任务名长得多，给它两倍权重（任务名让一边），前面那枚图标
+   是唯一的提示 —— 这一格和旁边那格的差别只有"能填什么"，再加标签就是噪声。
+   焦点底色画在外层（图标和输入框一起），只画输入框会像被切掉一半的胶囊。 */
+.tk-dirw{display:flex;align-items:center;gap:5px;flex:2 1 0;min-width:0;
+  padding:4px 8px;border-radius:var(--r-2);color:var(--ink-4)}
+.tk-dirw:focus-within{background:var(--bg-hover)}
+.tk-dirw .ic{width:14px;height:14px;flex:none}
+.tk-dir{flex:1;min-width:0;border:none;background:transparent;color:var(--ink);font-family:inherit;
+  font-size:var(--fs-meta);padding:0}
+.tk-dir:focus{outline:none}
+.tk-dir::placeholder{color:var(--ink-4)}
 .tk-bar .cp-send{width:28px;height:28px;margin-left:auto;flex:none;
   background:color-mix(in oklab, var(--btn-ink) 52%, var(--bg-composer));color:var(--bg-composer)}
 .tk-bar .cp-send.is-on{background:var(--btn-ink);color:var(--ink-inv)}
 .tk-bar .cp-send.is-on:hover{background:var(--btn-ink-hover)}
+
+/* 选了工作文件夹时必须在产物清单上方说一句：下面列的不是那个目录的内容，
+   是我们自己的工作区 —— 不说就成了"我选的文件呢？"。 */
+.rt-wd{display:flex;align-items:center;gap:6px;margin:2px 0 6px;
+  font-size:var(--fs-meta);color:var(--ink-3)}
+.rt-wd .ic{width:13px;height:13px;flex:none;color:var(--ink-4)}
+.rt-wd b{font-weight:500;color:var(--ink-2);word-break:break-all}
 
 /* ---------- 键位表：命令 / 按键绑定 / 作用域 ---------- */
 .sc-card{background:var(--bg-panel);border:1px solid var(--line-panel);border-radius:var(--r-4);overflow:hidden}

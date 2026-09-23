@@ -109,6 +109,8 @@ function drawConsole(){
       ${['running','revising','waiting'].includes(u.status)?`<span class="ws-live"><i></i>${esc(t('run.wsLive'))}</span>`:''}
       <span class="spacer"></span>
       <button class="pf-op" onclick="runRefreshArts(true)">${ico('refresh')}${esc(t('c.refresh'))}</button></div>
+    ${(u.workdir||'')?`<div class="rt-wd">${ico('folder')}<span>${esc(t('run.workedIn'))}
+      <b class="mono">${esc(u.workdir)}</b></span></div>`:''}
     <div class="pl-list" id="runArts">${wsRows()}</div>
 
     ${composerHtml(u)}`;

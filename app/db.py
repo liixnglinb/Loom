@@ -82,6 +82,8 @@ def init_db():
         updated_at TEXT NOT NULL
     )""")
     _add_column(c, "runs", "brief", "brief TEXT NOT NULL DEFAULT ''")  # 任务说明
+    # 下任务时选的工作文件夹（只当智能体的 cwd）。空串=没选，沿用派生工作区。
+    _add_column(c, "runs", "workdir", "workdir TEXT NOT NULL DEFAULT ''")
     conn.commit(); conn.close()
 
 
@@ -307,13 +309,22 @@ def _run_row(r):
     return d
 
 
-def create_run(run_id, pipeline, label="", steps=None, brief=""):
+def ws_dir_name(run_id: str) -> str:
+    """派生工作区的目录名。规则只这一份：id 已经带 run- 前缀就别再加，
+    否则 runner._ws_path 算出 run-abc、这行写的却是 run-run-abc —— 库里的路径
+    在磁盘上根本不存在（原先就是这个状态，没人读所以没暴露）。"""
+    s = str(run_id)
+    return s if s.startswith("run-") else f"run-{s}"
+
+
+def create_run(run_id, pipeline, label="", steps=None, brief="", workdir=""):
     now = _now()
     conn = get_conn(); c = conn.cursor()
-    c.execute("""INSERT INTO runs(id,pipeline,label,workspace,status,cur_step,waiting_reason,steps,brief,error,created_at,updated_at)
-                 VALUES(?,?,?,?,?,0,'',?,?, '', ?, ?)""",
-              (run_id, pipeline, label, f"run-{run_id}", "pending",
-               json.dumps(steps or [], ensure_ascii=False), brief or "", now, now))
+    c.execute("""INSERT INTO runs(id,pipeline,label,workspace,status,cur_step,waiting_reason,steps,brief,error,created_at,updated_at,workdir)
+                 VALUES(?,?,?,?,?,0,'',?,?, '', ?, ?,?)""",
+              (run_id, pipeline, label, ws_dir_name(run_id), "pending",
+               json.dumps(steps or [], ensure_ascii=False), brief or "", now, now,
+               (workdir or "").strip()))
     conn.commit(); conn.close()
     return get_run(run_id)
 

@@ -661,6 +661,10 @@ function tkStageHtml(tpls, flow){
                                  note:p.steps.length+' '+t('c.steps')})),
                    flow, {id:'tkFlow', icon:'flow', onChange:'tkSync'})}
         ${ffSelect(PERMS, ST.permMode||'', {id:'tkPerm', icon:'shield', onChange:'tkPermSet', short:true})}
+        <label class="tk-dirw" title="${esc(t('task.dirTip'))}">${ico('folder')}
+          <input class="tk-dir" id="tkDir" type="text" spellcheck="false" autocomplete="off"
+            value="${esc(TK_DIR)}" placeholder="${esc(t('task.dirPh'))}"
+            aria-label="${esc(t('task.dirPh'))}"></label>
         <input class="tk-name" id="tkLabel" placeholder="${esc(t('task.labelPh'))}">
       </div>
       <div class="tk-field">
@@ -780,13 +784,18 @@ window.tkEngineSet = function(v){ TK_ENG = v || ''; };
    「预设名 > 裸模型名 > 默认预设」的老阶梯 —— 这里不另开一套解析。 */
 let TK_MODEL = '';
 window.tkModelSet = function(v){ TK_MODEL = v || ''; };
+/* 在哪个目录里干活。'' = 用软件自己派的 run-<id> 工作区。
+   和引擎/模型一样是"这一条任务的选择"，但起跑后不清：连着跑同一个工程是常态。 */
+let TK_DIR = '';
 window.taskStart = async function(){
   const flow = (document.getElementById('tkFlow')||{}).value||'';
   const brief = ((document.getElementById('tkBrief')||{}).value||'').trim();
   const label = ((document.getElementById('tkLabel')||{}).value||'').trim();
+  const dir = ((document.getElementById('tkDir')||{}).value||'').trim();
   if(!brief){ toast(t('task.needBrief')); return; }
+  TK_DIR = dir;
   const r = await post('/api/pipelines/'+encodeURIComponent(flow)+'/run',
-                       {brief, label, engine: TK_ENG, model: TK_MODEL})
+                       {brief, label, engine: TK_ENG, model: TK_MODEL, workdir: dir})
     .catch(e=>({detail:String(e)}));
   if(r.detail){ toast(r.detail); return; }
   // 输入台现在长在页面上，没有"关掉窗口"这回事了 —— 起跑后把草稿清空，
