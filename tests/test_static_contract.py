@@ -5,6 +5,7 @@
 """
 import json
 import re
+import time
 from pathlib import Path
 
 import pytest
@@ -322,6 +323,55 @@ def test_brand_svg_is_self_contained(name):
     assert "currentColor" not in svg, "图标 SVG 不能依赖 currentColor，<img> 里不生效"
     for gid in re.findall(r"url\(#([\w-]+)\)", svg):
         assert f'id="{gid}"' in svg, f"{name} 引用了不存在的渐变 {gid}"
+
+
+# ---------------- 侧栏项目行嵌套最近运行 ----------------
+
+def test_relative_time_uses_the_reference_four_tiers():
+    """参考实现只有四档紧凑写法，没有月/年档（taskListItemPresentation.ts:33-53）。
+    阈值差一档，侧栏上就是"7 天前"和"0 天前"的区别 —— 所以让 node 真把函数跑一遍。"""
+    import subprocess
+    js = ("const s=require('fs').readFileSync(process.argv[1],'utf8');"
+          "const grab=(n)=>s.match(new RegExp('function '+n+'\\\\([\\\\s\\\\S]*?\\\\n\\\\}'))[0];"
+          "eval(grab('parseLdb'));eval(grab('relUnit'));"
+          "const q=JSON.parse(process.argv[2]);"
+          "console.log(JSON.stringify(q.map(([a,b])=>relUnit(a,b))));")
+    # 库里存的是本地时间串（db._now 用 time.strftime），parseLdb 也按本地解释，
+    # 所以两端都用 localtime 格式化才不会因机器时区而漂 —— 别写 gmtime±8。
+    fmt = lambda ms: time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ms / 1000))
+    NOW = 1777000000000                      # 定死一个"现在"，别用 Date.now
+    cases = [(NOW - 30_000,        {"s": 0, "u": "now"}),
+             (NOW - 59_000,        {"s": 0, "u": "now"}),
+             (NOW - 60_000,        {"s": 1, "u": "m"}),
+             (NOW - 59 * 60e3,     {"s": 59, "u": "m"}),
+             (NOW - 60 * 60e3,     {"s": 1, "u": "h"}),
+             (NOW - 23.9 * 3600e3, {"s": 23, "u": "h"}),
+             (NOW - 24 * 3600e3,   {"s": 1, "u": "d"}),
+             (NOW - 40 * 86400e3,  {"s": 40, "u": "d"}),   # 40 天仍是「天」，不给月档
+             (NOW + 5 * 60e3,      {"s": 0, "u": "now"})]  # 时钟没同步：别印 -5 分
+    # relUnit(iso, nowMs)：iso 是库里的时间串，now 是毫秒数 —— 别把 now 也格式化成串，
+    # 那样 "2026-04-24 12:26:40" - 数字 = NaN，四档全部退化成"刚刚"。
+    payload = json.dumps([[fmt(ms), NOW] for ms, _ in cases])
+    r = subprocess.run(["node", "-e", js, str(STATIC_DIR / "app.js"), payload],
+                       capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stderr[:400]
+    got = json.loads(r.stdout)
+    assert got == [w for _, w in cases], f"阈值不对：{list(zip(got, [w for _, w in cases]))}"
+
+
+def test_recent_runs_are_nested_under_their_project_not_listed_twice():
+    """同一个 run 在侧栏出现两次 = 两个入口管一件事。
+    参考实现是嵌在项目行下面、用一条左边框轨道缩进（workspace-grouped-tasks/types.ts:35-47）。"""
+    seg = APP_JS.split("async function renderSidebarLists(")[1].split("\n}\n")[0]
+    assert 'class="sb-run sb-sub' in seg, "run 没嵌进项目行"
+    assert ".sb-runlist" in CSS, "缩进要有一层轨道容器"
+    rail = CSS.split(".sb-runlist")[1][:220]
+    assert "border-left" in rail, "缩进用左边框轨道，不是光加 padding（参考实现同）"
+    assert "t('sb.recent')" not in seg, "「最近运行」那一组还在 —— 现在它是重复入口"
+    assert "relTime(" in seg, "次行没打相对时间"
+    assert "sb-gcount" in seg, "在跑计数挂在分组标题上，不是每行一个"
+    # 每组最多两条：侧栏是入口不是清单
+    assert ".slice(0, 2)" in seg or ".slice(0,2)" in seg, "嵌套行要有上限"
 
 
 # ---------------- 侧栏折叠轨道 ----------------

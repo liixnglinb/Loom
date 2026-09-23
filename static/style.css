@@ -426,6 +426,13 @@ code{font-family:var(--font-mono);font-size:.92em}
   color:var(--ink-4)}
 .sb-rico .ic{width:14.625px;height:14.625px}
 .sb-rname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+/* 项目行下面挂的最近运行：参考实现用一条左边框轨道缩进
+   （workspace-grouped-tasks/types.ts:35-47 的 ml-4 border-l pl-2），不是再堆一层 padding。
+   轨道色用最淡的那档分隔线，免得比行本身还抢眼。 */
+.sb-runlist{margin-left:12px;padding-left:8px;border-left:1px solid var(--line-soft)}
+.sb-sub{padding:4px 8px;font-size:var(--fs-sub)}
+.sb-sub .sb-rico,.sb-sub .sb-rico .ic{width:12px}
+.sb-sub .sb-rico .ic{height:12px}
 .sb-rtag{flex-shrink:0;font-family:var(--font-mono);font-size:var(--fs-micro);letter-spacing:.015em;color:var(--ink-3);
   max-width:64px;overflow:hidden;text-overflow:ellipsis}
 .sb-run:hover .sb-rtag{color:var(--ink-3)}

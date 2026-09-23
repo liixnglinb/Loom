@@ -177,6 +177,27 @@ const RUN_ICON = {
   pending:  {ic:'circle',  cls:'sb-idle',   sp:0},
 };
 
+/* 库里的时间串是 "%Y-%m-%d %H:%M:%S" 本地时间（app/db.py:23），不带时区，
+   所以 new Date("2026-09-22 11:04:03") 这种写法不能依赖 —— 手工拆字段。
+   四档阈值抄参考实现（taskListItemPresentation.ts:33-53）：不给月/年档。 */
+function parseLdb(iso){
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(iso||'');
+  return m ? new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +m[6]).getTime() : NaN;
+}
+function relUnit(iso, now){
+  const mins = Math.floor(((now==null ? Date.now() : now) - parseLdb(iso)) / 60000);
+  if(!(mins >= 0)) return {s:0, u:'now'};     // 时间戳在未来（时钟没同步）也当"刚刚"，别印 -5 分
+  if(mins < 1)  return {s:0, u:'now'};
+  if(mins < 60) return {s:mins, u:'m'};
+  const hrs = Math.floor(mins/60);
+  if(hrs < 24)  return {s:hrs, u:'h'};
+  return {s:Math.floor(hrs/24), u:'d'};
+}
+window.relTime = (iso, now) => {
+  const r = relUnit(iso, now);
+  return r.u === 'now' ? t('time.now') : t('time.'+r.u, {n:r.s});
+};
+
 let SB_ARCH = false;      /* 侧栏「项目」这一栏当前看的是未归档还是已归档（切换钮和行菜单都读它） */
 
 async function renderSidebarLists(){
@@ -196,7 +217,22 @@ async function renderSidebarLists(){
   /* 归档列表必须走同一个 flows 口径：否则「没跑过的流程」从没在侧栏出现过，
      却在归档视图里凭空冒出来。能归档的前提是它先是一行。 */
   const arch = flows.filter(p=>p.archived);
-  const row = (p) => `<div class="sb-row">
+  /* run 嵌在自己那条流程下面（参考实现按工作空间分组），不再另起一组「最近运行」：
+     同一次运行在侧栏出现两次就是两个入口管一件事。每组最多两条，侧栏是入口不是清单。 */
+  const byFlow = {};
+  runs.forEach(u => { (byFlow[u.pipeline] = byFlow[u.pipeline] || []).push(u); });
+  const sub = (u) => {
+    const m = RUN_ICON[u.status] || RUN_ICON.pending;
+    return `<a class="sb-run sb-sub ${u.id===cur?'active':''}" href="#/run/${esc(u.id)}"
+      data-tip="${esc(u.label||u.pipeline)}" aria-label="${esc(u.label||u.pipeline)}"
+      ${u.id===cur?'aria-current="page"':''}>
+      <span class="sb-rico ${m.cls}">${m.ic?(m.sp?ico(m.ic,'sp'):ico(m.ic)):'&nbsp;'}</span>
+      <span class="sb-rname">${esc(u.label||u.pipeline)}</span>
+      <span class="sb-rtag">${esc(relTime(u.created_at))}</span></a>`;
+  };
+  const row = (p) => {
+    const kids = (byFlow[p.name] || []).slice(0, 2);
+    return `<div class="sb-row">
       <a class="sb-run ${('pipeline-edit/'+p.name)===cur?'active':''}"
         href="#/pipeline-edit/${esc(p.name)}" data-tip="${esc(p.label||p.name)}"
         aria-label="${esc(p.label||p.name)}"
@@ -206,14 +242,17 @@ async function renderSidebarLists(){
       <button class="sb-more" data-tip-any="1" data-tip="${esc(t('sb.rowMore'))}"
           aria-label="${esc(t('sb.rowMore'))}"
           onclick="sbRowMore(event,'${jsq(p.name)}')">${ico('more')}</button>
-    </div>`;
+    </div>` + (kids.length ? `<div class="sb-runlist">${kids.map(sub).join('')}</div>` : '');
+  };
   /* 归档清空后切换钮必须还在 —— 否则人就困在「已归档」这一栏里出不来了。 */
   const garch = (arch.length || SB_ARCH) ? `<button class="sb-garch" data-tip-any="1"
       data-tip="${esc(SB_ARCH ? t('sb.backToProjects') : t('sb.showArchived'))}"
       aria-label="${esc(SB_ARCH ? t('sb.backToProjects') : t('sb.showArchived'))}"
       aria-pressed="${SB_ARCH ? 'true' : 'false'}"
       onclick="sbToggleArchived()">${ico('package')}${SB_ARCH ? '' : `<span class="sb-badge">${arch.length}</span>`}</button>` : '';
+  /* 在跑计数挂在分组标题上（参考实现：计数只在组头，行里放状态点和时间） */
   let html = `<div class="sb-group"><span>${esc(SB_ARCH ? t('sb.archived') : t('sb.flows'))}</span>
+      ${live?`<span class="sb-gcount">${live}</span>`:''}
       ${garch}
       <button class="sb-gadd" data-tip-any="1" data-tip="${esc(t('sb.newFlow'))}"
         aria-label="${esc(t('sb.newFlow'))}"
@@ -223,19 +262,6 @@ async function renderSidebarLists(){
                        : `<div class="sb-empty">${esc(t('sb.archivedEmpty'))}</div>`)
         : (proj.length ? proj.map(row).join('')
                        : `<div class="sb-empty">${esc(t('sb.noProject'))}</div>`));
-
-  html += `<div class="sb-group"><span>${esc(t('sb.recent'))}</span>
-      ${live?`<span class="sb-gcount">${live}</span>`:''}</div>`
-    + (runs.length ? runs.map(u=>{
-        const m = RUN_ICON[u.status] || RUN_ICON.pending;
-        return `<a class="sb-run ${u.id===cur?'active':''}" data-tip="${esc(u.label||u.pipeline)}"
-          href="#/run/${esc(u.id)}" aria-label="${esc(u.label||u.pipeline)}"
-          ${u.id===cur?'aria-current="page"':''}>
-          <span class="sb-rico ${m.cls}">${m.ic?(m.sp?ico(m.ic,'sp'):ico(m.ic)):'&nbsp;'}</span>
-          <span class="sb-rname">${esc(u.label||u.pipeline)}</span>
-          <span class="sb-rtag">${esc(RUN_ST()[u.status]||u.status)}</span></a>`;
-      }).join('')
-      : `<div class="sb-empty">${esc(t('home.recentEmpty'))}</div>`);
   if(box.dataset.sig !== html){ box.innerHTML = html; box.dataset.sig = html; }
   const ab = $('#sbActBtn');
   if(ab){ ab.innerHTML = ico('bell') + (live?`<span class="sb-badge">${live}</span>`:'');
