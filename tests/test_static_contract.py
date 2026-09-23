@@ -770,14 +770,25 @@ def test_menu_labels_that_overrun_get_an_ellipsis_not_a_clip():
         ".ff-ml 的省略号规则被改动了"
 
 
-def test_task_modal_checkpoint_hint_follows_the_picked_flow():
-    """弹层里换流程，右边那行「含 N 个检查点」必须跟着换 —— 它一开始只按首选项算，
-    之后再也不更新，于是显示的是另一条流程的检查点。"""
-    body = re.search(r"function tkHint\(\)\{(.*?)\n\}", APP_JS, re.S)
-    assert body, "找不到 tkHint"
-    assert "tkMeta" in body.group(1), "tkHint 不再刷新检查点提示"
-    assert 'id="tkMeta"' in APP_JS, "检查点提示没有挂载点"
-    assert "TK_CPS" in APP_JS, "检查点计数表没了"
+def test_composer_step_strip_follows_the_picked_flow():
+    """发送键左边那排步骤必须跟着选中的流程走。它的前身是「含 N 个检查点」那行字 ——
+    一开始只按首选项算、之后再也不更新，于是显示成另一条流程的检查点（同一个坑）。
+    2026-09-23 用户点名：去掉那行字和「试试这些任务」，检查点信息落到具体某一步上。"""
+    sync = re.search(r"function tkSync\(\)\{(.*?)\n\}", APP_JS, re.S)
+    assert sync, "找不到 tkSync"
+    assert "tkPaintSteps(" in sync.group(1), "换流程时没重画步骤条"
+    assert "is-on" in sync.group(1), "发送键的可用态没在这里算，就会永远灰着或永远亮"
+
+    paint = re.search(r"function tkPaintSteps\(flow\)\{(.*?)\n\}", APP_JS, re.S)
+    assert paint, "找不到 tkPaintSteps"
+    p = paint.group(1)
+    assert "find(x=>x.name===flow)" in p, "步骤要从传进来的那条流程取，不能读全局预选值"
+    assert "s.checkpoint" in p and "' cp'" in p, "带检查点的那一步没有标记"
+    assert "role=\"listitem\"" in p, "一排 chip 没有列表语义，读屏软件只会念成一串字"
+
+    for gone in ("tkMeta", "TK_CPS", "tkHint", "tkSug", "tkPaintSugs", "TK_SUG_KEYS"):
+        assert gone not in APP_JS, f"{gone} 还留在 app.js 里"
+    assert "tk-hint" not in CSS and "tk-sug" not in CSS, "撤掉的块在 CSS 里还留着规则"
 
 
 # ==================== 照参考实现（开源的 zai-org/ZCode）对齐的六条 ====================

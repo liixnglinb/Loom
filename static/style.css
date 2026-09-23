@@ -204,7 +204,6 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 .tk-top{display:flex;align-items:center;gap:10px;padding:6px 14px 6px 13px;
   background:var(--bg-strip);border-bottom:1px solid var(--line-strong)}
 .tk-top .ff-selw{flex:0 1 auto;min-width:0}
-.tk-meta{margin-left:auto;font-size:var(--fs-meta);color:var(--ink-3);white-space:nowrap}
 .tk-field{padding:13px 14px 0}
 /* textarea 不再自己画一个内凹盒：卡片就是唯一的表面。
    边框/底色/圆角全去掉，只留排版 —— 这是"质感"差别的最大一处。 */
@@ -217,29 +216,29 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
    不是成品品牌色 —— 有字了才亮起来，所以这里用 :not(.is-on) 表达"还不能发"。 */
 .tk-bar{display:flex;align-items:center;gap:8px;padding:10px 14px 14px}
 .tk-bar .ff-selw{flex:none}
+/* 步骤条：选中流程的每一步一枚小chip，摆在发送键左边。
+   步骤名长短不一，所以横向滚动而不是换行 —— 换行会把 43px 的工具条撑成两排。
+   带检查点的那一步挂一个空心环：原来「含 N 个检查点」那行字的信息落回具体某一步。 */
+.tk-steps{display:flex;align-items:center;gap:4px;flex:1;min-width:0;overflow-x:auto;
+  scrollbar-width:none}
+.tk-steps::-webkit-scrollbar{display:none}
+.tk-step{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 7px;flex:none;
+  border:1px solid var(--line-panel);border-radius:var(--r-2);background:transparent;
+  color:var(--ink-3);font-size:var(--fs-micro);white-space:nowrap}
+.tk-step i{font-family:var(--font-mono);font-style:normal;color:var(--ink-4)}
+.tk-step.cp{border-color:var(--accent-line);color:var(--ink-2)}
+.tk-step.cp::after{content:'';width:5px;height:5px;border:1px solid var(--accent);
+  border-radius:var(--r-pill);flex:none}
+.tk-step-empty{font-size:var(--fs-micro);color:var(--ink-4);white-space:nowrap}
+/* 任务名挪到顶部条带：底部要让给步骤条。留空时后端拿流程标签兜底，所以它是可选项。 */
 .tk-name{flex:1;min-width:0;border:none;background:transparent;color:var(--ink);font-family:inherit;
-  font-size:var(--fs-sub);padding:6px 8px;border-radius:var(--r-2)}
+  font-size:var(--fs-meta);padding:4px 8px;border-radius:var(--r-2)}
 .tk-name:focus{outline:none;background:var(--bg-hover)}
 .tk-name::placeholder{color:var(--ink-4)}
 .tk-bar .cp-send{width:28px;height:28px;margin-left:auto;flex:none;
   background:color-mix(in oklab, var(--btn-ink) 52%, var(--bg-composer));color:var(--bg-composer)}
 .tk-bar .cp-send.is-on{background:var(--btn-ink);color:var(--ink-inv)}
 .tk-bar .cp-send.is-on:hover{background:var(--btn-ink-hover)}
-.tk-hint{font-size:var(--fs-meta);color:var(--ink-3);padding:8px 4px 0;line-height:1.55}
-.tk-sugs{width:100%;margin-top:18px}
-.tk-sug-head{display:flex;align-items:center;gap:6px;padding:0 4px 8px;font-size:var(--fs-meta);color:var(--ink-3)}
-.tk-sug-head .spacer{flex:1}
-.tk-op{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border:none;
-  border-radius:var(--r-1);background:transparent;color:var(--ink-4);font-family:inherit;
-  font-size:var(--fs-meta);cursor:pointer;transition:background var(--slide),color var(--slide)}
-.tk-op:hover{background:var(--bg-hover);color:var(--ink)}
-.tk-op .ic{width:13px;height:13px}
-.tk-sug{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:none;
-  border-radius:var(--r-2);background:transparent;color:var(--ink-2);font-family:inherit;
-  font-size:var(--fs-sub);text-align:left;cursor:pointer;transition:background var(--slide),color var(--slide)}
-.tk-sug:hover{background:var(--bg-hover);color:var(--ink)}
-.tk-sug span{display:inline-flex;flex-shrink:0;color:var(--ink-4)}
-.tk-sug .ic{width:13.8125px;height:13.8125px}
 
 /* ---------- 键位表：命令 / 按键绑定 / 作用域 ---------- */
 .sc-card{background:var(--bg-panel);border:1px solid var(--line-panel);border-radius:var(--r-4);overflow:hidden}

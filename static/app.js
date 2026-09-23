@@ -614,7 +614,6 @@ window.addEventListener('hashchange', ()=>nav.resolve());
    （侧栏「新建任务」、Ctrl+K、⋯ 菜单、流程行「运行」、页头「下任务」）
    仍然统一走 taskModal()，只是它现在做的是"回到首页并把这条流程选中"。 */
 function tkStageHtml(tpls, flow){
-  const cps = TK_CPS[flow] || 0;
   const ENGS = [{v:'', label:t('ed.engineDefault')},
                 {v:'claude', label:t('eng.claude')}, {v:'codex', label:t('eng.codex')}];
   return `<div class="home-stage">
@@ -623,33 +622,35 @@ function tkStageHtml(tpls, flow){
       <div class="tk-top">
         ${ffSelect(tpls.map(p=>({v:p.name, label:(p.label||p.name),
                                  note:p.steps.length+' '+t('c.steps')})),
-                   flow, {id:'tkFlow', icon:'flow', onChange:'tkHint'})}
-        <span class="tk-meta" id="tkMeta">${cps ? esc(t('tk.cps',{n:cps})) : esc(t('tk.noCp'))}</span>
+                   flow, {id:'tkFlow', icon:'flow', onChange:'tkSync'})}
+        <input class="tk-name" id="tkLabel" placeholder="${esc(t('task.labelPh'))}">
       </div>
       <div class="tk-field">
         <textarea class="tk-input" id="tkBrief" rows="4" placeholder="${esc(t('task.briefPh'))}"
-          oninput="tkHint()"></textarea>
+          oninput="tkSync()"></textarea>
       </div>
       <div class="tk-bar">
+        <div class="tk-steps" id="tkSteps" role="list" aria-label="${esc(t('tk.stepsAria'))}"></div>
         ${ffSelect(ENGS, TK_ENG, {id:'tkEngine', icon:'agent', onChange:'tkEngineSet'})}
-        <input class="tk-name" id="tkLabel" placeholder="${esc(t('task.labelPh'))}">
         <button class="cp-send" onclick="taskStart()" aria-label="${esc(t('task.start'))}"
           title="${esc(t('task.start'))}">${ico('arrowUp')}</button>
       </div>
     </div>
-    <div class="tk-hint" id="tkHintBox">${esc(t('task.briefHint'))}</div>
-    <div class="tk-sugs" id="tkSugs">
-      <div class="tk-sug-head"><span>${esc(t('tk.tryThese'))}</span><span class="spacer"></span>
-        <button class="tk-op" onclick="tkShuffle()">${esc(t('tk.shuffle'))}</button></div>
-      <div id="tkSugList"></div>
-    </div>
   </div>`;
 }
 
-function tkFlows(){
-  const pr = ST.flows || [];
-  TK_CPS = {}; pr.forEach(p => { TK_CPS[p.name] = (p.steps||[]).filter(s=>s.checkpoint).length; });
-  return pr;
+/* 底部那一排步骤：把选中流程的每一步摊开发送键左边，一眼看见"这条要跑几段"。
+   带检查点的那一步画一个空心环 —— 原来那行「含 N 个检查点」的信息搬到这里，
+   而且落在具体某一步上比一个总数有用。 */
+function tkPaintSteps(flow){
+  const box = document.getElementById('tkSteps'); if(!box) return;
+  const p = (ST.flows||[]).find(x=>x.name===flow);
+  const steps = (p && p.steps) || [];
+  box.innerHTML = steps.length
+    ? steps.map((s,i)=>`<span class="tk-step${s.checkpoint?' cp':''}" role="listitem"
+        title="${esc(s.label||'')}${s.checkpoint?' · '+t('tk.cpMark'):''}">
+        <i>${i+1}</i>${esc(s.label||'')}</span>`).join('')
+    : `<span class="tk-step-empty">${esc(t('tk.noSteps'))}</span>`;
 }
 
 window.renderHome = async function(){
@@ -666,10 +667,10 @@ window.renderHome = async function(){
       <div class="pf-empty">${esc(t('task.noFlow'))}</div></div>`;
     return;
   }
-  tkFlows();
-  $('#view').innerHTML = tkStageHtml(tpls, TK_PICK || tpls[0].name);
+  const first = TK_PICK || tpls[0].name;
+  $('#view').innerHTML = tkStageHtml(tpls, first);
   TK_PICK = '';
-  tkPaintSugs();
+  tkPaintSteps(first);
   const b = document.getElementById('tkBrief'); if(b) b.focus();
 };
 
@@ -685,50 +686,24 @@ window.taskModal = function(presetFlow){
       window.ffSetValue('tkFlow', presetFlow,
         p ? ffFlat({label:(p.label||p.name), note:p.steps.length+' '+t('c.steps')}) : presetFlow);
     }
-    tkHint();
+    tkSync();
     const b = document.getElementById('tkBrief'); if(b) b.focus();
     return;
   }
   nav.go('home');
 };
-function tkHint(){
-  const hint = document.getElementById('tkHintBox');
-  const meta = document.getElementById('tkMeta');
-  if(meta){
-    const f = ((document.getElementById('tkFlow')||{}).value)||'';
-    const n = TK_CPS[f] || 0;
-    meta.textContent = n ? t('tk.cps',{n}) : t('tk.noCp');
-  }
-  /* 发送键的"还不能发"态：空说明时它是灰的，有字才亮成品牌色。
-     这里顺手管，是因为这个函数已经在每次输入和每次换流程时被调了。 */
+/* 输入台上唯一的"重算一切"入口：换流程要重画步骤条，打字要换发送键的可用态。
+   以前它还管那行提示文字，文字已按用户要求撤掉。 */
+function tkSync(){
+  tkPaintSteps(((document.getElementById('tkFlow')||{}).value)||'');
   const brief = ((document.getElementById('tkBrief')||{}).value||'').trim();
   const send = document.querySelector('.tk-bar .cp-send');
   if(send) send.classList.toggle('is-on', brief.length > 0);
-  if(!hint) return;
-  hint.textContent = (brief.length>0 && brief.length<20) ? t('task.briefShort') : t('task.briefHint');
-  hint.style.color = (brief.length>0 && brief.length<20) ? 'var(--warn)' : '';
 }
-window.tkHint = tkHint;
-let TK_CPS = {};   /* 流程名 -> 检查点数：换流程时右侧那行提示要跟着变 */
+window.tkSync = tkSync;
 let TK_PICK = '';  /* taskModal 带进来的预选流程：由 renderHome 消费一次就清空 */
 let TK_ENG = '';   /* 这一条任务用哪个 CLI 引擎；'' = 不指定，沿用步骤自带/全局默认 */
 window.tkEngineSet = function(v){ TK_ENG = v || ''; };
-const TK_SUG_KEYS = ['tk.sug1','tk.sug2','tk.sug3','tk.sug4','tk.sug5','tk.sug6'];
-const TK_SUG_ICONS = ['search','file','chart','play','edit','flag'];
-let TK_SUG_OFF = 0;
-function tkPaintSugs(){
-  const box = document.getElementById('tkSugList'); if(!box) return;
-  box.innerHTML = [0,1,2].map(i => {
-    const k = TK_SUG_KEYS[(TK_SUG_OFF+i) % TK_SUG_KEYS.length];
-    const ic = TK_SUG_ICONS[(TK_SUG_OFF+i) % TK_SUG_ICONS.length];
-    return `<button class="tk-sug" onclick="tkUseSug(this)"><span>${ico(ic)}</span>${esc(t(k))}</button>`;
-  }).join('');
-}
-window.tkShuffle = function(){ TK_SUG_OFF = (TK_SUG_OFF+3) % TK_SUG_KEYS.length; tkPaintSugs(); };
-window.tkUseSug = function(btn){
-  const ta = document.getElementById('tkBrief'); if(!ta) return;
-  ta.value = btn.textContent.trim(); ta.focus(); tkHint();
-};
 window.taskStart = async function(){
   const flow = (document.getElementById('tkFlow')||{}).value||'';
   const brief = ((document.getElementById('tkBrief')||{}).value||'').trim();
@@ -742,7 +717,7 @@ window.taskStart = async function(){
   // 免得回到首页时上一条任务的话还挂在框里。
   const ta = document.getElementById('tkBrief'); if(ta) ta.value = '';
   const lb = document.getElementById('tkLabel'); if(lb) lb.value = '';
-  tkHint();
+  tkSync();
   toast(t('task.started'), true);
   nav.go('run/'+r.run.id);
 };
