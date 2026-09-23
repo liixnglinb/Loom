@@ -74,28 +74,28 @@ window.ENGINE_LABEL = e => (e ? ((ENG_ZH()[e]||e)) : t('ed.engineDefault'));
 const ico = window.icon;
 
 function renderNav(active){
-  const nb = $('#sbNew');
-  if(nb){
-    nb.innerHTML = `${ico('plus')}<span>${esc(t('nav.newTask'))}</span>
-        <span class="sb-kbd">${esc(chordOf('newTask'))}</span>`;
-    nb.dataset.tip = t('nav.newTask');
-  }
-  const fb = $('#sbSearchBtn');
-  if(fb){ fb.innerHTML = ico('search'); fb.dataset.tip = t('sb.search');
-          fb.setAttribute('aria-label', t('sb.search')); }
-  /* 设置走左下角入口；工作台已并入「新建任务」弹层，不再单列 */
-  const items = [
-    {id:'pipelines', icon:'flow',     label:t('nav.workflows')},
-    {id:'skills',    icon:'skill',    label:t('nav.skills')},
-    {id:'runs',      icon:'runs',     label:t('nav.runs')},
-  ];
-  /* 用真 href 而不是 onclick：无 href 的 <a> 拿不到键盘焦点，Tab 直接跳过整条主导航。
+  /* 五行：两行动作（新建任务 / 搜索）+ 三条路由。设置走左下角入口；工作台已并入输入台。
+     动作行必须是 <button>，路由行必须是带真 href 的 <a>：
+     没 href 的 <a> 拿不到键盘焦点，Tab 会直接跳过整条主导航。
      aria-label 是因为折叠轨道会把 <span> 整个 display:none 掉，折上就没了可访问名。 */
-  const html = items.map(n=>
-    `<a class="sb-item ${n.id===active?'active':''}" href="#/${n.id}" data-v="${n.id}"
-       data-tip="${esc(n.label)}" aria-label="${esc(n.label)}"
-       ${n.id===active?'aria-current="page"':''}>
-      ${ico(n.icon)}<span>${esc(n.label)}</span></a>`).join('');
+  const items = [
+    {id:'newTask',   icon:'plus',   label:t('nav.newTask'),  chord:chordOf('newTask'),  act:'taskModal'},
+    {id:'search',    icon:'search', label:t('sb.search'),    chord:chordOf('search'),   act:'sbSearch', row:'sbSearchRow'},
+    {id:'pipelines', icon:'flow',   label:t('nav.workflows')},
+    {id:'skills',    icon:'skill',  label:t('nav.skills')},
+    {id:'runs',      icon:'runs',   label:t('nav.runs')},
+  ];
+  const html = items.map(n=>{
+    const inner = `${ico(n.icon)}<span>${esc(n.label)}</span>`
+      + (n.chord ? `<span class="sb-kbd">${esc(n.chord)}</span>` : '');
+    const tip = `data-tip-any="1" data-tip="${esc(n.label)}" aria-label="${esc(n.label)}"`;
+    if(n.act){
+      return `<button class="sb-item" type="button" ${tip}
+        ${n.row?`id="${n.row}"`:''} onclick="${n.act}()">${inner}</button>`;
+    }
+    return `<a class="sb-item ${n.id===active?'active':''}" href="#/${n.id}" data-v="${n.id}" ${tip}
+      ${n.id===active?'aria-current="page"':''}>${inner}</a>`;
+  }).join('');
   const box = $('#mainNav');
   if(box && box.dataset.sig !== html){ box.innerHTML = html; box.dataset.sig = html; }
   paintBrand();
@@ -274,7 +274,8 @@ window.sbSearch = function(e){
   window.sbGo = (hash)=>{ p.hidden = true; nav.go(hash); };
   draw('');
   p.hidden = false;
-  const r = document.getElementById('sbSearchBtn').getBoundingClientRect();
+  const src = document.getElementById('sbSearchRow') || document.querySelector('.sb-nav');
+  const r = src.getBoundingClientRect();
   p.style.left = Math.max(8, r.left - 4) + 'px';
   p.style.top = (r.bottom + 6) + 'px';
   setTimeout(()=>{ const n=document.getElementById('sbFQ'); if(n) n.focus(); }, 30);
@@ -460,7 +461,7 @@ document.addEventListener('click', (e)=>{
   const pop = document.getElementById('sbPop');
   if(pop && !pop.hidden && !e.target.closest('#sbPop') && !e.target.closest('#sbMe')) closeFootMenu();
   const fd = document.getElementById('sbFind');
-  if(fd && !fd.hidden && !e.target.closest('#sbFind') && !e.target.closest('#sbSearchBtn')) fd.hidden = true;
+  if(fd && !fd.hidden && !e.target.closest('#sbFind') && !e.target.closest('#sbSearchRow')) fd.hidden = true;
 });
 
 /* ---------------- 路由 ---------------- */

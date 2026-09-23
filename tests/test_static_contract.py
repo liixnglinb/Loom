@@ -238,11 +238,10 @@ def test_router_highlights_the_matching_nav_item():
     assert not wrong, f"路由高亮键不对 {wrong}"
     # 只认导航项那种三件套；下拉框配置（ffSelect 的 {id, icon, onChange}）同形不同职
     nav_ids = set(re.findall(r"\{id:'([\w-]+)',\s*icon:'[\w-]+',\s*label:t\('nav\.", APP_JS))
-    assert nav_ids == {"pipelines", "skills", "runs"}, f"导航项变了：{nav_ids}"
-    # 工作台已删（和「新建任务」弹层重复）；旧链接 #/home 由路由兜到工作流
-    # 首页回来了，但只作为默认路由：入口是侧栏那颗「新建任务」，不再单列导航项
-    # （2026-09-22 用户要求 composer 直接长在首页，别弹小窗）。
-    assert "home" not in nav_ids, "首页不该是导航项 —— 入口只有「新建任务」那颗"
+    assert nav_ids == {"newTask", "pipelines", "skills", "runs"}, f"导航项变了：{nav_ids}"
+    # 首页本身仍然不是导航项：它是默认路由，看得见的入口是主导航第一行「新建任务」
+    # （2026-09-22 用户要求 composer 长在首页；23 又把入口收成导航行，别再有一个通栏按钮）。
+    assert "home" not in nav_ids, "首页不该是导航项 —— 入口只有「新建任务」那一行"
     assert "view==='home') await run(window.renderHome" in APP_JS, "首页路由没了"
     assert "!raw) raw = 'home'" in APP_JS, "默认路由不再是首页"
     assert 'class="modal open" role="dialog"' not in APP_JS or "taskModalRoot" not in APP_JS, "输入台又退回弹层了"
@@ -328,7 +327,7 @@ def test_brand_svg_is_self_contained(name):
 # ---------------- 侧栏折叠轨道 ----------------
 
 RAIL_HIDDEN = {
-    ".sb-name": "侧栏品牌字", ".sb-new span": "新建任务", ".sb-item span": "主导航",
+    ".sb-name": "侧栏品牌字", ".sb-item span": "主导航（含行尾的键位提示 .sb-kbd，它也是 span）",
     ".sb-group>span": "分组标题", ".sb-gcount": "在跑计数",
     ".sb-gadd": "分组加号（和顶栏创建流程重复，轨道里两个加号分不清）",
     ".sb-garch": "归档切换（图标按钮，56px 轨道里和加号挤成一行）",
@@ -433,6 +432,34 @@ def test_every_keybind_id_has_both_i18n_strings():
             k = f"'sc.{i}{suffix}'"
             assert UI_JS.count(k) == 2, f"{k} 应该中英各一份，实际 {UI_JS.count(k)} 份"
 
+def test_the_sidebar_has_one_row_per_entry_point():
+    """一个功能只留一个入口。侧栏原来是「顶部两个图标钮 + 一个通栏新建任务」管两件事，
+    参考实现把它们收进主导航（DesktopTopOverlay.tsx:211-217 的顺序：开关→导航→新建）。"""
+    assert 'id="sbNew"' not in INDEX_HTML, "通栏新建任务按钮还在，和主导航第一行重复"
+    assert 'id="sbSearchBtn"' not in INDEX_HTML, "搜索图标钮还在，和主导航第二行重复"
+    assert '.sb-new{' not in CSS, ".sb-new 的规则该跟着 DOM 一起删掉"
+    assert "getElementById('sbSearchBtn')" not in APP_JS, "浮层定位还指着已删掉的图标钮"
+    assert "row:'sbSearchRow'" in APP_JS, "搜索行要有 id，#sbFind 浮层靠它定位"
+    for key in ("t('nav.newTask')", "t('sb.search')"):
+        assert key in APP_JS.split('function renderNav(')[1].split('\n}\n')[0], \
+            f"{key} 得出现在主导航某一行的文案里"
+    # 行上的和弦提示从键位表取，不再手抄字面量
+    assert "chordOf('newTask')" in APP_JS and "chordOf('search')" in APP_JS
+
+
+def test_nav_rows_that_are_actions_are_buttons_and_routes_are_links():
+    """折叠轨道里点得着不算完，Tab 到不了就是坏的：
+    路由行必须是带真 href 的 <a>，动作行必须是 <button>（没 href 的 <a> 拿不到焦点）。"""
+    seg = APP_JS.split('const items = [')[1].split('];')[0]
+    assert "act:'taskModal'" in seg and "act:'sbSearch'" in seg, "前两行要声明自己是动作"
+    assert "'pipelines'" in seg and "'skills'" in seg and "'runs'" in seg, "三条路由还在"
+    body = APP_JS.split('function renderNav(')[1].split('\n}\n')[0]
+    assert "if(n.act)" in body, "动作行没按 act 分支渲染"
+    assert "</button>`" in body and "</a>`" in body, "两种行都得有收尾标签"
+    assert 'href="#/${n.id}"' in body, "路由行必须带真 href"
+    assert 'aria-label="${esc(n.label)}"' in body, "折叠轨道把 span 藏了，可访问名靠 aria-label"
+
+
 def test_tooltip_host_honours_the_hidden_attribute():
     """.ff-tip 自己带 position:fixed，[hidden] 的 UA 规则一旦被 display 覆盖就再也藏不掉。"""
     assert 'id="ffTip"' in INDEX_HTML, "提示节点不在了"
@@ -441,7 +468,7 @@ def test_tooltip_host_honours_the_hidden_attribute():
 
 
 # 展开态也只剩图标的按钮：没有 data-tip-any 就只在折叠时提示，等于平时没说明
-TIP_ANY_IDS = ["sbBrand", "sbSearchBtn", "sbActBtn", "sbUpdate"]
+TIP_ANY_IDS = ["sbBrand", "sbActBtn", "sbUpdate"]
 
 
 def test_icon_only_buttons_tip_in_both_widths():
@@ -450,6 +477,9 @@ def test_icon_only_buttons_tip_in_both_widths():
         assert tag, f"找不到 #{i}"
         assert "data-tip-any" in tag.group(0), f"#{i} 只有图标，提示却没标 data-tip-any"
     assert 'class="sb-gadd" data-tip-any="1"' in APP_JS, "分组加号同上"
+    # 主导航现在是 JS 渲染的，五行（含两条动作行）都得带上轨道提示
+    nav = APP_JS.split('function renderNav(')[1].split('\n}\n')[0]
+    assert 'const tip = `data-tip-any="1"' in nav, "主导航行的提示没统一带上"
 
 
 def test_sidebar_stopped_using_native_title():

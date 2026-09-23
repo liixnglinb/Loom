@@ -390,15 +390,14 @@ code{font-family:var(--font-mono);font-size:.92em}
   text-align:center;font-family:var(--font-mono);border:2px solid var(--bg-shell);box-sizing:content-box}
 
 .sb-scroll{flex:1;min-height:0;overflow-y:auto;padding:0 2px}
-.sb-new{display:flex;align-items:center;gap:9px;width:100%;padding:7px 9px;border:none;border-radius:var(--r-2);
-  background:transparent;color:var(--ink);font-size:var(--fs-body);font-weight:500;cursor:pointer;text-align:left;
-  transition:background var(--slide)}
-.sb-new:hover{background:var(--bg-hover)}
-.sb-new .ic{color:var(--ink-2);width:14.625px;height:14.625px;stroke-width:1.8}
 .sb-kbd{margin-left:auto;font-family:var(--font-mono);font-size:var(--fs-meta);letter-spacing:.02em;
   color:var(--ink-4);border:1px solid var(--line-panel);border-radius:var(--r-1);padding:0 5px}
 .sb-nav{display:flex;flex-direction:column;gap:1px;margin-top:2px}
-.sb-item{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--r-2);
+/* 同一套样式要能同时穿在 <a>（路由）和 <button>（动作）上，所以把按钮的
+   UA 默认值抹掉：不写 border/background 就是两条灰边和一个凸起底色，
+   不写 font-family 那两行会用系统字，和下面三条一眼就能看出不是同一批。 */
+.sb-item{display:flex;align-items:center;gap:9px;padding:7px 9px;border:none;border-radius:var(--r-2);
+  background:transparent;font-family:inherit;width:100%;
   font-size:var(--fs-body);color:var(--ink-2);cursor:pointer;position:relative;white-space:nowrap;
   transition:background var(--slide),color var(--slide)}
 .sb-item .ic{color:var(--ink-3);width:16.25px;height:16.25px;transition:color var(--slide)}
@@ -546,7 +545,6 @@ code{font-family:var(--font-mono);font-size:.92em}
   html[data-sidebar="collapsed"] .sb-brand{padding:5px;gap:0}
   html[data-sidebar="collapsed"] .sb-acts{flex-direction:column;margin-left:0;gap:2px}
   html[data-sidebar="collapsed"] .sb-name,
-  html[data-sidebar="collapsed"] .sb-new span,
   html[data-sidebar="collapsed"] .sb-item span,
   html[data-sidebar="collapsed"] .sb-group>span,
   html[data-sidebar="collapsed"] .sb-gcount,
@@ -560,7 +558,6 @@ code{font-family:var(--font-mono);font-size:.92em}
   html[data-sidebar="collapsed"] .sb-me-chev,
   html[data-sidebar="collapsed"] .sb-up-tx{display:none}
   html[data-sidebar="collapsed"] .sb-up-ic{display:inline-flex}
-  html[data-sidebar="collapsed"] .sb-new,
   html[data-sidebar="collapsed"] .sb-item,
   html[data-sidebar="collapsed"] .sb-run,
   html[data-sidebar="collapsed"] .sb-me{justify-content:center;gap:0;padding-left:0;padding-right:0}
