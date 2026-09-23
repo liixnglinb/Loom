@@ -261,7 +261,10 @@ PYTHONUTF8=1 "<python>" -m pytest -q          # 全绿即可，不需网络
 - 模板里写了 `class="xxx"` 而 style.css 没这条规则 → 直接失败（上一任就是这么写出过一个 `.pl-row-sub`，量出来字号还是 13px）。
 - 静态 `style="font-size:…/padding:…"` 禁止（绕过刻度）；动态宽度不算。
 - 侧栏折叠轨道：清单里每个文字类都必须有 `display:none` 规则，**多藏一个也算漂移**。
-- 绑了快捷键就必须写进「键位」说明，反之亦然。
+- 键位是一张表（`app.js` 的 `KEYMAP`）：绑定和设置页的「键位」说明同源。加一行就必须有 `sc.<id>` / `sc.<id>D` 两份文案，全局那几行还得有 `KEY_ACTION` 里的处理函数 —— 别再写 `if(k===...)`。
+- 圆角跟**嵌套层数**走：第一个圆角容器 `--r-4`，往里 `--r-3 → --r-2 → --r-1`；`--r-5` 只有四个批准例外（主输入台壳 / 对话框壳 / toast / 品牌底板）；胶囊档只给故意的胶囊和正圆（清单是 `NESTED_RADIUS` + `CIRCLE_50`，双向锁）。
+- 侧栏一个入口一件事：同一次运行不在「项目」和另一组「最近」里各出现一次；run 嵌在自己的流程下面。
+- 居中的浮层收起时必须 `pointer-events:none`（`inset:0` 的遮罩只用 opacity 收 = 全屏点不动）。
 - 滑块读数说「13px」：`ROOT_PX`（app.js）必须等于 CSS 里 `html{font-size:calc(13px * …)}` 的那个 13，测试钉着。
 - 设置页外观的档位表只有一处真相：`ui.js` 的 `TEXT_SIZES/ZOOMS/WIDTHS/THEMES/ACCENTS`，`APP` 里的键名和
   `loadAppearance` 白名单必须同名（测试钉着），否则滑块会静默停在 0 档。
