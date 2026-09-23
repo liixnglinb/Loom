@@ -77,7 +77,7 @@ function renderNav(active){
   const nb = $('#sbNew');
   if(nb){
     nb.innerHTML = `${ico('plus')}<span>${esc(t('nav.newTask'))}</span>
-        <span class="sb-kbd">Ctrl K</span>`;
+        <span class="sb-kbd">${esc(chordOf('newTask'))}</span>`;
     nb.dataset.tip = t('nav.newTask');
   }
   const fb = $('#sbSearchBtn');
@@ -925,17 +925,12 @@ function secDirs(){
 }
 
 function secShortcuts(){
-  /* 作用域是真实差异，不是装饰：Ctrl K/B/, 和 Esc 在哪都能按，/ 只在设置页生效，
-     Enter 只在输入框里有意义。以前混成一张表，得读说明文字才知道作用范围。
-     没有做「操作」列 —— 键位是 app.js 里硬编码的，不能重绑，放假按钮没意义。 */
-  const rows = [
-    ['Ctrl K', t('sc.newTask'), t('sc.newTaskD'), 'g', 'shortcut new task'],
-    ['Ctrl B', t('sc.toggleSb'), t('sc.toggleSbD'), 'g', 'shortcut sidebar toggle'],
-    ['Ctrl ,', t('sc.settings'), t('sc.settingsD'), 'g', 'shortcut settings'],
-    ['Esc', t('sc.close'), t('sc.closeD'), 'g', 'shortcut close escape'],
-    ['/', t('sc.search'), t('sc.searchD'), 's', 'shortcut search focus'],
-    ['Enter', t('sc.send'), t('sc.sendD'), 'i', 'shortcut send enter revise'],
-  ].map(([k,tt,d,sc,x])=>`<div class="sc-tr" data-k="${kAttr(tt+' '+k+' '+x+' '+t('sc.scope.'+sc))}">
+  /* 说明页不再手抄一份字面量：表里有什么，这里就有什么（见文件末尾的 KEYMAP）。
+     作用域是真实差异，不是装饰：g 在哪都能按，s 只在设置页生效，i 只在输入框里有意义。
+     没有做「操作」列 —— 键位是表里的常量，不能重绑，放假按钮没意义。 */
+  const rows = KEYMAP.map(r =>
+    [r.chord, t('sc.'+r.id), t('sc.'+r.id+'D'), r.scope, 'shortcut '+r.id]
+  ).map(([k,tt,d,sc,x])=>`<div class="sc-tr" data-k="${kAttr(tt+' '+k+' '+x+' '+t('sc.scope.'+sc))}">
       <div class="sc-td"><span class="sc-name">${esc(tt)}</span>
         <span class="sc-desc">${esc(d)}</span></div>
       <div class="sc-td sc-td-k"><span class="st-keys">${k.split(' ').map(skey).join('')}</span></div>
@@ -1933,24 +1928,62 @@ window.ffActionMenu = function(e, items){
   }));
 };
 
-/* ---------------- 全局快捷键 ---------------- */
+/* ---------------- 全局快捷键 ----------------
+   一张表当唯一事实来源：设置页的「键位」说明和这里的分发读同一份数据，
+   所以不会出现"说明里写了没绑 / 绑了没写说明"。参考实现同思路
+   （ZCode packages/shared/src/shortcutCommands.ts:57-100）。
+   scope: g = 全局；s = 只在设置页生效（由设置页自己消费）；i = 输入框内（Enter 族）。
+   浏览器形态下 Ctrl+N / Ctrl+K 会被 Chrome/Edge 抢走（新窗口、地址栏），preventDefault
+   拦不住 —— 所以不要求 Shift 的条目两种按法都认，浏览器里用 Ctrl+Shift+N 那条。
+   打包成桌面壳后没有这个竞争。 */
 const isTyping = (el) => !!el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.isContentEditable);
 
+const KEYMAP = [
+  {id:'newTask',     chord:'Ctrl N',       key:'n',      mod:'ctrl',       scope:'g'},
+  {id:'search',      chord:'Ctrl K',       key:'k',      mod:'ctrl',       scope:'g'},
+  {id:'toggleSb',    chord:'Ctrl B',       key:'b',      mod:'ctrl',       scope:'g'},
+  {id:'settings',    chord:'Ctrl ,',       key:',',      mod:'ctrl',       scope:'g'},
+  {id:'switchTheme', chord:'Ctrl Shift L', key:'l',      mod:'ctrl+shift', scope:'g'},
+  {id:'close',       chord:'Esc',          key:'escape', mod:'',           scope:'g'},
+  {id:'searchSettings', chord:'/',         key:'/',      mod:'',           scope:'s'},
+  {id:'send',        chord:'Enter',        key:'enter',  mod:'',           scope:'i'},
+];
+
+/* 界面上任何"这键是干什么的"的提示都从表里取，别再手抄一遍字面量。 */
+const chordOf = (id) => (KEYMAP.find(r=>r.id===id) || {}).chord || '';
+
+function keyMatches(r, e){
+  const ctrl = !!(e.ctrlKey || e.metaKey);
+  if(r.key !== (e.key||'').toLowerCase()) return false;
+  if(r.mod.includes('ctrl') !== ctrl) return false;
+  if(r.mod.includes('shift') && !e.shiftKey) return false;   /* 不要求 Shift 的两可，见上面注释 */
+  if(!r.mod.includes('ctrl') && (e.altKey || e.shiftKey)) return false;
+  return true;
+}
+
+const KEY_ACTION = {
+  newTask:    () => window.taskModal(),
+  search:     () => window.sbSearch(),
+  toggleSb:   () => window.sbToggle(),
+  settings:   () => nav.go('settings'),
+  switchTheme: async () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    await window.setAppearance({theme: next});
+    toast(t('sc.themeNow.'+next));
+  },
+};
+
+const inSettings = () => {
+  const a = document.getElementById('app');
+  return !!(a && a.dataset.shell==='settings');
+};
+
 document.addEventListener('keydown', (e)=>{
-  if(e.repeat) return;   // 长按 Ctrl B 原来会一路连发，每次都打一次 setAppearance POST
-  const mod = e.ctrlKey || e.metaKey;
-  const inSettings = ()=>{ const a=document.getElementById('app'); return !!(a && a.dataset.shell==='settings'); };
-  if(mod && !e.altKey){
-    const k = (e.key||'').toLowerCase();
-    /* Ctrl K / Ctrl B 在浏览器形态下会被 Chrome/Edge 抢走（聚焦地址栏、切书签栏），
-       preventDefault 拦不住 —— 所以带不带 Shift 都认，浏览器里用 Ctrl+Shift+K 这条。
-       打包成桌面壳后没有这个竞争，两种按法都通。逗号那条浏览器不抢，维持原样。 */
-    if(k==='k'){ e.preventDefault(); window.taskModal(); return; }
-    if(k==='b'){ e.preventDefault(); window.sbToggle(); return; }
-    if(k===',' && !e.shiftKey){ e.preventDefault(); nav.go('settings'); return; }
-  }
+  if(e.repeat) return;   // 长按会一路连发，每次都打一次 setAppearance POST
+  const hit = KEYMAP.find(r => r.scope==='g' && keyMatches(r, e));
+  if(hit && hit.id !== 'close'){ e.preventDefault(); KEY_ACTION[hit.id](); return; }
   if(e.key==='Escape'){
-    /* ff-menu（下拉 + 动作菜单）最先吃 Escape：它压在别的浮层之上，
+    /* 从最上层往下逐个关：ff-menu（下拉 + 动作菜单）压着别的浮层，
        不先关就会一路 Esc 把底下的弹窗也带走。 */
     const fm = document.getElementById('ffMenu');
     if(fm && !fm.hidden){ e.preventDefault(); ffClose(); return; }
@@ -1963,7 +1996,8 @@ document.addEventListener('keydown', (e)=>{
     if(inSettings()){ e.preventDefault(); window.setExit(); }
     return;
   }
-  if(e.key==='/' && !mod && !isTyping(e.target) && inSettings()){
+  if(e.key==='/' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey
+     && !isTyping(e.target) && inSettings()){
     const q = document.getElementById('stQ');
     if(q){ e.preventDefault(); q.focus(); q.select(); }
   }

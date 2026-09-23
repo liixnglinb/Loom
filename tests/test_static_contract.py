@@ -372,18 +372,66 @@ def test_rail_state_is_persisted_through_the_appearance_channel():
     assert "setAppearance({sidebar:" in APP_JS, "sbToggle 没把折叠态写回设置"
 
 
-def test_rail_toggle_is_reachable_and_documented():
-    """品牌位是 <button> 才谈得上键盘可达；Ctrl B 绑了就得出现在键位说明里。"""
+KEY_ROW = re.compile(r"\{id:'([A-Za-z]+)',\s*chord:'([^']+)',\s*key:'([^']*)',\s*"
+                     r"mod:'([^']*)',\s*scope:'(\w)'")
+
+
+def _keymap_rows():
+    return KEY_ROW.findall(APP_JS)
+
+
+def test_keybindings_come_from_one_table_and_are_all_documented():
+    """参考实现把键位当"唯一事实来源"（shortcutCommands.ts:57-100）。
+    我们以前是绑定一处、说明一处，靠正则比对两边 —— 表化之后两边同源，
+    这条测试改查三件真的会出事的事：全局条目没处理函数、处理函数没人绑、
+    以及品牌位不再是那个可聚焦的开关。"""
     brand = re.search(r"<(button|a) class=\"sb-brand\"[^>]*>", INDEX_HTML)
     assert brand, "找不到品牌元素"
     assert brand.group(1) == "button", "品牌位用 <a> 没 href，键盘 Tab 到不了"
     assert 'onclick="sbToggle()"' in brand.group(0), "品牌位不再是侧栏开关"
-    assert "k==='b'" in APP_JS, "Ctrl B 没绑"
-    docs = set(re.findall(r"\['Ctrl (\S+)', t\('(sc\.[A-Za-z]+)'\)", APP_JS))
-    bound = {c.lower() for c in re.findall(r"if\(k==='(.)'", APP_JS)}
-    assert {k.lower() for k, _ in docs} <= bound, "键位说明里列了没绑的快捷键"
-    assert bound <= {k.lower() for k, _ in docs}, "绑了快捷键却没写进键位说明"
 
+    rows = _keymap_rows()
+    assert rows, "KEYMAP 表不见了或字段顺序变了"
+    ids = [r[0] for r in rows]
+    assert len(ids) == len(set(ids)), "键位表里有重复 id"
+    chords = [r[1] for r in rows]
+    assert len(set(chords)) == len(chords), "两条键位撞在同一个和弦上"
+
+    body = APP_JS.split('const KEY_ACTION = {')[1].split('\n};')[0]
+    glob = [r[0] for r in rows if r[4] == 'g']
+    assert set(glob) == {'newTask', 'search', 'toggleSb', 'settings',
+                         'switchTheme', 'close'}, f"全局键位集合变了：{sorted(glob)}"
+    for i in glob:
+        if i == 'close':
+            continue          # close 走 Escape 专用分支：多层浮层要一层层关，不是一句 ACTION
+        assert re.search(r"\b" + i + r"\s*:", body), f"{i} 声明成全局键位却没有处理函数"
+    assert "KEYMAP.find(" in APP_JS, "keydown 还在写死的 if 链里，没走表"
+    assert "if(k==='k')" not in APP_JS and "if(k==='b')" not in APP_JS, "残留写死的 Ctrl 分支"
+    # 表就是文档源：设置页不能再自己抄一份字面量
+    assert "KEYMAP.map(r =>" in APP_JS, "键位说明页没从表里渲染"
+
+
+def test_the_reference_chord_map_is_preserved():
+    """逐条对着参考实现的表核一遍（shortcutCommands.ts:63-83）。
+    键位改一次就固化了，不写死断言下次会被人顺手改回去。"""
+    want = {'newTask': 'Ctrl N', 'search': 'Ctrl K', 'toggleSb': 'Ctrl B',
+            'settings': 'Ctrl ,', 'switchTheme': 'Ctrl Shift L', 'close': 'Esc',
+            'send': 'Enter'}
+    rows = {r[0]: r[1] for r in _keymap_rows()}
+    off = {k: (rows.get(k), v) for k, v in want.items() if rows.get(k) != v}
+    assert not off, f"和参考实现对不上了（实际, 期望）：{off}"
+
+
+def test_every_keybind_id_has_both_i18n_strings():
+    """表里每个 id 都要有 sc.<id> 和 sc.<id>D 两份（中英各一）。
+    现有的死键测试把整个 sc. 前缀当"动态引用即已用"，缺文案它不会红 ——
+    缺了就直接把 'sc.switchTheme' 印到页面上。"""
+    ids = [r[0] for r in _keymap_rows()]
+    assert ids, "KEYMAP 空了，这条测试没东西可查（别让它变成空转）"
+    for i in ids:
+        for suffix in ('', 'D'):
+            k = f"'sc.{i}{suffix}'"
+            assert UI_JS.count(k) == 2, f"{k} 应该中英各一份，实际 {UI_JS.count(k)} 份"
 
 def test_tooltip_host_honours_the_hidden_attribute():
     """.ff-tip 自己带 position:fixed，[hidden] 的 UA 规则一旦被 display 覆盖就再也藏不掉。"""
