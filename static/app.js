@@ -59,7 +59,7 @@ window.ffRelDate = relDate;
 /* ---------------- 状态 ---------------- */
 const ST = { agents:[], defaultEngine:'',
              claudeCli:'', codexCli:'', paths:{},
-             agentTimeout:'2700', effortOptions:['auto'],
+             agentTimeout:'2700', effortOptions:['auto'], permMode:'',
              reasoningEffort:'auto', stepRetry:'0', autoContinue:'0',
              skills:[], flows:[], runs:[], caps:null, version:'' };
 window.ST = ST;
@@ -205,7 +205,7 @@ async function renderSidebarLists(){
   if(!box) return;
   const [pr, rr] = await Promise.all([
     api('/api/pipelines').catch(()=>({pipelines:[]})),
-    api('/api/runs?limit=8').catch(()=>({runs:[]})),
+    api('/api/runs?limit=30').catch(()=>({runs:[]})),
   ]);
   const flows = (pr.pipelines||[]).filter(p=>p.runs>0);   /* 项目 = 真跑过的流程 */
   const runs = rr.runs||[];
@@ -233,10 +233,10 @@ async function renderSidebarLists(){
   const row = (p) => {
     const kids = (byFlow[p.name] || []).slice(0, 2);
     return `<div class="sb-row">
-      <a class="sb-run ${('pipeline-edit/'+p.name)===cur?'active':''}"
+      <a class="sb-run ${p.name===cur?'active':''}"
         href="#/pipeline-edit/${esc(p.name)}" data-tip="${esc(p.label||p.name)}"
         aria-label="${esc(p.label||p.name)}"
-        ${('pipeline-edit/'+p.name)===cur?'aria-current="page"':''}>
+        ${p.name===cur?'aria-current="page"':''}>
         <span class="sb-rico">${ico('flow')}</span>
         <span class="sb-rname">${esc(p.label||p.name)}</span></a>
       <button class="sb-more" data-tip-any="1" data-tip="${esc(t('sb.rowMore'))}"
@@ -319,6 +319,9 @@ window.renderSidebarLists = renderSidebarLists;
 async function loadAgents(){
   const r = await api('/api/agents').catch(()=>null);
   if(!r) return;
+  /* 开机就要读权限模式：输入台那枚 chip 在启动时就渲染，
+     以前只有进过一次设置页才同步，于是服务端是 plan、chip 显示「默认」。 */
+  ST.permMode = r.permission_mode||'';
   ST.agents = r.agents||[];
   ST.defaultEngine = r.default_engine||'';
   ST.claudeCli = r.claude_cli||'';
@@ -420,7 +423,10 @@ function upView(s){
 function paintUpdate(){
   const b = $('#sbUpdate'); if(!b) return;
   const v = upView(UP);
-  if(!v){ b.hidden = true; b.innerHTML = ''; b.dataset.tip = ''; window.upClose(); return; }
+  /* 胶囊没东西可报就收起，但**别顺手关掉用户正开着的浮层** ——
+     "重新检查"回来发现没新版本时，浮层要留在原地告诉他"已是最新"，
+     而不是点一下就凭空消失。关浮层的判断交给 upRepaintDialog（它认 UP 是否还在）。 */
+  if(!v){ b.hidden = true; b.innerHTML = ''; b.dataset.tip = ''; window.upRepaintDialog(); return; }
   b.hidden = false;
   b.className = 'sb-update' + (v.tone ? ' is-' + v.tone : '');
   b.innerHTML = (v.tone === 'dl' ? '<span class="sb-up-bar"></span>' : '')
@@ -445,6 +451,8 @@ function upTitle(u){
 
 function upCardHtml(){
   const u = UP || {};
+  const known = u.phase==='available' || u.phase==='downloading'
+             || u.phase==='ready' || u.phase==='error';
   const pct = u.phase==='ready' ? 100
             : (u.size ? Math.min(99, Math.floor((u.got||0)*100/u.size)) : 0);
   const bar = (u.phase==='downloading' || u.phase==='ready')
@@ -460,9 +468,13 @@ function upCardHtml(){
   else if(u.phase === 'ready')
     btns = `<button class="btn btn-primary" ${u.frozen?'':'disabled'}
               onclick="upApply()">${esc(t('up.apply'))}</button>${later}`;
-  else
+  else if(u.phase === 'error')
     btns = `<button class="btn btn-primary" onclick="upCheckNow()">${esc(t('up.recheck'))}</button>${later}`;
-  return `<div class="up-head"><b id="upHeadTtl">${esc(upTitle(u))}</b>
+  else   /* current / checking / idle：重新检查后没新东西，也要有话说 —— 以前这里 upView 返回 null，
+            直接把用户正开着的那层关掉，等于"点了重新检查，窗口自己消失了"。 */
+    btns = `<button class="btn btn-primary" onclick="upCheckNow()">${esc(t('up.recheck'))}</button>${later}`;
+  const title = known ? upTitle(u) : t('up.tUpToDate', {v: u.local || ''});
+  return `<div class="up-head"><b id="upHeadTtl">${esc(title)}</b>
       <button class="up-x ic-btn" onclick="upClose()" data-tip-any="1"
         data-tip="${esc(t('up.close'))}" aria-label="${esc(t('up.close'))}">${ico('close')}</button></div>
     <div class="up-ver">${esc(t('up.nowOn', {v: u.local || ''}))}</div>
@@ -474,6 +486,7 @@ window.upOpen = function(){
   const c = document.getElementById('upCard'); if(!c) return;
   document.body.classList.add('up-on');
   c.hidden = false;
+  c.dataset.phase = (UP && UP.phase) || '';
   c.innerHTML = upCardHtml();
   const b = c.querySelector('.up-x'); if(b) b.focus();
 };
@@ -484,7 +497,21 @@ window.upClose = function(){
 };
 window.upRepaintDialog = function(){
   const c = document.getElementById('upCard');
-  if(c && !c.hidden) c.innerHTML = upCardHtml();
+  if(!c || c.hidden) return;
+  if(!UP || !UP.configured){ window.upClose(); return; }
+  /* 下载中每 400ms 轮询一次。整块换 innerHTML 会把焦点从 ✕ 上踢掉，
+     还会让你按下去的那一瞬正好赶上按钮被替换（点了没反应）。
+     所以只有阶段真的变了才重画结构，否则只改进度条宽度和那行字节数。 */
+  if(c.dataset.phase !== UP.phase){
+    c.dataset.phase = UP.phase;
+    c.innerHTML = upCardHtml();
+    return;
+  }
+  const pct = UP.phase==='ready' ? 100
+            : (UP.size ? Math.min(99, Math.floor((UP.got||0)*100/UP.size)) : 0);
+  const fill = c.querySelector('.up-fill'), mbEl = c.querySelector('.up-mb');
+  if(fill) fill.style.width = pct + '%';
+  if(mbEl) mbEl.textContent = mb(UP.got||0) + ' / ' + mb(UP.size||0);
 };
 window.upDownload = async function(){
   const n = (UP && UP.active_runs) || 0;
@@ -616,7 +643,7 @@ window.addEventListener('hashchange', ()=>nav.resolve());
 function tkStageHtml(tpls, flow){
   const ENGS = [{v:'', label:t('ed.engineDefault')},
                 {v:'claude', label:t('eng.claude')}, {v:'codex', label:t('eng.codex')}];
-  const PERMS = [{v:'', label:t('ed.engineDefault')}].concat(
+  const PERMS = [{v:'', label:t('ed.engineDefault'), note:t('pm.defaultNote')}].concat(
     PERM_MODES.map(m => ({v:m, label:t('pm.'+m), note:t('pm.'+m+'D')})));
   return `<div class="home-stage">
     <h1 class="tk-greet">${esc(t('tk.greet'))}</h1>
@@ -649,12 +676,23 @@ function tkStageHtml(tpls, flow){
 const PERM_MODES = ['plan', 'acceptEdits', 'bypassPermissions'];
 
 /* 模式是全局默认（它接管了原来设置里那行 codex 沙箱），不是这一条任务的临时值 ——
-   所以选完要 toast 说清作用域，别让人以为只影响这次。 */
+   所以选完要 toast 说清作用域，别让人以为只影响这次。
+   不能走 postAgents：它成功后固定弹一句「已保存」，会把这句说清作用域的提示顶掉。 */
 window.tkPermSet = async function(v){
   const prev = ST.permMode||'';
-  if(!await postAgents({permission_mode: v})){ ST.permMode = prev; return; }
+  const name = (m) => m ? t('pm.'+m) : t('ed.engineDefault');
+  const r = await post('/api/agents', {permission_mode: v}).catch(e=>({detail:String(e)}));
+  if(r && r.detail){
+    /* 菜单在调 onChange 之前就把隐藏 input 和按钮文字都写好了（ffOpen 的 pick 分支），
+       所以失败时必须连标签一起退回 —— 否则 chip 会显示一个服务端根本没接受的模式。
+       网络断了也一样：post() 的 catch 给的是 {detail:...}，是真值，别当成成功。 */
+    ST.permMode = prev;
+    window.ffSetValue('tkPerm', prev, name(prev));
+    toast(r.detail);
+    return;
+  }
   ST.permMode = v;
-  toast(t('pm.nowGlobal', {m: v ? t('pm.'+v) : t('ed.engineDefault')}), true);
+  toast(t('pm.nowGlobal', {m: name(v)}), true);
 };
 
 /* 底部那一排步骤：把选中流程的每一步摊开发送键左边，一眼看见"这条要跑几段"。
@@ -2070,16 +2108,17 @@ document.addEventListener('keydown', (e)=>{
   const hit = KEYMAP.find(r => r.scope==='g' && keyMatches(r, e));
   if(hit && hit.id !== 'close'){ e.preventDefault(); KEY_ACTION[hit.id](); return; }
   if(e.key==='Escape'){
-    /* 从最上层往下逐个关：更新浮层压在所有菜单之上，先关它；
-       再关 ff-menu（下拉 + 动作菜单），不先关就会一路 Esc 把底下的弹窗也带走。 */
-    const uc = document.getElementById('upCard');
-    if(uc && !uc.hidden){ e.preventDefault(); window.upClose(); return; }
+    /* 关闭顺序 = 谁画在上面先关谁。z 刻度里 --z-menu(100) 压过 --z-modal(60)，
+       所以菜单/下拉先关，再关更新浮层 —— 反过来就会出现"浮层关了、菜单还飘在那"。
+       （这里以前写反了，注释还声称浮层在最上：源码顺序看着对，实际层级是另一回事。） */
     const fm = document.getElementById('ffMenu');
     if(fm && !fm.hidden){ e.preventDefault(); ffClose(); return; }
     const fd = document.getElementById('sbFind');
     if(fd && !fd.hidden){ e.preventDefault(); fd.hidden = true; return; }
     const pop = document.getElementById('sbPop');
     if(pop && !pop.hidden){ e.preventDefault(); closeFootMenu(); return; }
+    const uc = document.getElementById('upCard');
+    if(uc && !uc.hidden){ e.preventDefault(); window.upClose(); return; }
     const m = document.querySelector('.modal.open');
     if(m){ const x = m.querySelector('.modal-x'); if(x){ e.preventDefault(); x.click(); } return; }
     if(inSettings()){ e.preventDefault(); window.setExit(); }

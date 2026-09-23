@@ -622,6 +622,9 @@ body.up-on .up-card{opacity:1;transform:translate(-50%,-50%);pointer-events:auto
   html[data-sidebar="collapsed"] .sb-me-chev,
   html[data-sidebar="collapsed"] .sb-up-tx{display:none}
   html[data-sidebar="collapsed"] .sb-up-ic{display:inline-flex}
+  /* 轨道里不列嵌套的最近运行：整栏只有 56px，那些小图标既对不上父行的图标列，
+     也读不出是哪条流程的 —— 在跑数量已经由顶部的铃铛报了。 */
+  html[data-sidebar="collapsed"] .sb-runlist{display:none}
   html[data-sidebar="collapsed"] .sb-item,
   html[data-sidebar="collapsed"] .sb-run,
   html[data-sidebar="collapsed"] .sb-me{justify-content:center;gap:0;padding-left:0;padding-right:0}

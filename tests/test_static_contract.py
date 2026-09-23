@@ -447,8 +447,30 @@ def test_update_dialog_refreshes_with_the_poller_and_closes_on_escape():
     assert "upRepaintDialog()" in pu, "状态变了浮层不跟着刷，用户看到的是过期进度"
     esc = APP_JS.split("if(e.key==='Escape')")[1][:900]
     assert "upCard" in esc, "Escape 没关更新浮层"
-    assert esc.index("upCard") < esc.index("ffMenu"), "关闭顺序倒了：先关浮层，再关它下面的菜单"
+    """关闭顺序要跟 z 刻度一致：谁画在上面先关谁。--z-menu(100) 压过 --z-modal(60)，
+    所以菜单先关。以前这条比的是源码先后 —— 顺序看着对，层级其实是另一回事，
+    于是出现了"浮层关了、菜单还飘在原地"。"""
+    z = dict(re.findall(r"--(z-[a-z]+):(\d+)", CSS))
+    assert int(z["z-menu"]) > int(z["z-modal"]), "z 刻度变了，下面的关闭顺序要重看"
+    assert esc.index("ffMenu") < esc.index("upCard"), "Escape 顺序和 z 刻度反了"
     assert 'onclick="upClose()"' in INDEX_HTML, "点遮罩要能关"
+
+
+def test_update_dialog_survives_a_check_with_no_new_version():
+    """胶囊没东西可报就收起是对的，但顺手把用户正开着的浮层关掉不对 ——
+    点「重新检查」，窗口凭空消失，什么话都没说。"""
+    pu = APP_JS.split('function paintUpdate()')[1].split('\n}\n')[0]
+    assert "window.upClose()" not in pu, "paintUpdate 里不该直接关浮层"
+    card = APP_JS.split('function upCardHtml(')[1].split('\n}\n')[0]
+    assert "up.tUpToDate" in card, "没新版本时浮层要有的说，而不是空白或消失"
+
+
+def test_update_dialog_repaint_keeps_focus_and_click_targets():
+    """下载中每 400ms 轮询一次。整块换 innerHTML 会把焦点从 ✕ 上踢掉，
+    还会让你按下去的那一瞬正好赶上按钮被替换 —— 所以要按阶段变化才重画结构。"""
+    rp = APP_JS.split('window.upRepaintDialog = function()')[1].split('\n};')[0]
+    assert "dataset.phase" in rp, "没按阶段判断，每次轮询都在整块重刷"
+    assert "fill.style.width" in rp, "阶段没变时只该改进度条宽度和字节数"
 
 
 def test_closed_modal_mask_does_not_swallow_clicks():
@@ -471,6 +493,7 @@ RAIL_HIDDEN = {
     ".sb-rtag": "行右侧标签", ".sb-empty": "空态文案", ".sb-me-name": "引擎名",
     ".sb-me-chev": "齿轮后的箭头", ".sb-up-tx": "更新胶囊文字",
     ".sb-group:has(+ .sb-empty)": "空分组（轨道里只剩一条孤线，是噪声）",
+    ".sb-runlist": "嵌套的最近运行（56px 轨道里小图标对不上父行的图标列，在跑数量已由铃铛报）",
 }
 
 
@@ -1028,3 +1051,32 @@ def test_settings_page_no_longer_offers_a_second_sandbox_control():
     assert "'rt.sandbox'" not in UI_JS, "沙箱那行的文案成了没人用的死键"
     # 后端仍然报告 codex_sandbox 现值（那是状态，不是控件），但不再列可选项
     assert "sandbox_options" not in APP_JS, "前端还在读沙箱候选清单"
+
+
+# ---------------- 评审后补的三条：chip 不能骗人 ----------------
+
+def test_mode_chip_is_synced_from_the_boot_fetch():
+    """输入台在启动那一刻就渲染，而 permission_mode 以前只有进过设置页才读 ——
+    于是服务端是 plan、chip 显示「默认」，一个权限控件显示着假状态。"""
+    la = APP_JS.split('async function loadAgents()')[1].split('\n}\n')[0]
+    assert "ST.permMode = r.permission_mode" in la, "开机那次 /api/agents 没读回权限模式"
+    assert "permMode:''" in APP_JS.replace("permMode: ''", "permMode:''"), \
+        "ST 里要有 permMode 的初值，chip 才不会读到 undefined"
+
+
+def test_mode_chip_reverts_both_label_and_value_when_the_post_fails():
+    """ffOpen 在调 onChange 之前就把隐藏 input 和按钮文字写好了；
+    api() 对 4xx 也返回解析后的 JSON（{detail:...} 是真值），
+    所以"没抛异常"不等于"存下了" —— 不显式退回，chip 会显示一个服务端没接受的模式。"""
+    fn = APP_JS.split('window.tkPermSet = async function(v)')[1].split('\n};')[0]
+    assert "r.detail" in fn, "没检查 detail，400 会被当成成功"
+    assert "ffSetValue('tkPerm'" in fn, "只退 ST 不退 chip：按钮上还写着那个没生效的模式"
+    assert "postAgents(" not in fn, "postAgents 成功后固定弹「已保存」，会把说清作用域的那句顶掉"
+
+
+def test_sidebar_project_row_highlights_itself():
+    """cur 取的是 hash 的第 3 段（`#/pipeline-edit/foo` → 'foo'），
+    以前拿 'pipeline-edit/foo' 去比，永远不相等 —— 项目行从来不亮。"""
+    seg = APP_JS.split('async function renderSidebarLists(')[1].split('\n}\n')[0]
+    assert "p.name===cur" in seg, "项目行的选中态又拿带前缀的路径去比了"
+    assert "'pipeline-edit/'+p.name)===cur" not in seg, "残留旧的比较式"
