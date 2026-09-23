@@ -147,3 +147,75 @@ def test_codex_defaults_to_the_responses_wire(monkeypatch, tmp_path):
     assert 'wire_api="chat"' not in args
     mine = " ".join(agents._codex_args(tmp_path, None, "", "https://k/v1", "k", "responses"))
     assert 'wire_api="responses"' in mine     # 显式填过的照原样发出去
+
+
+# ==================== 权限模式（输入台那三档） ====================
+# 枚举值直接沿用 claude 的 --permission-mode 取值，映射到 codex 时再翻译：
+# 少造一层词，就少一处会写错的地方。claude 的完整枚举是
+# acceptEdits / auto / bypassPermissions / manual / dontAsk / plan（本机 --help 实测），
+# 我们只开放三家都能落地的三档 —— manual 要回调工具、codex exec 根本没有回通道。
+
+def _modes(setting):
+    return {
+        "plan": ("--permission-mode plan", "read-only"),
+        "acceptEdits": ("--permission-mode acceptEdits", "workspace-write"),
+        "bypassPermissions": ("--permission-mode bypassPermissions", "danger-full-access"),
+    }[setting]
+
+
+def test_no_mode_picked_keeps_todays_behaviour(monkeypatch, tmp_path):
+    """默认档必须一个字节都不改现有行为：claude 照旧 --dangerously-skip-permissions，
+    codex 照旧读它自己的沙箱设置。新功能的起点是"没点就等于没看见"。"""
+    monkeypatch.setattr(db, "get_setting", lambda k, d="": {
+        "codex_sandbox": "workspace-write"}.get(k, d))
+    cl = " ".join(agents._claude_args(tmp_path, None, "", False))
+    cx = " ".join(agents._codex_args(tmp_path, None, "", "", "", ""))
+    assert "--dangerously-skip-permissions" in cl
+    assert "--permission-mode" not in cl
+    assert "-s workspace-write" in cx
+
+
+def test_each_mode_reaches_both_engines(monkeypatch, tmp_path):
+    for mode in ("plan", "acceptEdits", "bypassPermissions"):
+        cl_flag, cx_sandbox = _modes(mode)
+        monkeypatch.setattr(db, "get_setting", lambda k, d="", m=mode: {
+            "permission_mode": m, "codex_sandbox": "workspace-write"}.get(k, d))
+        cl = " ".join(agents._claude_args(tmp_path, None, "", False))
+        cx = " ".join(agents._codex_args(tmp_path, None, "", "", "", ""))
+        assert cl_flag in cl, f"{mode} 没传给 claude：{cl}"
+        assert "--dangerously-skip-permissions" not in cl, f"{mode} 下还在全放行"
+        assert f"-s {cx_sandbox}" in cx, f"{mode} 没传给 codex：{cx}"
+
+
+def test_codex_mode_overrides_the_stale_sandbox_setting(monkeypatch, tmp_path):
+    """模式接管沙箱之后，旧的 codex_sandbox 存值只在"没选模式"时兜底 ——
+    否则会出现"chip 显示计划模式、codex 其实全开"这种骗人的状态。"""
+    monkeypatch.setattr(db, "get_setting", lambda k, d="": {
+        "permission_mode": "plan", "codex_sandbox": "danger-full-access"}.get(k, d))
+    cx = " ".join(agents._codex_args(tmp_path, None, "", "", "", ""))
+    assert "-s read-only" in cx and "danger-full-access" not in cx
+
+
+def test_unknown_or_deferred_mode_falls_back(monkeypatch, tmp_path):
+    """manual（要回调工具）和任何乱填的值都退回默认档，不能拼出半截参数把 CLI 噎住。"""
+    for bad in ("manual", "dontAsk", "auto", "", "yolo", "PLAN"):
+        monkeypatch.setattr(db, "get_setting", lambda k, d="", b=bad: {
+            "permission_mode": b, "codex_sandbox": "workspace-write"}.get(k, d))
+        cl = " ".join(agents._claude_args(tmp_path, None, "", False))
+        assert "--permission-mode" not in cl, f"{bad!r} 竟然被认下了"
+        assert "--dangerously-skip-permissions" in cl
+    assert agents.PERM_MODES == ("plan", "acceptEdits", "bypassPermissions")
+
+
+def test_permission_mode_round_trips_and_validates(client):
+    """设置页/输入台都走这条端点：值必须能存回来，且没开放的四档进不来。
+    被拒时不能顺手把已存的值改掉 —— 校验要写在落盘之前。"""
+    got = client.get("/api/agents").json()
+    assert got["permission_mode"] == ""
+    assert got["permission_modes"] == ["plan", "acceptEdits", "bypassPermissions"]
+    assert client.post("/api/agents", json={"permission_mode": "plan"}).status_code == 200
+    assert client.get("/api/agents").json()["permission_mode"] == "plan"
+    for bad in ("manual", "dontAsk", "yolo", "PLAN"):
+        assert client.post("/api/agents", json={"permission_mode": bad}).status_code == 400
+        assert client.get("/api/agents").json()["permission_mode"] == "plan", f"{bad} 被拒却改掉了存值"
+    assert client.post("/api/agents", json={"permission_mode": ""}).json()["permission_mode"] == ""

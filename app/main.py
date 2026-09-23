@@ -700,6 +700,7 @@ class EngineIn(BaseModel):
     codex_cli: str | None = None
     agent_timeout: str | None = None
     codex_sandbox: str | None = None
+    permission_mode: str | None = None
     reasoning_effort: str | None = None
     step_retry: str | None = None
     auto_continue: str | None = None
@@ -715,6 +716,8 @@ def get_agents():
             "agent_timeout": str(agents.step_timeout()),
             "codex_sandbox": agents.codex_sandbox(),
             "sandbox_options": list(agents.SANDBOXES),
+            "permission_mode": agents.permission_mode(),
+            "permission_modes": list(agents.PERM_MODES),
             "reasoning_effort": agents.reasoning_effort(),
             "effort_options": ["auto"] + list(agents.EFFORTS),
             "step_retry": str(agents.step_retry()),
@@ -747,6 +750,11 @@ def save_agents(b: EngineIn):
         if v and v not in agents.SANDBOXES:
             return JSONResponse({"detail": "沙箱模式无效"}, 400)
         db.set_setting("codex_sandbox", v)
+    if b.permission_mode is not None:
+        v = b.permission_mode.strip()
+        if v and v not in agents.PERM_MODES:
+            return JSONResponse({"detail": "这一档权限模式没有开放"}, 400)
+        db.set_setting("permission_mode", v)
     if b.reasoning_effort is not None:
         v = b.reasoning_effort.strip()
         if v and v not in agents.EFFORTS and v != "auto":

@@ -191,7 +191,10 @@ const DICT = {
     'rt.effort': '推理力度', 'rt.effortD': 'codex 引擎专用（model_reasoning_effort）；auto 沿用 CLI 自己的默认。',
     'rt.effort.auto': '自动', 'rt.effort.minimal': '最省', 'rt.effort.low': '较低',
     'rt.effort.medium': '中等', 'rt.effort.high': '最高',
-    'rt.sandbox': 'codex 沙箱', 'rt.sandboxD': 'workspace-write 可写工作区并放行网络；read-only 只读。',
+    'pm.plan': '计划模式', 'pm.planD': '只出计划，不改文件',
+    'pm.acceptEdits': '自动编辑', 'pm.acceptEditsD': '改文件不再逐个问',
+    'pm.bypassPermissions': '完全访问', 'pm.bypassPermissionsD': '命令与写文件都不拦',
+    'pm.nowGlobal': '权限模式已设为全局默认：{m}',
     'rt.auto': '自动越过检查点', 'rt.autoD': '开启后检查点不再暂停，整条流程一口气跑完；关闭时每到一个检查点等你确认。',
 
     'pre.desc': '填了就注入给智能体；全部留空则沿用该 CLI 在本机的登录与代理配置。',
@@ -459,7 +462,10 @@ const DICT = {
     'rt.effort': 'Reasoning effort', 'rt.effortD': 'codex only (model_reasoning_effort); auto keeps the CLI default.',
     'rt.effort.auto': 'Auto', 'rt.effort.minimal': 'Minimal', 'rt.effort.low': 'Low',
     'rt.effort.medium': 'Medium', 'rt.effort.high': 'High',
-    'rt.sandbox': 'codex sandbox', 'rt.sandboxD': 'workspace-write allows writes plus network; read-only is read only.',
+    'pm.plan': 'Plan', 'pm.planD': 'plans only, edits nothing',
+    'pm.acceptEdits': 'Auto-edit', 'pm.acceptEditsD': 'edits without asking each time',
+    'pm.bypassPermissions': 'Full access', 'pm.bypassPermissionsD': 'no command or write checks',
+    'pm.nowGlobal': 'Permission mode set as the global default: {m}',
     'rt.auto': 'Skip checkpoints', 'rt.autoD': 'When on, checkpoints never pause and the whole run goes through in one shot; when off each checkpoint waits for you.',
 
     'pre.desc': 'Values get injected into the agent; leave everything empty to reuse the CLI’s own login.',

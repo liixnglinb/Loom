@@ -91,6 +91,22 @@ def codex_sandbox() -> str:
     return v if v in SANDBOXES else "workspace-write"
 
 
+# 输入台那三档权限模式。取值直接沿用 claude --permission-mode 的枚举名，
+# 到 codex 再翻译成沙箱档 —— 少造一层词就少一处会写错的地方。
+# claude 其实还认 manual / dontAsk / auto：manual 要我们提供"回答提问"的回调工具，
+# 而 codex 的 exec 模式压根没有回通道，所以这三档刻意不开（宁可不给，不给假的）。
+PERM_MODES = ("plan", "acceptEdits", "bypassPermissions")
+_PERM_TO_SANDBOX = {"plan": "read-only",
+                    "acceptEdits": "workspace-write",
+                    "bypassPermissions": "danger-full-access"}
+
+
+def permission_mode() -> str:
+    """'' = 没选，两家沿用各自现状。非法值同样退回 ''，绝不拼半截参数出去噎住 CLI。"""
+    v = _setting("permission_mode") or ""
+    return v if v in PERM_MODES else ""
+
+
 EFFORTS = ("minimal", "low", "medium", "high")
 
 
@@ -265,8 +281,12 @@ def _emit(emit, ev: dict):
 
 # ==================== Claude Code CLI ====================
 def _claude_args(ws: Path, system_file: Path | None, model: str, isolated: bool) -> list:
-    args = ["-p", "--output-format", "stream-json", "--verbose",
-            "--dangerously-skip-permissions"]
+    mode = permission_mode()
+    args = ["-p", "--output-format", "stream-json", "--verbose"]
+    if mode:
+        args += ["--permission-mode", mode]
+    else:
+        args += ["--dangerously-skip-permissions"]
     if isolated:
         # 只有我们自己注入端点时才隔离用户配置；否则用户的 settings.json 里
         # 存着 ANTHROPIC_BASE_URL / 登录态，剥掉会直接「Not logged in」。
@@ -354,7 +374,9 @@ _CODEX_PROVIDER = "flowforge"
 
 def _codex_args(ws: Path, system_file: Path | None, model: str,
                 api_base: str, api_key: str, wire_api: str) -> list:
-    sandbox = codex_sandbox()
+    # 选了模式就以它为准；没选才退回旧的 codex_sandbox 存值（默认 workspace-write，即今天的行为）。
+    mode = permission_mode()
+    sandbox = _PERM_TO_SANDBOX[mode] if mode else codex_sandbox()
     args = ["exec", "--json", "--skip-git-repo-check", "--cd", str(ws), "-s", sandbox]
     if sandbox == "workspace-write":
         # workspace-write 沙箱默认掐断网络，调研类步骤会整步废掉

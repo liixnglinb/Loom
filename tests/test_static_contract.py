@@ -999,3 +999,32 @@ def test_send_button_is_muted_until_there_is_a_brief():
         "空态灰要用品牌色压表面混出来，写死 #959595 会在亮色主题下破"
     assert "is-on" in CSS and ".tk-bar .cp-send.is-on" in CSS, "缺亮起来的那一态"
     assert "send.classList.toggle('is-on'" in APP_JS, "JS 没接 is-on：按钮会永远灰着"
+
+
+# ---------------- 权限模式 chip ----------------
+
+def test_composer_mode_chip_offers_exactly_the_shipped_modes():
+    """chip 的档位必须和后端 agents.PERM_MODES 一一对上。
+    manual（变更前确认）没实现回调工具之前不许出现在这里 —— 出现了就是假控件。"""
+    seg = APP_JS.split("function tkStageHtml(")[1].split("\n}\n")[0]
+    assert "id:'tkPerm'" in seg, "输入台没有权限模式 chip"
+    lst = re.search(r"const PERM_MODES = \[([^\]]*)\]", APP_JS)
+    assert lst, "前端没有那份模式清单"
+    assert lst.group(1).replace("'", "").replace(" ", "") == \
+        "plan,acceptEdits,bypassPermissions", "前端模式和后端不同源"
+    assert "permission_mode:" in APP_JS, "chip 选了没发出去 = 装饰"
+    # chip 在工具条里必须只写名字（short），且放在顶部条带 ——
+    # 实测：带上 note 的收起态会变成一整句话，把步骤条从 504px 挤到只剩 320px。
+    top = seg.split('class="tk-field"')[0]
+    assert "id:'tkPerm'" in top, "模式 chip 挤在底部工具条里，步骤条放不下 7 步"
+    assert "short:true" in seg, "模式 chip 没开 short，收起态会把说明文字一起吃进去"
+
+
+def test_settings_page_no_longer_offers_a_second_sandbox_control():
+    """模式接管了 codex 沙箱，设置里那行必须一起消失 ——
+    一个入口改沙箱、另一个入口改模式（它也会改沙箱），两边会互相打脸。"""
+    assert "saveSandbox" not in APP_JS, "设置里还留着沙箱保存函数"
+    assert "rt.sandbox" not in APP_JS, "设置里那行沙箱选择器还在"
+    assert "'rt.sandbox'" not in UI_JS, "沙箱那行的文案成了没人用的死键"
+    # 后端仍然报告 codex_sandbox 现值（那是状态，不是控件），但不再列可选项
+    assert "sandbox_options" not in APP_JS, "前端还在读沙箱候选清单"

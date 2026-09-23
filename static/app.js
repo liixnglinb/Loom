@@ -58,8 +58,8 @@ window.ffRelDate = relDate;
 
 /* ---------------- 状态 ---------------- */
 const ST = { agents:[], defaultEngine:'',
-             claudeCli:'', codexCli:'', paths:{}, sandboxOptions:[],
-             agentTimeout:'2700', codexSandbox:'workspace-write', effortOptions:['auto'],
+             claudeCli:'', codexCli:'', paths:{},
+             agentTimeout:'2700', effortOptions:['auto'],
              reasoningEffort:'auto', stepRetry:'0', autoContinue:'0',
              skills:[], flows:[], runs:[], caps:null, version:'' };
 window.ST = ST;
@@ -616,6 +616,8 @@ window.addEventListener('hashchange', ()=>nav.resolve());
 function tkStageHtml(tpls, flow){
   const ENGS = [{v:'', label:t('ed.engineDefault')},
                 {v:'claude', label:t('eng.claude')}, {v:'codex', label:t('eng.codex')}];
+  const PERMS = [{v:'', label:t('ed.engineDefault')}].concat(
+    PERM_MODES.map(m => ({v:m, label:t('pm.'+m), note:t('pm.'+m+'D')})));
   return `<div class="home-stage">
     <h1 class="tk-greet">${esc(t('tk.greet'))}</h1>
     <div class="tk-card">
@@ -623,6 +625,7 @@ function tkStageHtml(tpls, flow){
         ${ffSelect(tpls.map(p=>({v:p.name, label:(p.label||p.name),
                                  note:p.steps.length+' '+t('c.steps')})),
                    flow, {id:'tkFlow', icon:'flow', onChange:'tkSync'})}
+        ${ffSelect(PERMS, ST.permMode||'', {id:'tkPerm', icon:'shield', onChange:'tkPermSet', short:true})}
         <input class="tk-name" id="tkLabel" placeholder="${esc(t('task.labelPh'))}">
       </div>
       <div class="tk-field">
@@ -638,6 +641,21 @@ function tkStageHtml(tpls, flow){
     </div>
   </div>`;
 }
+
+/* 和后端 agents.PERM_MODES 同源，改一处必须改两处（两边都有测试钉着）。
+   只有这三档能同时落到 claude 的 --permission-mode 和 codex 的 -s 沙箱上；
+   claude 还认 manual / dontAsk / auto，但 manual 要我们实现"回答提问"的回调工具，
+   而 codex 的 exec 模式根本没有回通道 —— 所以那几档宁可不放，不放半边的假控件。 */
+const PERM_MODES = ['plan', 'acceptEdits', 'bypassPermissions'];
+
+/* 模式是全局默认（它接管了原来设置里那行 codex 沙箱），不是这一条任务的临时值 ——
+   所以选完要 toast 说清作用域，别让人以为只影响这次。 */
+window.tkPermSet = async function(v){
+  const prev = ST.permMode||'';
+  if(!await postAgents({permission_mode: v})){ ST.permMode = prev; return; }
+  ST.permMode = v;
+  toast(t('pm.nowGlobal', {m: v ? t('pm.'+v) : t('ed.engineDefault')}), true);
+};
 
 /* 底部那一排步骤：把选中流程的每一步摊开发送键左边，一眼看见"这条要跑几段"。
    带检查点的那一步画一个空心环 —— 原来那行「含 N 个检查点」的信息搬到这里，
@@ -967,14 +985,14 @@ function secPresets(){
 function secRuntime(){
   const mins = [['300','5'],['600','10'],['900','15'],['1800','30'],['2700','45'],['3600','60'],['7200','120']]
     .map(([v,l])=>[v, l+' '+t('rt.timeoutMin')]);
-  const sb = (ST.sandboxOptions||['workspace-write']).map(v=>[v,v]);
   const ef = (ST.effortOptions||['auto']).map(v=>[v,t('rt.effort.'+v)]);
   const rt = [0,1,2,3].map(v=>[String(v), v? t('rt.retryTimes',{n:v}) : t('rt.retryNone')]);
+  /* 这里以前有一行「codex 沙箱」选择器：输入台的模式 chip 接管了它之后必须删干净 ——
+     一个入口改沙箱、另一个入口改模式（它也会改沙箱），两边会互相打脸。 */
   return spanel(
     srow(t('rt.timeout'), t('rt.timeoutD'), ssel(mins, ST.agentTimeout||'2700', 'saveTimeout'), 'timeout limit seconds step')
     + srow(t('rt.retry'), t('rt.retryD'), sseg(rt, ST.stepRetry||'0', 'saveRetry'), 'retry fail times')
     + srow(t('rt.effort'), t('rt.effortD'), sseg(ef, ST.reasoningEffort||'auto', 'saveEffort'), 'reasoning effort think codex')
-    + srow(t('rt.sandbox'), t('rt.sandboxD'), ssel(sb, ST.codexSandbox, 'saveSandbox'), 'sandbox codex permission')
     + srow(t('rt.auto'), t('rt.autoD'), ssw(ST.autoContinue==='1', 'saveAutoContinue'), 'checkpoint auto continue pause'),
     t('rt.grpPolicy'));
 }
@@ -1574,8 +1592,8 @@ window.renderSettings = async function(section){
     ST.agents = ag.agents||[]; ST.defaultEngine = ag.default_engine||'';
     ST.claudeCli = ag.claude_cli||''; ST.codexCli = ag.codex_cli||'';
     ST.paths = ag.paths||{};
-    ST.agentTimeout = ag.agent_timeout; ST.codexSandbox = ag.codex_sandbox;
-    ST.sandboxOptions = ag.sandbox_options||[];
+    ST.agentTimeout = ag.agent_timeout;
+    ST.permMode = ag.permission_mode||'';
     ST.effortOptions = ag.effort_options||['auto'];
     ST.reasoningEffort = ag.reasoning_effort||'auto';
     ST.stepRetry = ag.step_retry||'0'; ST.autoContinue = ag.auto_continue||'0';
@@ -1712,10 +1730,6 @@ async function postAgents(body){
 window.saveTimeout = async function(v){
   if(!await postAgents({agent_timeout:v})) return;
   ST.agentTimeout = v;
-};
-window.saveSandbox = async function(v){
-  if(!await postAgents({codex_sandbox:v})) return;
-  ST.codexSandbox = v;
 };
 window.saveRetry = async function(v){
   if(!await postAgents({step_retry:v})) return;
@@ -1897,9 +1911,12 @@ function ffSelect(opts, cur, cfg){
   cfg = cfg || {};
   const id = cfg.id || ('ffs'+(++FF_N));
   const key = 'ff'+id;
-  FF_SEL[key] = {opts, id, onChange:cfg.onChange, arg:cfg.arg, action:!!cfg.action};
+  FF_SEL[key] = {opts, id, onChange:cfg.onChange, arg:cfg.arg, action:!!cfg.action, short:!!cfg.short};
   const hit = opts.find(o=>String(o.v)===String(cur));
-  const label = ffFlat(hit) || cfg.placeholder || ffFlat(opts[0]) || '';
+  /* short = 收起的那枚按钮只写名字，说明留在展开的菜单里。
+     工具条上的 chip 宽度是按"一个词"算的，带上 note 会变成一整句话（实测把步骤条挤到溢出）。 */
+  const flat = (o) => (cfg.short ? ((o && o.label) || '') : ffFlat(o));
+  const label = flat(hit) || cfg.placeholder || flat(opts[0]) || '';
   return `<span class="ff-selw${cfg.mono?' ff-mono':''}${cfg.cls?' '+cfg.cls:''}">
     <input type="hidden" id="${esc(id)}" value="${esc(cur==null?'':cur)}">
     <button type="button" class="ff-sel" data-k="${esc(key)}" onclick="ffOpen(event,'${esc(key)}')">
@@ -1958,7 +1975,8 @@ window.ffOpen = function(e, key){
       /* 不能用 el.textContent：菜单项现在是 <span>名字</span><i>注</i>，
          拼起来会少了中间那个分隔符。回到选项本身取。 */
       const o = cfg.opts.find(x=>String(x.v)===String(v));
-      btn.querySelector('.ff-sv').textContent = ffFlat(o) || el.textContent;
+      const shown = cfg.short ? ((o && o.label) || el.textContent) : (ffFlat(o) || el.textContent);
+      btn.querySelector('.ff-sv').textContent = shown;
     }
     ffClose();
     if(typeof cfg.onChange === 'function') cfg.onChange(v, cfg.arg);
