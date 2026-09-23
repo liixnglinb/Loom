@@ -194,3 +194,53 @@ def test_mcp_subsection_is_not_a_second_server(home):
     """[mcp_servers.node_repl.env] 是那一台的子段，不是第二台服务器。"""
     names = [n["name"] for n in _item(_scan(), "codex", "mcp")["entries"]]
     assert sorted(names) == ["cua_repl", "node_repl"]
+
+
+# ==================== 记忆写入 ====================
+# 只给"已经存在"的那个文件加写入：路径仍然由 scan 清单算出来，接口不收路径。
+
+def test_memory_write_only_targets_files_that_already_exist(home):
+    """首次创建不在这一版范围里：宁可不给按钮，也不要凭一个引擎名往家目录里造文件。"""
+    r = ci.write_memory("claude", "# 新记忆\n")
+    assert r["ok"] is False and r["detail"], "没有 CLAUDE.md 时不该假装写成功"
+    assert not (home / ".claude" / "CLAUDE.md").exists(), "拒绝写入却把文件造出来了"
+
+
+def test_memory_write_replaces_the_existing_file(home):
+    r = ci.write_memory("codex", "# 全局记忆\n\n- 回复一律用中文\n")
+    assert r["ok"] is True, r
+    body = (home / ".codex" / "AGENTS.md").read_text(encoding="utf-8")
+    assert "回复一律用中文" in body and "# 全局记忆" in body
+    assert body.endswith("\n"), "markdown 文件以换行收尾，别留半行"
+    assert r["bytes"] == (home / ".codex" / "AGENTS.md").stat().st_size
+
+
+def test_memory_write_leaves_no_temp_file_behind(home):
+    """原子替换（写 tmp 再 os.replace）。留一个 AGENTS.md.tmp 在 ~/.codex 里，
+    codex 的目录扫描就可能把它当条目报出来。"""
+    assert ci.write_memory("codex", "# 改一遍\n")["ok"] is True
+    leftovers = [p.name for p in (home / ".codex").iterdir() if ".tmp" in p.name]
+    assert leftovers == [], f"临时文件没清掉：{leftovers}"
+
+
+def test_memory_write_rejects_unknown_engine_and_oversize(home):
+    assert ci.write_memory("vscode", "# x")["ok"] is False
+    assert ci.write_memory("", "# x")["ok"] is False
+    before = (home / ".codex" / "AGENTS.md").read_text(encoding="utf-8")
+    big = "记" * 400000          # 1.2MB，超上限
+    r = ci.write_memory("codex", big)
+    assert r["ok"] is False, "1.2MB 的记忆文件不该照收"
+    assert ("大" in r["detail"]) or ("超" in r["detail"]), r["detail"]
+    assert (home / ".codex" / "AGENTS.md").read_text(encoding="utf-8") == before, \
+        "拒绝写入时原文件必须一个字节都没动"
+
+
+def test_memory_write_route_takes_no_path(client, home, monkeypatch):
+    """接口只收 引擎 + 正文：能传的只有这两个，就没有"顺手写别处"的可能。"""
+    monkeypatch.setattr(ci, "HOME", home)
+    r = client.put("/api/agents/capabilities/memory",
+                   json={"engine": "codex", "content": "# 从接口改的\n", "path": "../../etc/x"})
+    assert r.status_code == 200, r.text
+    assert "从接口改的" in (home / ".codex" / "AGENTS.md").read_text(encoding="utf-8")
+    assert client.put("/api/agents/capabilities/memory",
+                      json={"engine": "claude", "content": "# x"}).status_code == 400

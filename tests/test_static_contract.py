@@ -1100,3 +1100,34 @@ def test_sidebar_project_row_highlights_itself():
     seg = APP_JS.split('async function renderSidebarLists(')[1].split('\n}\n')[0]
     assert "p.name===cur" in seg, "项目行的选中态又拿带前缀的路径去比了"
     assert "'pipeline-edit/'+p.name)===cur" not in seg, "残留旧的比较式"
+
+
+# ---------------- 记忆编辑器（能力分区里的唯一写入入口） ----------------
+
+def test_only_memory_gets_an_edit_affordance_and_not_when_truncated():
+    """技能 / 命令 / 子智能体那几类是 CLI 自己的格式，改坏了只有官方入口能救；
+    记忆是用户自己写的 markdown，才给编辑。截断过的正文一份都不完整，
+    存回去等于把尾巴抹掉 —— 所以两个条件都得成立才出按钮。"""
+    seg = APP_JS.split("window.capsView = async function")[1].split("\n};")[0]
+    assert "key === 'memory'" in seg, "编辑入口给到了不该给类目"
+    assert "!d.truncated" in seg, "截断过的文件也允许编辑，保存会把丢掉的部分抹掉"
+    assert "capsEditMem()" in seg, "预览弹窗里没有进编辑的入口"
+
+
+def test_memory_save_sends_engine_and_content_only():
+    """写入面越大越危险：前端只报"改哪家 CLI 的哪段正文"，路径由 cli_inventory
+    从它自己那份清单里算。这样这个接口物理上写不到清单之外的文件。"""
+    seg = APP_JS.split("window.capsSaveMem = async function")[1].split("\n};")[0]
+    assert "engine: CAPS_VIEW.eng" in seg and "content: ta.value" in seg
+    assert "path" not in seg, "前端还在往写入请求里塞路径"
+    assert "ST.caps = " in seg, "存完不重算盘点，行上的字节数还是旧的"
+
+
+def test_memory_editor_closes_on_a_window_function_not_a_module_let():
+    """内联 oninput 走的是全局作用域，IIFE 里的 let 它看不见 ——
+    写 oninput="CAPS_VIEW.dirty=true" 会直接 ReferenceError，标记脏这件事静默失效。"""
+    body = APP_JS.split("window.capsEditMem = function()")[1].split("\n};")[0]
+    assert "oninput=" in body, "正文改了却不记脏，关掉就白改"
+    assert "CAPS_VIEW." not in body.split("oninput=")[1].split(">")[0], \
+        "内联事件里直接引用了 IIFE 内的 let"
+    assert "window.capsDirty" in APP_JS, "没有那个桥接函数"

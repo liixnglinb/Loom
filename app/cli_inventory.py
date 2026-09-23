@@ -6,8 +6,12 @@
 版本一升级字段就会变（codex 把 wire_api="chat" 直接判死就是眼前例子）。
 所以这里只取"名字、条数、路径"三样，值一律不解析、不回传；
 要改，请用户走各自的官方入口（claude mcp add / codex mcp add / /plugin）。
+
+唯一的例外是记忆文件（~/.claude/CLAUDE.md、~/.codex/AGENTS.md）：那是用户自己写的
+规矩、不含密钥，所以开了一个覆盖式写入，见 write_memory。路径仍由本模块算，接口不收路径。
 """
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -201,3 +205,34 @@ def preview_text(engine: str, key: str, name: str = "", max_bytes: int = 200_000
             "path": str(p).replace("\\", "/"),
             "text": raw[:max_bytes].decode("utf-8", errors="ignore"),
             "truncated": cut}
+
+
+# 记忆文件是这个模块唯一的写入例外。理由：里面是用户自己写的规矩，不是密钥
+# （settings.json / config.toml 那类仍然只读），而路径仍旧由上面那份清单算出来 ——
+# 写入接口只收「引擎 + 正文」，没有任何一条通道能把它指向别处。
+MEMORY_MAX_BYTES = 512 * 1024
+
+
+def write_memory(engine: str, text: str) -> dict:
+    """覆盖保存那家 CLI 的全局记忆文件。文件必须已经存在：
+    首建不在这一步里，宁可不给按钮，也不要凭一个引擎名往用户家目录造文件。"""
+    p = preview_path(engine, "memory")
+    if p is None:
+        return {"ok": False, "path": "",
+                "detail": "这台机器上还没有该引擎的记忆文件，先建立它再回来编辑"}
+    body = ((text or "").rstrip() + "\n").encode("utf-8")
+    if len(body) > MEMORY_MAX_BYTES:
+        return {"ok": False, "path": str(p).replace("\\", "/"),
+                "detail": f"内容超过 {MEMORY_MAX_BYTES // 1024} KB，没有写入"}
+    tmp = p.with_name(p.name + ".tmp")
+    try:
+        tmp.write_bytes(body)
+        os.replace(tmp, p)          # 同一目录内的原子替换：崩了也不会留下半截记忆
+    except OSError as e:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return {"ok": False, "path": str(p).replace("\\", "/"),
+                "detail": f"写入失败：{e}"}
+    return {"ok": True, "path": str(p).replace("\\", "/"), "bytes": p.stat().st_size}

@@ -839,6 +839,21 @@ def cap_preview_named(engine: str, key: str, name: str):
     return d
 
 
+class MemoryIn(BaseModel):
+    engine: str = ""
+    content: str = ""
+
+
+@app.put("/api/agents/capabilities/memory")
+def cap_write_memory(b: MemoryIn):
+    """保存全局记忆文件。请求体里只有引擎名和正文 —— 路径由 cli_inventory 那份
+    清单自己算，所以这个接口写不到清单之外的任何文件。"""
+    r = cli_inventory.write_memory(b.engine, b.content)
+    if not r["ok"]:
+        return JSONResponse({"detail": r["detail"]}, 400)
+    return {"ok": True, "path": r["path"], "bytes": r["bytes"]}
+
+
 @app.get("/api/stats")
 def usage_stats():
     """设置页「使用统计」：全部由 runs 表的 step.meta 与工作区实际占用算出来。"""

@@ -1475,6 +1475,7 @@ function secStats(){
    只回名字与条数：那些文件里就是真密钥（settings.json 的 env、config.toml 的 bearer
    token），所以 mcp / hooks / plugins 连预览口都不开。改动请走各自的官方入口。 */
 let CAPS_ENGINE = '';
+let CAPS_VIEW = null;   /* {eng, key, text, dirty} —— 预览/编辑弹窗现在读的那一份 */
 const capsEngine = () => CAPS_ENGINE || ST.defaultEngine || 'claude';
 const CAPS_PREVIEW = {memory:1, skills:1, commands:1, agents:1};
 
@@ -1517,22 +1518,59 @@ window.capsView = async function(eng, key, name){
             + encodeURIComponent(key) + (name ? '/' + encodeURIComponent(name) : '');
   const d = await api(url).catch(e => ({detail: String((e && e.message) || e)}));
   if (d.detail){ toast(d.detail); return; }
+  CAPS_VIEW = {eng, key, text: d.text || ''};
   _lockScroll(true);
   const root = document.createElement('div');
   root.id = 'capsViewRoot';
+  /* 只有记忆文件给编辑入口（其余类目是 CLI 自己的格式，改坏了归官方入口管）。
+     被截断过的正文一律不给编辑：那是一份不完整的副本，存回去等于把尾巴抹掉。 */
+  const canEdit = key === 'memory' && !d.truncated;
   root.innerHTML = `<div class="modal open" onclick="if(event.target===this)capsClose()">
     <div class="modal-box sk-view-modal">
       <div class="modal-top"><div class="pv-head"><h3>${esc(name || key)}</h3>
         <span class="muted-sm mono">${esc(d.path)}</span></div>
         <button class="modal-x" onclick="capsClose()">×</button></div>
-      <div class="sk-view-body"><div class="ws-md">${window.mdToHtml(d.text || '')}</div>
+      <div class="sk-view-body" id="capsBody"><div class="ws-md">${window.mdToHtml(d.text || '')}</div>
         ${d.truncated ? `<div class="st-note">${esc(t('caps.truncated'))}</div>` : ''}</div>
       <div class="sk-view-foot"><span class="spacer"></span>
+        ${canEdit ? `<button class="btn btn-ghost btn-sm" onclick="capsEditMem()">${esc(t('c.edit'))}</button>` : ''}
         <button class="btn btn-ghost btn-sm" onclick="capsClose()">${esc(t('c.close'))}</button>
       </div></div></div>`;
   document.body.appendChild(root);
 };
+/* 读→改同一个缓冲区：textarea 里就是 GET 回来的全文，保存时整块 PUT 回去。
+   路径不在这里传 —— 后端按引擎名自己算，界面拿不到也改不了它。 */
+window.capsEditMem = function(){
+  const body = document.getElementById('capsBody');
+  if (!body || !CAPS_VIEW) return;
+  body.innerHTML = `<textarea class="pv-input mono sk-content" id="capsTa" spellcheck="false"
+      oninput="capsDirty()">${esc(CAPS_VIEW.text)}</textarea>`;
+  const ta = document.getElementById('capsTa');
+  const foot = body.parentElement.querySelector('.sk-view-foot');
+  foot.innerHTML = `<span class="spacer"></span>
+    <button class="btn btn-ghost btn-sm" onclick="capsClose()">${esc(t('c.cancel'))}</button>
+    <button class="btn btn-primary btn-sm" onclick="capsSaveMem()">${esc(t('c.save'))}</button>`;
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+};
+window.capsDirty = function(){ if (CAPS_VIEW) CAPS_VIEW.dirty = true; };
+window.capsSaveMem = async function(){
+  const ta = document.getElementById('capsTa');
+  if (!ta || !CAPS_VIEW) return;
+  const r = await put('/api/agents/capabilities/memory',
+                      {engine: CAPS_VIEW.eng, content: ta.value})
+    .catch(e => ({detail: String(e)}));
+  if (r && r.detail){ toast(r.detail); return; }
+  CAPS_VIEW.dirty = false;
+  toast(t('caps.memSaved'), true);
+  ST.caps = (await api('/api/agents/capabilities').catch(() => null)) || ST.caps;
+  secRepaint('caps');   // 条目的字节数是盘点出来的，不重算就还是旧数字
+  window.capsClose();
+};
 window.capsClose = function(){
+  if (CAPS_VIEW && CAPS_VIEW.dirty && document.getElementById('capsTa')
+      && !confirm(t('caps.unsaved'))) return;
+  CAPS_VIEW = null;
   const r = document.getElementById('capsViewRoot');
   if (r) r.remove();
   _lockScroll(false);
