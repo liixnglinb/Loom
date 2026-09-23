@@ -50,3 +50,6 @@ release/
 *.pkg
 # ===== 会话工具元数据 =====
 .workbuddy/
+
+# ===== 隔离工作区（git worktree 落点，不入库）=====
+.worktrees/
