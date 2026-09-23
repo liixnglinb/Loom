@@ -185,17 +185,22 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 .tk-card{width:100%;background:var(--bg-panel);border:1px solid var(--line);border-radius:var(--r-5);
   box-shadow:var(--shadow-composer);overflow:hidden}
 .tk-top{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line-soft)}
+.tk-top .ff-selw{flex:0 1 auto;min-width:0}
 .tk-meta{margin-left:auto;font-size:var(--fs-meta);color:var(--ink-3);white-space:nowrap}
 .tk-field{padding:8px 10px 2px}
 .tk-input{width:100%;border:1px solid var(--line-soft);border-radius:var(--r-3);background:var(--bg-sunken);
   padding:9px 11px;font-family:inherit;font-size:var(--fs-body);color:var(--ink);resize:none;line-height:1.6}
 .tk-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent)}
 .tk-input::placeholder{color:var(--ink-4)}
-.tk-foot{display:flex;align-items:center;gap:8px;padding:8px 10px 10px}
+/* 下段工具条：动作在左（引擎），发送在右下 —— 参考实现就是这个排布，
+   发送不是通栏大按钮，是长在工具条末端的一枚方正图标键。 */
+.tk-bar{display:flex;align-items:center;gap:8px;padding:8px 12px 12px}
+.tk-bar .ff-selw{flex:none}
 .tk-name{flex:1;min-width:0;border:none;background:transparent;color:var(--ink);font-family:inherit;
   font-size:var(--fs-sub);padding:6px 8px;border-radius:var(--r-2)}
 .tk-name:focus{outline:none;background:var(--bg-hover)}
 .tk-name::placeholder{color:var(--ink-4)}
+.tk-bar .cp-send{margin-left:auto;flex:none}
 .tk-hint{font-size:var(--fs-meta);color:var(--ink-3);padding:8px 4px 0;line-height:1.55}
 .tk-sugs{width:100%;margin-top:18px}
 .tk-sug-head{display:flex;align-items:center;gap:6px;padding:0 4px 8px;font-size:var(--fs-meta);color:var(--ink-3)}

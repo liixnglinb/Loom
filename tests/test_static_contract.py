@@ -374,6 +374,44 @@ def test_recent_runs_are_nested_under_their_project_not_listed_twice():
     assert ".slice(0, 2)" in seg or ".slice(0,2)" in seg, "嵌套行要有上限"
 
 
+# ---------------- 首页输入台：三段 + 引擎选择器 ----------------
+
+def _composer():
+    return APP_JS.split('function tkStageHtml(')[1].split('\n}\n')[0]
+
+
+def test_composer_has_a_bottom_toolbar_with_an_engine_picker():
+    """参考实现的输入台是三段：上=上下文（选哪条流程），中=textarea，
+    下=工具条（左边是动作，右边挨着发送）。我们原来只有上+中+一条塞着名字输入的行。"""
+    seg = _composer()
+    assert 'class="tk-top"' in seg and 'class="tk-field"' in seg and 'class="tk-bar"' in seg, \
+        "输入台不是三段（上/中/下工具条）"
+    assert ".tk-bar" in CSS, "新的一段得有自己的规则，不然只是换个名字"
+    assert 'id:\'tkEngine\'' in seg, "工具条里没有引擎选择器"
+    assert "taskStart()" in seg, "发送按钮没接上"
+    assert "${ico('arrowUp')}" in seg, "发送键要换成参考实现那个向上箭头（原来那枚是纸飞机）"
+    assert ".tk-foot" not in CSS, "旧的脚部规则还留着，两代结构会互相盖"
+
+
+def test_composer_offers_only_controls_the_backend_actually_reads():
+    """引擎是真能力：RunStartIn.engine（app/main.py:490）→ start_run 校验 agents.ENGINES
+     后逐步覆盖（app/runner.py:846-849）。**每条 run 选模型**没有对应参数，放了就是假控件。"""
+    seg = _composer()
+    assert "v:'', label:t('ed.engineDefault')" in seg, "首项必须是「默认」：空串才沿用步骤自带引擎"
+    assert "'claude'" in seg and "'codex'" in seg, "两个 CLI 引擎都得能选"
+    low = seg.lower()
+    assert "model" not in low.replace("models", ""), "输入台里出现了 model —— 后端不读它"
+
+
+def test_picked_engine_is_sent_and_labelled():
+    """选择器写了却不发出去就是装饰；选了也不该在下一行任务里悄悄留着。"""
+    seg = APP_JS.split('window.taskStart = async function()')[1].split('\n};')[0]
+    assert "engine: TK_ENG" in seg, "请求体里没把选中的引擎发出去"
+    assert "tkEngineSet" in _composer(), "onChange 要接住选择器的值"
+    assert "let TK_ENG = ''" in APP_JS, "初值不是空串会覆盖掉步骤自带的引擎"
+    body = APP_JS.split('window.tkEngineSet')[1].split('\n};')[0] if 'window.tkEngineSet' in APP_JS else ''
+    assert "TK_ENG = v || ''" in body, f"回填写歪了：{body[:80]}"
+
 # ---------------- 侧栏折叠轨道 ----------------
 
 RAIL_HIDDEN = {
@@ -812,9 +850,10 @@ NESTED_RADIUS = {
 
 
 def _radius_of(sel):
-    """取某个选择器那条规则里的圆角档位；没有规则或非 var() 就返回原文。
-    一个类若有多条规则只认第一条 —— 表里的类必须保持单一圆角来源。"""
-    m = re.search(r"(?<![\w.-])" + re.escape(sel) + r"\s*\{([^}]*)\}", CSS)
+    """取某个选择器**作为整条规则主语**时的圆角档位。
+    只认顶格/跟在 } 或逗号之后的那种：`.tk-bar .cp-send{margin-left:auto}` 是布局微调，
+    不是圆角来源，早先按"类名出现即可"匹配会被它抢走。"""
+    m = re.search(r"(?:^|[},])\s*" + re.escape(sel) + r"\s*\{([^}]*)\}", CSS, re.M)
     assert m, f"找不到 {sel} 的规则，NESTED_RADIUS 表该更新了"
     v = re.search(r"border-radius:\s*([^;}]+)", m.group(1))
     assert v, f"{sel} 没有 border-radius，表里却写着它"

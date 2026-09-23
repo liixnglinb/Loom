@@ -558,6 +558,8 @@ window.addEventListener('hashchange', ()=>nav.resolve());
    仍然统一走 taskModal()，只是它现在做的是"回到首页并把这条流程选中"。 */
 function tkStageHtml(tpls, flow){
   const cps = TK_CPS[flow] || 0;
+  const ENGS = [{v:'', label:t('ed.engineDefault')},
+                {v:'claude', label:t('eng.claude')}, {v:'codex', label:t('eng.codex')}];
   return `<div class="home-stage">
     <h1 class="tk-greet">${esc(t('tk.greet'))}</h1>
     <div class="tk-card">
@@ -571,10 +573,11 @@ function tkStageHtml(tpls, flow){
         <textarea class="tk-input" id="tkBrief" rows="4" placeholder="${esc(t('task.briefPh'))}"
           oninput="tkHint()"></textarea>
       </div>
-      <div class="tk-foot">
+      <div class="tk-bar">
+        ${ffSelect(ENGS, TK_ENG, {id:'tkEngine', icon:'agent', onChange:'tkEngineSet'})}
         <input class="tk-name" id="tkLabel" placeholder="${esc(t('task.labelPh'))}">
         <button class="cp-send" onclick="taskStart()" aria-label="${esc(t('task.start'))}"
-          title="${esc(t('task.start'))}">${ico('send')}</button>
+          title="${esc(t('task.start'))}">${ico('arrowUp')}</button>
       </div>
     </div>
     <div class="tk-hint" id="tkHintBox">${esc(t('task.briefHint'))}</div>
@@ -647,6 +650,8 @@ function tkHint(){
 window.tkHint = tkHint;
 let TK_CPS = {};   /* 流程名 -> 检查点数：换流程时右侧那行提示要跟着变 */
 let TK_PICK = '';  /* taskModal 带进来的预选流程：由 renderHome 消费一次就清空 */
+let TK_ENG = '';   /* 这一条任务用哪个 CLI 引擎；'' = 不指定，沿用步骤自带/全局默认 */
+window.tkEngineSet = function(v){ TK_ENG = v || ''; };
 const TK_SUG_KEYS = ['tk.sug1','tk.sug2','tk.sug3','tk.sug4','tk.sug5','tk.sug6'];
 const TK_SUG_ICONS = ['search','file','chart','play','edit','flag'];
 let TK_SUG_OFF = 0;
@@ -668,7 +673,8 @@ window.taskStart = async function(){
   const brief = ((document.getElementById('tkBrief')||{}).value||'').trim();
   const label = ((document.getElementById('tkLabel')||{}).value||'').trim();
   if(!brief){ toast(t('task.needBrief')); return; }
-  const r = await post('/api/pipelines/'+encodeURIComponent(flow)+'/run', {brief, label})
+  const r = await post('/api/pipelines/'+encodeURIComponent(flow)+'/run',
+                       {brief, label, engine: TK_ENG})
     .catch(e=>({detail:String(e)}));
   if(r.detail){ toast(r.detail); return; }
   // 输入台现在长在页面上，没有"关掉窗口"这回事了 —— 起跑后把草稿清空，
