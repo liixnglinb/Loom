@@ -61,7 +61,8 @@ const ST = { agents:[], defaultEngine:'',
              claudeCli:'', codexCli:'', paths:{},
              agentTimeout:'2700', effortOptions:['auto'], permMode:'',
              reasoningEffort:'auto', stepRetry:'0', autoContinue:'0',
-             skills:[], flows:[], runs:[], caps:null, version:'' };
+             skills:[], flows:[], runs:[], caps:null, version:'',
+             presets:null };   /* 端点预设清单，首页模型 chip 的候选；进过设置页会刷新 */
 window.ST = ST;
 
 const RUN_ST = () => ({pending:t('st.pending'), running:t('st.running'), waiting:t('st.waiting'),
@@ -645,6 +646,13 @@ function tkStageHtml(tpls, flow){
                 {v:'claude', label:t('eng.claude')}, {v:'codex', label:t('eng.codex')}];
   const PERMS = [{v:'', label:t('ed.engineDefault'), note:t('pm.defaultNote')}].concat(
     PERM_MODES.map(m => ({v:m, label:t('pm.'+m), note:t('pm.'+m+'D')})));
+  /* 模型候选只有真存在的预设名 —— 裸模型名这里不做：那是编辑器里逐步挑端点的事，
+     输入台要的是一句"整条流程换成这套端点"，而预设才是那个粒度。 */
+  const PSET = (ST.presets||[]).map(p=>({v:p.name, label:p.name,
+    note:[p.provider, p.model].filter(Boolean).join(' · ')}));
+  /* 选中的预设可能在设置里被删过：那时 chip 会退回「跟随步骤」，
+     但 TK_MODEL 还留着死名字 —— 必须一起归零，否则显示的是一套、发出去的是另一套。 */
+  if(!PSET.some(o=>o.v===TK_MODEL)) TK_MODEL = '';
   return `<div class="home-stage">
     <h1 class="tk-greet">${esc(t('tk.greet'))}</h1>
     <div class="tk-card">
@@ -662,6 +670,9 @@ function tkStageHtml(tpls, flow){
       <div class="tk-bar">
         <div class="tk-steps" id="tkSteps" role="list" aria-label="${esc(t('tk.stepsAria'))}"></div>
         ${ffSelect(ENGS, TK_ENG, {id:'tkEngine', icon:'agent', onChange:'tkEngineSet'})}
+        ${PSET.length ? ffSelect([{v:'', label:t('tk.modelAny'), note:t('tk.modelAnyD')}].concat(PSET),
+                                 TK_MODEL,
+                                 {id:'tkModel', icon:'api', onChange:'tkModelSet', short:true}) : ''}
         <button class="cp-send" onclick="taskStart()" aria-label="${esc(t('task.start'))}"
           title="${esc(t('task.start'))}">${ico('arrowUp')}</button>
       </div>
@@ -712,10 +723,15 @@ function tkPaintSteps(flow){
 window.renderHome = async function(){
   window.viewLoading();
   let tpls = ST.flows;
-  if(!tpls || !tpls.length){
-    const pr = await api('/api/pipelines').catch(()=>({pipelines:[]}));
-    tpls = pr.pipelines || [];
-  }
+  const needPreset = ST.presets === null;   /* 空数组=拉过了真没有，别再拉一遍 */
+  const [pr, pv] = await Promise.all([
+    (tpls && tpls.length) ? Promise.resolve(null)
+                          : api('/api/pipelines').catch(()=>({pipelines:[]})),
+    needPreset ? api('/api/providers').catch(()=>({presets:[]})) : Promise.resolve(null),
+  ]);
+  if(pv) ST.presets = pv.presets||[];
+  if(pr) tpls = pr.pipelines||[];
+  tpls = tpls || [];
   ST.flows = tpls;
   window.__chrome = {title:'', icon:'', actions:''};
   if(!tpls.length){
@@ -760,13 +776,17 @@ window.tkSync = tkSync;
 let TK_PICK = '';  /* taskModal 带进来的预选流程：由 renderHome 消费一次就清空 */
 let TK_ENG = '';   /* 这一条任务用哪个 CLI 引擎；'' = 不指定，沿用步骤自带/全局默认 */
 window.tkEngineSet = function(v){ TK_ENG = v || ''; };
+/* 运行级模型覆盖：存的是预设名，盖到每一步的 model 上，之后仍走那条
+   「预设名 > 裸模型名 > 默认预设」的老阶梯 —— 这里不另开一套解析。 */
+let TK_MODEL = '';
+window.tkModelSet = function(v){ TK_MODEL = v || ''; };
 window.taskStart = async function(){
   const flow = (document.getElementById('tkFlow')||{}).value||'';
   const brief = ((document.getElementById('tkBrief')||{}).value||'').trim();
   const label = ((document.getElementById('tkLabel')||{}).value||'').trim();
   if(!brief){ toast(t('task.needBrief')); return; }
   const r = await post('/api/pipelines/'+encodeURIComponent(flow)+'/run',
-                       {brief, label, engine: TK_ENG})
+                       {brief, label, engine: TK_ENG, model: TK_MODEL})
     .catch(e=>({detail:String(e)}));
   if(r.detail){ toast(r.detail); return; }
   // 输入台现在长在页面上，没有"关掉窗口"这回事了 —— 起跑后把草稿清空，
@@ -1624,7 +1644,8 @@ window.renderSettings = async function(section){
     api('/api/agents/capabilities').catch(()=>null),
   ]);
   ST.update = up || null; ST.stats = st || null; ST.caps = cp || null;
-  PRESETS = r.presets||[];   // ST 里不再镜像一份：清单只有 PRESETS 这一个消费者
+  PRESETS = r.presets||[];   // 设置页自己的清单只认这一个变量
+  ST.presets = PRESETS;      // 首页模型 chip 也要这份候选，跟着增删一起刷新
   ST.skills = sk.skills||[]; ST.flows = pl.pipelines||[]; ST.runs = rn.runs||[];
   if(ag){
     ST.agents = ag.agents||[]; ST.defaultEngine = ag.default_engine||'';

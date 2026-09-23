@@ -56,6 +56,7 @@ const DICT = {
     'tk.greet': '今天要跑哪条流程？',
     'tk.stepsAria': '这条流程的步骤', 'tk.cpMark': '这一步会停下等确认',
     'tk.noSteps': '这条流程还没有步骤',
+    'tk.modelAny': '跟随步骤', 'tk.modelAnyD': '不覆盖，每一步沿用它自己挑的端点',
     'task.labelPh': '留空则用流程名', 'task.start': '开始全自动执行',
     'task.needBrief': '任务说明不能为空', 'task.started': '已启动', 'task.noFlow': '还没有流程，先创建一个',
 
@@ -329,6 +330,7 @@ const DICT = {
     'tk.greet': 'Which workflow should we run?',
     'tk.stepsAria': 'Steps in this workflow', 'tk.cpMark': 'This step pauses for your confirmation',
     'tk.noSteps': 'This workflow has no steps yet',
+    'tk.modelAny': 'Follow steps', 'tk.modelAnyD': "Don't override; each step keeps its own endpoint",
     'task.labelPh': 'defaults to the workflow name', 'task.start': 'Run end to end',
     'task.needBrief': 'Task brief is required', 'task.started': 'Started', 'task.noFlow': 'No workflow yet — create one first',
 

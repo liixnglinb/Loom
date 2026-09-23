@@ -838,7 +838,8 @@ def _snapshot_steps(pipeline: dict) -> list:
     return steps
 
 
-def start_run(pipeline_name: str, label: str = "", brief: str = "", engine: str = "") -> dict:
+def start_run(pipeline_name: str, label: str = "", brief: str = "", engine: str = "",
+              model: str = "") -> dict:
     p = db.get_pipeline(pipeline_name)
     if not p:
         raise ValueError(f"流程「{pipeline_name}」不存在")
@@ -848,6 +849,12 @@ def start_run(pipeline_name: str, label: str = "", brief: str = "", engine: str 
     if (engine or "").strip().lower() in agents.ENGINES:
         for s in steps:
             s["engine"] = engine.strip().lower()
+    # 模型同理：盖的是步级那个值，所以「预设名 > 裸模型名 > 默认预设」那套阶梯照旧走，
+    # 不在这里重复判断端点（协议对不上由 resolve_agent_config 报进运行台）。
+    m = (model or "").strip()
+    if m:
+        for s in steps:
+            s["model"] = m
     run = db.create_run(run_id, pipeline_name,
                         label or p.get("label") or pipeline_name,
                         steps, brief=brief)

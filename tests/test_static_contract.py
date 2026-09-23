@@ -394,13 +394,15 @@ def test_composer_has_a_bottom_toolbar_with_an_engine_picker():
 
 
 def test_composer_offers_only_controls_the_backend_actually_reads():
-    """引擎是真能力：RunStartIn.engine（app/main.py:490）→ start_run 校验 agents.ENGINES
-     后逐步覆盖（app/runner.py:846-849）。**每条 run 选模型**没有对应参数，放了就是假控件。"""
+    """引擎和模型都是真能力：RunStartIn.engine / RunStartIn.model（app/main.py:490）
+    → start_run 校验后逐步覆盖（app/runner.py:841-857）。
+    这一条以前钉的是"输入台里不许出现 model"，因为那时后端没有这个参数；
+    现在有了，改钉"候选必须来自真清单"（见 test_composer_model_chip_lists_only_real_presets）。"""
     seg = _composer()
     assert "v:'', label:t('ed.engineDefault')" in seg, "首项必须是「默认」：空串才沿用步骤自带引擎"
     assert "'claude'" in seg and "'codex'" in seg, "两个 CLI 引擎都得能选"
-    low = seg.lower()
-    assert "model" not in low.replace("models", ""), "输入台里出现了 model —— 后端不读它"
+    assert "id:'tkModel'" in seg, "运行级模型覆盖的 chip 没了"
+    assert "p.model" in seg, "菜单里的说明要用预设真有的字段，不是拼出来的假信息"
 
 
 def test_picked_engine_is_sent_and_labelled():
@@ -1041,6 +1043,24 @@ def test_composer_mode_chip_offers_exactly_the_shipped_modes():
     top = seg.split('class="tk-field"')[0]
     assert "id:'tkPerm'" in top, "模式 chip 挤在底部工具条里，步骤条放不下 7 步"
     assert "short:true" in seg, "模式 chip 没开 short，收起态会把说明文字一起吃进去"
+
+
+def test_composer_model_chip_lists_only_real_presets():
+    """运行级模型覆盖的候选只能来自 /api/providers 里真存在的预设名。
+    一个预设都没有时整枚 chip 必须消失 —— 一枚点开只有「跟随步骤」的选择器是假控件。"""
+    seg = APP_JS.split("function tkStageHtml(")[1].split("\n}\n")[0]
+    assert "ST.presets" in seg, "模型 chip 的候选没从预设清单来"
+    assert "PSET.length ?" in seg, "没预设时这枚 chip 该整枚消失"
+    assert "TK_MODEL = ''" in seg, "预设被删后 chip 显示「跟随步骤」、发出去却还是那个死名字"
+    assert "id:'tkModel'" in seg, "输入台没有模型 chip"
+    # 选项带 note 的 chip 必须开 short：实测不开的时候收起态直接写成
+    # 「跟随步骤 · 不覆盖，每一步沿用它自己挑的端点」一整句，把步骤条挤没了。
+    after = seg[seg.index("id:'tkModel'"):][:160]
+    assert "short:true" in after, "模型 chip 没开 short，收起态会连说明一起吃进标签"
+    assert "model: TK_MODEL" in APP_JS, "选了模型没发出去 = 装饰"
+    rh = APP_JS.split("window.renderHome = async function")[1].split("\n};")[0]
+    assert "api('/api/providers')" in rh, "首页没拉预设清单"
+    assert "ST.presets === null" in rh, "空数组会被当成没拉过，每次回首页都多打一次请求"
 
 
 def test_settings_page_no_longer_offers_a_second_sandbox_control():

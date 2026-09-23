@@ -491,6 +491,7 @@ class RunStartIn(BaseModel):
     label: str = ""
     brief: str = ""
     engine: str = ""
+    model: str = ""
 
 class ReviseIn(BaseModel):
     index: int
@@ -506,7 +507,8 @@ def _sse_pack(ev: dict) -> str:
 def start_pipeline_run(name: str, b: RunStartIn):
     """启动一次流程运行：返回 run（含 id），前端跳转运行控制台。"""
     try:
-        run = runner.start_run(name, b.label or "", b.brief or "", b.engine or "")
+        run = runner.start_run(name, b.label or "", b.brief or "", b.engine or "",
+                               b.model or "")
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, 404)
     except Exception as e:

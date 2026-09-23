@@ -122,6 +122,22 @@ def test_happy_path_end_to_end(client, stub_cli, flow, workspaces):
     assert not d["truncated"]
 
 
+def test_run_level_model_override_reaches_every_step(client, stub_cli, dbsession, workspaces):
+    """下任务时选的模型覆盖每一步，规则和 run 级引擎那套一模一样。
+    「留空 = 不覆盖」必须钉住：不然每次起跑都把编辑器里挑好的端点抹平。"""
+    dbsession.create_pipeline("ovr-flow", label="覆盖", steps=[
+        {"key": "a", "label": "A", "out": "a.md", "engine": "claude", "skill": "", "model": "步级A"},
+        {"key": "b", "label": "B", "out": "b.md", "engine": "claude", "skill": "", "model": "步级B"}])
+    r = client.post("/api/pipelines/ovr-flow/run",
+                    json={"brief": "写", "model": "端点卡"}).json()["run"]
+    assert [s["model"] for s in r["steps"]] == ["端点卡", "端点卡"]
+    _wait(r["id"])
+    r2 = client.post("/api/pipelines/ovr-flow/run", json={"brief": "写"}).json()["run"]
+    assert [s["model"] for s in r2["steps"]] == ["步级A", "步级B"]
+    _wait(r2["id"])
+    dbsession.delete_pipeline("ovr-flow")
+
+
 def test_failed_step_keeps_log(client, stub_cli, flow, monkeypatch, workspaces):
     monkeypatch.setattr(agents, "_claude_args",
                         lambda *a, **k: ["--stub-mode=fail"])
