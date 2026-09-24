@@ -916,11 +916,14 @@ LADDER_PX = ["4px", "6px", "8px", "12px", "16px"]
 
 # 类名 -> 它「应该」用的那一档。父壳和壳内控件成对写，改了一头另一头不许偷偷漂。
 NESTED_RADIUS = {
-    ".tk-card": "--r-5",          # 主输入台壳 = 参考实现的四个 2xl 批准例外之一
+    # 2026-09-24 按参考图像素：输入台壳的圆角量到 12（内缩在 12 CSS 归零），
+    # 也就是刻度表里「第一个圆角容器 = rounded-xl」那一档。文档给主输入壳留的
+    # 2xl 许可，它自己发出来的版本并没有用 —— 以像素为准，不再走 --r-5。
+    ".tk-card": "--r-4",
     # .tk-input 故意不在表里：卡片是唯一的表面，textarea 不自己画盒子/圆角
     # （实测参考图 body 是一整片 #2B2B2B，没有内凹框）。见 test_composer_is_one_surface。
     ".cp-send": "--r-3",          # 图标按钮要方正，不能是正圆
-    ".composer-inner": "--r-5",   # 运行台底部那个也是主输入壳
+    ".composer-inner": "--r-4",   # 运行台底部那个和首页那张是同一个壳
     ".modal-box": "--r-5",        # 对话框壳 = 2xl，且不计入内容层级
     ".up-card": "--r-5",          # 更新浮层同样是对话框壳
     ".card": "--r-4",             # 第一层圆角容器 = xl
@@ -1143,3 +1146,55 @@ def test_composer_workdir_field_is_only_a_path_the_server_judges():
     body = APP_JS.split("window.taskStart = async function()")[1].split("\n};")[0]
     assert "workdir: dir" in body, "填了却没发出去 = 装饰"
     assert "TK_DIR = dir" in body, "重渲染要能把这格带回原值，不然填一半换流程就丢"
+
+
+# ---------------- 2026-09-24 按参考图像素重定的那一层 ----------------
+
+def test_type_scale_is_anchored_to_the_measured_sizes():
+    """八档字号不是自己排的：14px 根（参考实现的 --ui-font-size 默认值），
+    前五档对齐它的加减刻度 10/12/13/14/16/18，最大那档 27 是量首页大标题量出来的。
+    漂一档就等于全站字号又回到"看着小一号"。"""
+    m = re.search(r"html\{font-size:calc\((\d+)px \* var\(--text-scale\)\)", CSS)
+    assert m, "html 的 font-size 不再是 calc(<n>px * var(--text-scale))"
+    root = int(m.group(1))
+    assert root == 14, f"根字号 {root}px，参考实现是 14px"
+    want = {"--fs-micro": 10, "--fs-meta": 12, "--fs-sub": 13, "--fs-body": 14,
+            "--fs-lead": 16, "--fs-stat": 18, "--fs-h2": 20, "--fs-h1": 27}
+    for key, px in want.items():
+        v = re.search(re.escape(key) + r":([\d.]+)rem", CSS)
+        assert v, f"{key} 从刻度里消失了"
+        got = round(float(v.group(1)) * root)
+        assert got == px, f"{key} 现在是 {got}px，量到的应该是 {px}px"
+    j = re.search(r"const ROOT_PX = (\d+(?:\.\d+)?);", APP_JS)
+    assert int(float(j.group(1))) == root, "滑块换算基准和 CSS 根字号脱钩了：读数会报一个不存在的字号"
+
+
+def test_the_two_columns_are_split_by_color_and_not_by_a_line():
+    """参考图里侧栏和页面之间没有任何线 —— #2B2B2B vs #161616 的色差就够了。
+    页头也一样：它不铺自己的底、不画下边线，否则右侧又被切出一道接缝，
+    正是这次要修掉的"没融为一体"。"""
+    dark = CSS.split('html[data-theme="dark"]')[1].split("}")[0]
+    shell = re.search(r"--bg-shell:(#[0-9A-Fa-f]{6})", dark).group(1).upper()
+    page = re.search(r"--bg-page:(#[0-9A-Fa-f]{6})", dark).group(1).upper()
+    assert (shell, page) == ("#2B2B2B", "#161616"), \
+        f"暗色两栏实测是 #2B2B2B / #161616，现在是 {shell} / {page}"
+    sb = CSS.split(".sidebar{")[1].split("}")[0]
+    assert "border-right" not in sb, "侧栏那条竖线又画回来了：色差被它糊成两层"
+    tb = CSS.split(".topbar{")[1].split("}")[0]
+    assert "border-bottom" not in tb, "页头有下边线 = 右侧被切成两块"
+    assert "background" not in tb, "页头铺自己的底 = 它成了独立的一条带子"
+
+
+def test_sidebar_row_pitch_survives_the_keycap_border():
+    """行距 33 是量的（行中心 97/130/163）。撑爆它的不是文字，是那枚带 1px 边框的
+    快捷键小标签：它自己的 line-box 一旦高于行的 line-height，整行就被顶到 22.3px。"""
+    item = CSS.split(".sb-item{")[1].split("}")[0]
+    kbd = CSS.split(".sb-kbd{")[1].split("}")[0]
+    nav = CSS.split(".sb-nav{")[1].split("}")[0]
+    lh = int(re.search(r"line-height:(\d+)px", item).group(1))
+    klh = int(re.search(r"line-height:(\d+)px", kbd).group(1))
+    pad = int(re.search(r"padding:(\d+)px \d+px", item).group(1))
+    gap = int(re.search(r"gap:(\d+)px", nav).group(1))
+    assert klh + 2 <= lh, f"快捷键标签 {klh}+2px 边框 > 行 {lh}px，它会把整行撑高"
+    pitch = lh + pad * 2 + gap
+    assert pitch == 33, f"侧栏行距算出来是 {pitch}，量到的是 33"

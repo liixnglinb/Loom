@@ -75,18 +75,20 @@
      r-pill 只给故意的胶囊（进度条、滑块、更新胶囊），按钮/标签/计数器不算。 */
   --r-1:4px; --r-2:6px; --r-3:8px; --r-4:12px; --r-5:16px; --r-pill:999px;
 /* 字号刻度：内容一律取这 8 档，别再造新数值。
-   1rem = 13px（受 --text-scale 缩放），内容四档约 1.09 倍递进。
+   1rem = 14px（受 --text-scale 缩放）。这八档不是自己排的：
+   参考实现的刻度表是「围绕 --ui-font-size(默认 14px) 做加减」= 18/16/14/13/12/10
+   （DESIGN.md:190-199），前六档逐值对齐；stat/h2 之上再留两档给数据大字和页标题，
+   最大那档 1.93rem = 27px 是**量出来的**（首页大标题 12 个全角位墨迹宽 325 CSS，
+   步进 27.1；字高 27.3 互证）。
    这是全站唯一允许用 rem 的地方 —— 几何用 rem 会被字号设置连带放大。 */
-  --fs-micro:.76rem;
-  --fs-meta:.84rem;
-  --fs-sub:.92rem;
-  --fs-body:1rem;
-  --fs-lead:1.1rem;
-  --fs-h2:1.8rem;
-  /* 统计条那排数字：参考图量到字高 ≈20px（数字约 0.72em）。--fs-lead 14.3 太小、
-     --fs-h2 23.4 太大，所以给数据大字单独加一档，只被 .st-strip 用着。 */
-  --fs-stat:1.45rem;
-  --fs-h1:1.95rem;
+  --fs-micro:.72rem;    /* 10.1  对齐 ui-xs */
+  --fs-meta:.86rem;     /* 12.0  对齐 ui-sm */
+  --fs-sub:.93rem;      /* 13.0  对齐 ui-caption */
+  --fs-body:1rem;       /* 14.0  对齐 ui-base */
+  --fs-lead:1.14rem;    /* 16.0  对齐 ui-lg */
+  --fs-stat:1.29rem;    /* 18.0  对齐 ui-xl，也是统计条那排数字 */
+  --fs-h2:1.43rem;      /* 20.0  页标题：刻度表最大只到 18，这一档是我们的例外 */
+  --fs-h1:1.93rem;      /* 27.0  实测首页大标题 */
   --ease:cubic-bezier(.2,.7,.2,1);
   --slide:.14s var(--ease);
   --shadow-pop:0 16px 40px -12px rgba(0,0,0,.18),0 2px 6px -2px rgba(0,0,0,.08);
@@ -109,7 +111,7 @@
   --text-scale:1;
   --ui-zoom:1;
   --content-w:1180px;
-  --sidebar-w:248px;
+  --sidebar-w:244px;
   --rail-w:56px;
   --topbar-h:52px;
 
@@ -122,19 +124,20 @@
 html[data-theme="dark"]{
   color-scheme: dark;
 
-  /* Zai Dark 逐值：背景与侧栏同为 #161616（暗色下没有接缝，层级靠卡片抬起），
-     面板 #202020，卡片 / 浮层 / 输入同为 #2b2b2b —— 它这三层本来就是同一个值，
-     区分靠边框和阴影而不是亮度阶梯。 */
+  /* 2026-09-24 按参考图像素重定：侧栏从 #161616 抬到 #2B2B2B，和卡片 / 浮层 / 输入
+     同一个值 —— 规则是「凡是浮在页面上的表面都同色，页面本身最深」，分栏靠色差
+     （实测侧栏 #2B2B2B / 页面 #161616，亮度差约一倍）而不是靠一条 1px 竖线。
+     面板 #202020 保留：它是设置页那种内凹列表的底，比页面亮一档、比卡片暗一档。 */
   --bg-page:#161616;
-  --bg-shell:#161616;
+  --bg-shell:#2B2B2B;
   --bg-raised:#202020;
   --bg-sunken:rgba(255,255,255,.05);
   --bg-inset:rgba(255,255,255,.07);
   --bg-hover:rgba(255,255,255,.05);
   --bg-active:rgba(255,255,255,.10);
   --bg-composer:#2B2B2B;
-  /* 压黑 .3：43 → 34 ≈ 实测条带 #222222 */
-  --bg-strip:rgba(13,13,13,.3);
+  /* 压黑 .19：43 → 34.6 ≈ 实测条带 #232323（原来 .3 压到 #1F1F1F，比它狠了一档） */
+  --bg-strip:rgba(13,13,13,.19);
   --bg-pill:rgba(255,255,255,.08);
   --bg-float:#2B2B2B;
   --bg-panel:#202020;
@@ -194,14 +197,17 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
    边框常态是 --line(.1)：参考图里量到的 #4b4b4b(=.15) 是**聚焦态**的边框
    （那张截图里光标就在输入框里），不是常态。别把它当常态抄进来。 */
 .tk-card{width:100%;background:var(--bg-composer);border:1px solid var(--line);
-  border-radius:var(--r-5);box-shadow:var(--shadow-composer);overflow:hidden;
+  /* 圆角实测 12（左上内缩在 12 CSS 处归零，是干净的 1/4 圆）—— 参考实现的刻度表
+     把「第一个圆角容器」定在 rounded-xl=12，2xl 只是文档里给主输入壳留的许可，
+     它自己发出来的版本没用。所以这里走 --r-4，--r-5 留给对话框壳/toast。 */
+  border-radius:var(--r-4);box-shadow:var(--shadow-composer);overflow:hidden;
   transition:border-color var(--slide)}
 /* 焦点环画在卡片上，不画在 textarea 上：整张卡就是那个输入区。
    抬到 --line-strong 正好就是实测的 #4b4b4b —— 既有可见反馈，又不引入彩色光环。 */
 .tk-card:focus-within{border-color:var(--line-strong)}
-/* 顶部条带：实测高 43、比 body 暗一档、下面一条分隔线。
-   .ff-sel 是 30px 高，所以上下各 6px + 1px 线正好落在 43。左内缩实测 21。 */
-.tk-top{display:flex;align-items:center;gap:10px;padding:6px 14px 6px 13px;
+/* 顶部条带：实测高 37（不是上一轮量的 43 —— 那张图是另一个版本）。
+   .ff-sel 是 30px 高，所以上下各 4px + 1px 线 = 35+1 ≈ 37。左内缩实测 18。 */
+.tk-top{display:flex;align-items:center;gap:10px;padding:4px 14px 4px 13px;
   background:var(--bg-strip);border-bottom:1px solid var(--line-strong)}
 .tk-top .ff-selw{flex:0 1 auto;min-width:0}
 .tk-field{padding:13px 14px 0}
@@ -214,7 +220,8 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 /* 下段工具条：动作在左（引擎），发送在右下 —— 参考实现就是这个排布。
    发送键实测 ~28px、距右 14、距下 14；空态是灰的（#959595 压在 #2B2B2B 上），
    不是成品品牌色 —— 有字了才亮起来，所以这里用 :not(.is-on) 表达"还不能发"。 */
-.tk-bar{display:flex;align-items:center;gap:8px;padding:10px 14px 14px}
+/* 右内边距 11 + 卡片那 1px 边框 = 发送键距卡片外沿 12（实测值） */
+.tk-bar{display:flex;align-items:center;gap:8px;padding:10px 11px 14px}
 .tk-bar .ff-selw{flex:none}
 /* 步骤条：选中流程的每一步一枚小chip，摆在发送键左边。
    步骤名长短不一，所以横向滚动而不是换行 —— 换行会把 43px 的工具条撑成两排。
@@ -246,7 +253,9 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
   font-size:var(--fs-meta);padding:0}
 .tk-dir:focus{outline:none}
 .tk-dir::placeholder{color:var(--ink-4)}
-.tk-bar .cp-send{width:28px;height:28px;margin-left:auto;flex:none;
+/* 尺寸走 .cp-send 的 24（参考图发送键实测 24×24、距右 12 = 他们的 size-6 基线），
+   这里只管"没内容时压暗、有内容时实心"这一对颜色。 */
+.tk-bar .cp-send{margin-left:auto;flex:none;
   background:color-mix(in oklab, var(--btn-ink) 52%, var(--bg-composer));color:var(--bg-composer)}
 .tk-bar .cp-send.is-on{background:var(--btn-ink);color:var(--ink-inv)}
 .tk-bar .cp-send.is-on:hover{background:var(--btn-ink-hover)}
@@ -376,7 +385,7 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 .st-foot{display:flex;justify-content:flex-end;margin-top:19px}
 /* ---------- 基础 ---------- */
 *,*::before,*::after{box-sizing:border-box}
-html{font-size:calc(13px * var(--text-scale))}
+html{font-size:calc(14px * var(--text-scale))}
 html,body{height:100%}
 body{
   font-family:var(--font-ui);color:var(--ink);background:var(--bg-page);
@@ -417,7 +426,9 @@ code{font-family:var(--font-mono);font-size:.92em}
 
 .sidebar{
   width:var(--sidebar-w);flex-shrink:0;display:flex;flex-direction:column;
-  background:var(--bg-shell);border-right:1px solid var(--line);
+  background:var(--bg-shell);
+  /* 没有 border-right：参考图里左右两栏之间没有任何线，分栏纯靠 #2B2B2B vs #161616
+     的色差。加线等于把已经分开的两层又糊上一道接缝。 */
   padding:10px 8px 8px;overflow:hidden;transition:width var(--slide)
 }
 .sb-top{display:flex;align-items:center;gap:4px;padding:2px 2px 8px 4px}
@@ -437,14 +448,19 @@ code{font-family:var(--font-mono);font-size:.92em}
 
 .sb-scroll{flex:1;min-height:0;overflow-y:auto;padding:0 2px}
 .sb-kbd{margin-left:auto;font-family:var(--font-mono);font-size:var(--fs-meta);letter-spacing:.02em;
+  /* 18 + 上下各 1px 边框 = 20 = 行的 line-box。不钉这一条，这个带边框的小标签
+     会把整行撑到 22.3px，行距从量到的 33 漂成 35。 */
+  line-height:18px;
   color:var(--ink-4);border:1px solid var(--line-panel);border-radius:var(--r-1);padding:0 5px}
 .sb-nav{display:flex;flex-direction:column;gap:1px;margin-top:2px}
 /* 同一套样式要能同时穿在 <a>（路由）和 <button>（动作）上，所以把按钮的
    UA 默认值抹掉：不写 border/background 就是两条灰边和一个凸起底色，
    不写 font-family 那两行会用系统字，和下面三条一眼就能看出不是同一批。 */
-.sb-item{display:flex;align-items:center;gap:9px;padding:7px 9px;border:none;border-radius:var(--r-2);
-  background:transparent;font-family:inherit;width:100%;
-  font-size:var(--fs-body);color:var(--ink-2);cursor:pointer;position:relative;white-space:nowrap;
+.sb-item{display:flex;align-items:center;gap:9px;padding:6px 9px;border:none;border-radius:var(--r-2);
+  background:transparent;font-family:inherit;width:100%;line-height:20px;
+  /* 实测参考图里静止态的侧栏标签就是 #D4D4D4（和大标题同亮度），不是我们以前的
+     --ink-2（78% ≈ #AFAFB0）。hover 只换底色、不再提亮度 —— 亮度已经是满的。 */
+  font-size:var(--fs-body);color:var(--ink);cursor:pointer;position:relative;white-space:nowrap;
   transition:background var(--slide),color var(--slide)}
 .sb-item .ic{color:var(--ink-3);width:16.25px;height:16.25px;transition:color var(--slide)}
 .sb-item:hover{background:var(--bg-active);color:var(--ink)}
@@ -464,9 +480,9 @@ code{font-family:var(--font-mono);font-size:.92em}
   background:var(--accent-soft);border-radius:var(--r-pill);padding:1px 6px}
 
 .sb-run{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:var(--r-2);
-  font-size:var(--fs-body);color:var(--ink-2);cursor:pointer;white-space:nowrap;overflow:hidden;
+  font-size:var(--fs-body);line-height:21px;color:var(--ink);cursor:pointer;white-space:nowrap;overflow:hidden;
   transition:background var(--slide),color var(--slide)}
-.sb-run:hover{background:var(--bg-hover);color:var(--ink)}
+.sb-run:hover{background:var(--bg-hover)}
 .sb-run.active{background:var(--bg-active);color:var(--ink)}
 .sb-rico{display:inline-flex;align-items:center;justify-content:center;width:14.625px;flex-shrink:0;
   color:var(--ink-4)}
@@ -661,7 +677,9 @@ body.up-on .up-card{opacity:1;transform:translate(-50%,-50%);pointer-events:auto
 .main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;background:var(--bg-page)}
 .topbar{
   height:var(--topbar-h);flex-shrink:0;display:flex;align-items:center;gap:10px;
-  padding:0 18px;background:var(--bg-shell);border-bottom:1px solid var(--line);
+  /* 不铺自己的底、不画下边线：页头就是内容列顶部的一段空白，
+     和它下面的内容同属一个表面（参考图里那条行和页面是同一个 #161616）。 */
+  padding:0 18px;
 }
 .tb-title{display:flex;align-items:center;gap:8px;font-size:var(--fs-body);font-weight:600;color:var(--ink);
   min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -891,7 +909,7 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
 /* 底部输入面板（Codex composer） */
 .composer{position:sticky;bottom:0;z-index:var(--z-composer);padding:0 24px 18px;pointer-events:none}
 .composer-inner{pointer-events:auto;max-width:var(--content-w);margin:0 auto;
-  background:var(--bg-composer);border:1px solid var(--line);border-radius:var(--r-5);
+  background:var(--bg-composer);border:1px solid var(--line);border-radius:var(--r-4);
   box-shadow:var(--shadow-composer);overflow:hidden}
 .cp-state{display:flex;align-items:center;gap:8px;padding:7px 14px;font-size:var(--fs-meta);color:var(--ink-3);
   border-bottom:1px solid var(--line-soft);background:var(--bg-pill)}
@@ -900,7 +918,7 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
   line-height:1.5;resize:none;max-height:160px}
 .cp-input:focus{outline:none}
 .cp-input::placeholder{color:var(--ink-4)}
-.cp-send{width:32px;height:32px;border-radius:var(--r-3);border:none;background:var(--btn-ink);color:var(--ink-inv);
+.cp-send{width:24px;height:24px;border-radius:var(--r-3);border:none;background:var(--btn-ink);color:var(--ink-inv);
   display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;
   transition:background var(--slide),transform .16s ease}
 .cp-send:hover{background:var(--btn-ink-hover)}
@@ -1073,7 +1091,7 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
   overflow-y:auto;padding:5px;border-radius:var(--r-3);background:var(--bg-float);
   border:1px solid var(--line-strong);box-shadow:var(--shadow-pop);animation:popIn .12s var(--ease) both}
 .ff-mi{display:flex;align-items:center;gap:8px;width:100%;padding:9px 11px;border:none;
-  border-radius:var(--r-2);background:transparent;color:var(--ink);font-size:var(--fs-sub);text-align:left;
+  border-radius:var(--r-2);background:transparent;color:var(--ink);font-size:var(--fs-body);text-align:left;
   cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   transition:background var(--slide)}
 .ff-mi:hover{background:var(--bg-active)}

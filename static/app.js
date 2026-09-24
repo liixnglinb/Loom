@@ -910,9 +910,9 @@ const schips = (items) => `<div class="st-chips">${items.map(x=>
   `<span class="st-chip">${esc(x)}</span>`).join('')}</div>`;
 const skey = (k) => `<kbd class="st-kbd">${esc(k)}</kbd>`;
 
-/* 1rem 的基准像素，和 style.css 里 html{font-size:calc(13px * var(--text-scale))} 对齐
+/* 1rem 的基准像素，和 style.css 里 html{font-size:calc(14px * var(--text-scale))} 对齐
    （tests/test_static_contract.py 钉住两边一致）。滑块读数要说「人话」就得靠它换算。 */
-const ROOT_PX = 13;
+const ROOT_PX = 14;
 const SL_OPTS = {
   textSize: () => Object.keys(window.AP_OPTS.TEXT_SIZES),
   uiZoom: () => Object.keys(window.AP_OPTS.ZOOMS),
