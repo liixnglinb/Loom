@@ -269,7 +269,9 @@ html[data-font="serif"]{ --font-ui:"Source Han Serif SC","Noto Serif CJK SC",Geo
 
 /* ---------- 键位表：命令 / 按键绑定 / 作用域 ---------- */
 .sc-card{background:var(--bg-panel);border:1px solid var(--line-panel);border-radius:var(--r-4);overflow:hidden}
-.sc-tr{display:grid;grid-template-columns:minmax(0,1fr) 132px 88px;align-items:center;gap:14px;
+/* 键位列定宽 156：默认档最宽那条绑定量到 137，「特大」档（--text-scale 1.26）量到 155。
+   网格列不会自己让，溢出就直接压到右边「作用域」那列上。 */
+.sc-tr{display:grid;grid-template-columns:minmax(0,1fr) 156px 88px;align-items:center;gap:14px;
   padding:11px 18px;border-bottom:1px solid var(--line-soft)}
 .sc-tr:last-child{border-bottom:none}
 .sc-tr:not(.sc-thead):hover{background:var(--bg-hover)}
@@ -462,7 +464,7 @@ code{font-family:var(--font-mono);font-size:.92em}
      --ink-2（78% ≈ #AFAFB0）。hover 只换底色、不再提亮度 —— 亮度已经是满的。 */
   font-size:var(--fs-body);color:var(--ink);cursor:pointer;position:relative;white-space:nowrap;
   transition:background var(--slide),color var(--slide)}
-.sb-item .ic{color:var(--ink-3);width:16.25px;height:16.25px;transition:color var(--slide)}
+.sb-item .ic{color:var(--ink);width:16.25px;height:16.25px;transition:color var(--slide)}
 .sb-item:hover{background:var(--bg-active);color:var(--ink)}
 .sb-item:hover .ic{color:var(--ink)}
 .sb-item.active{background:var(--bg-active);color:var(--ink);font-weight:600}
@@ -480,9 +482,11 @@ code{font-family:var(--font-mono);font-size:.92em}
   background:var(--accent-soft);border-radius:var(--r-pill);padding:1px 6px}
 
 .sb-run{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:var(--r-2);
-  font-size:var(--fs-body);line-height:21px;color:var(--ink);cursor:pointer;white-space:nowrap;overflow:hidden;
+  /* 项目行是 60% 那一档（实测 #909090），和上面导航项的满亮度标签不是一层：
+     导航是"去哪"，项目是"有什么"。上一轮我按导航的亮度把它抬到 --ink，抬错了层。 */
+  font-size:var(--fs-body);line-height:21px;color:var(--ink-3);cursor:pointer;white-space:nowrap;overflow:hidden;
   transition:background var(--slide),color var(--slide)}
-.sb-run:hover{background:var(--bg-hover)}
+.sb-run:hover{background:var(--bg-hover);color:var(--ink)}
 .sb-run.active{background:var(--bg-active);color:var(--ink)}
 .sb-rico{display:inline-flex;align-items:center;justify-content:center;width:14.625px;flex-shrink:0;
   color:var(--ink-4)}
