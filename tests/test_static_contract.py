@@ -400,7 +400,9 @@ def test_composer_offers_only_controls_the_backend_actually_reads():
     现在有了，改钉"候选必须来自真清单"（见 test_composer_model_chip_lists_only_real_presets）。"""
     seg = _composer()
     assert "v:'', label:t('ed.engineDefault')" in seg, "首项必须是「默认」：空串才沿用步骤自带引擎"
-    assert "'claude'" in seg and "'codex'" in seg, "两个 CLI 引擎都得能选"
+    assert "filter(a=>a.found)" in seg, (
+        "引擎候选必须来自实测盘点：本机没装 codex 时选它，第一条任务就死在起进程那一步")
+    assert "{v:'claude'" not in seg and "{v:'codex'" not in seg, "两家 CLI 不许再写死"
     assert "id:'tkModel'" in seg, "运行级模型覆盖的 chip 没了"
     assert "p.model" in seg, "菜单里的说明要用预设真有的字段，不是拼出来的假信息"
 
@@ -1276,6 +1278,38 @@ def test_window_buttons_only_exist_when_the_bridge_exists():
     fn = APP_JS.split("function paintShell()")[1].split("\n};")[0]
     assert "box.hidden = !SHELL_OK" in fn
     assert "pywebviewready" in APP_JS, "没有 bridge 就绪事件，SHELL_OK 永远是 false"
+
+
+def test_maximized_window_hides_the_eight_resize_handles():
+    """最大化时窗口铺满屏幕、边框本来就拉不动，那八个透明手柄还在原地等着按 ——
+    pointerdown 里那道 SHELL_MAX 判断只挡住动作，挡不住"看着能按"。
+    2026-09-25 用 CDP 往真窗口里量过：maximized 那一步 rzHidden 读到的是 false。"""
+    fn = APP_JS.split("function paintShell()")[1].split("\n};")[0]
+    assert "rz.hidden = !SHELL_OK || SHELL_MAX" in fn, "拉边手柄没跟着最大化一起藏"
+
+
+def test_os_driven_maximize_and_restore_repaint_the_window_buttons():
+    """Win+↑、贴边快照、拖到屏幕顶这些系统途径改的最大化不经过 winMaxToggle，
+    SHELL_MAX 就停在旧值上：图标还是「最大化」、手柄还露着。resize 是这些变化
+    唯一都会经过的信号（WebView2 跟着窗口一起变尺寸），focus 再兜一次。"""
+    assert re.search(r"addEventListener\('resize',\s*syncShellSoon\)", APP_JS), \
+        "系统改的最大化没人接"
+    assert re.search(r"addEventListener\('focus',\s*syncShellSoon\)", APP_JS), \
+        "重新获得焦点后没对一次状态"
+    body = APP_JS.split("function syncShellSoon()")[1].split("\n}")[0]
+    assert "clearTimeout" in body, "拖边框会连发几十个 resize，不能每一个都去问一次 bridge"
+
+
+def test_a_failed_agents_save_does_not_leave_the_ui_lying():
+    """四处调用点都写着 `if(!await postAgents(...)) return;`，而 postAgents 连失败
+    都返回 {detail:...} —— 真值，于是那四道守卫一次也没生效过：保存失败照样改 ST，
+    页面上显示的是一个服务端根本没收下的值。"""
+    body = APP_JS.split("async function postAgents(")[1].split("\n}")[0]
+    assert "return null" in body, "失败必须返回假值，否则上面那四道守卫是空的"
+    assert "renderSettings()" in body, "失败要把这一节按 ST 里的旧值重画回去"
+    for fn in ("saveTimeout", "saveRetry", "saveEffort", "saveAutoContinue"):
+        seg = APP_JS.split(f"window.{fn} = async function")[1].split("\n};")[0]
+        assert f"if(!await postAgents(" in seg, f"{fn} 没检查保存结果"
 
 
 def test_the_resize_handles_and_the_launcher_agree_on_the_minimum_size():

@@ -755,13 +755,17 @@ function loadAppearance() {
    只覆盖步骤产物里真会出现的几样：标题 / 围栏代码 / 行内码 / 粗斜体 / 链接 /
    列表 / 表格 / 引用 / 分隔线。链接只放 http(s) 和站内绝对路径，防 javascript:。 */
 function mdToHtml(src) {
+  /* 引号必须转。这个 e() 以前只转 & < >，而链接那条把 URL 直接塞进 href 属性里 ——
+     智能体（或它读的远端资料）产出一个带双引号的 URL 就能逃出那个属性，
+     在标签上挂任意事件处理器。全站没有 CSP，产物面板和记忆预览是同一个 sink。 */
   const e = s => String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   const inline = s => e(s)
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
     .replace(/(^|[^\w*])\*([^*\n]+)\*(?=[^\w*]|$)/g, '$1<i>$2</i>')
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]*)\)/g,
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)"']+|\/[^\s)"']*)\)/g,
       '<a href="$2" target="_blank" rel="noopener">$1</a>');
   const lines = String(src == null ? '' : src).replace(/\r\n/g, '\n').split('\n');
   const out = [];

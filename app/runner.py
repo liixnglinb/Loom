@@ -440,7 +440,12 @@ def read_artifacts(run: dict) -> dict:
 
 
 class _Cancelled(Exception):
-    pass
+    """带上"按下停止这一刻已经流出来的正文"：buf 原本只活在 _run_step 的局部作用域里，
+    异常一抛就跟着栈一起没了 —— 跑了十分钟再按停止，那十分钟的字一个字都不剩。"""
+
+    def __init__(self, text: str = ""):
+        super().__init__("cancelled")
+        self.text = text
 
 
 # ==================== 技能加载 ====================
@@ -609,11 +614,17 @@ def _flow_map(steps: list, idx: int) -> str:
     return " → ".join(parts)
 
 
-def build_step_prompt(run: dict, idx: int) -> tuple:
-    """返回 (system_text, user_text)。system 是技能规范全文，user 是任务与契约。"""
+def build_step_prompt(run: dict, idx: int, ws: Path | None = None) -> tuple:
+    """返回 (system_text, user_text)。system 是技能规范全文，user 是任务与契约。
+
+    ws 可以显式传：预览那一步并不真要一个工作目录，而 workspace_dir() 会 mkdir ——
+    于是每预览一次就在 workspaces/ 下留下一个 DB 里没有的假目录，被孤儿检测永久
+    报给设置页，而且没有任何清理入口。
+    """
     steps = run.get("steps") or []
     step = steps[idx]
-    ws = workspace_dir(run["id"])
+    if ws is None:
+        ws = workspace_dir(run["id"])
     skill_text, loaded, missing = compose_skill_prompt(step.get("skill"),
                                                     step.get("skill_src") or "")
 
@@ -678,6 +689,24 @@ def _save_step_output(run_id: str, step: dict, text: str):
         (workspace_dir(run_id) / n).write_text(text.rstrip() + "\n", encoding="utf-8")
 
 
+def _save_partial(run_id: str, idx: int, step: dict, text: str) -> str:
+    """按停止时已经流出来的正文落一份，返回文件名（没内容/写不进就返回空串）。
+
+    故意不写进 step 的正式 out 文件：那半截正文会被下游当成完整产物读，
+    比一个字都没有更糟。名字一律 partial-*.md —— 后缀在 _ARTIFACT_SUFFIX 里，
+    运行台那排产物能直接点开看，不然这份正文就只能躺在工作区里没人知道。
+    """
+    if not text.strip():
+        return ""
+    out = _safe_out_name(step.get("out") or "")
+    name = f"partial-{out}" if out else f"partial-step-{idx + 1:02d}.md"
+    try:
+        (workspace_dir(run_id) / name).write_text(text, encoding="utf-8")
+    except OSError:
+        return ""
+    return name
+
+
 def _run_step(run: dict, idx: int, bus: RunBus, extra_instruction: str = "") -> dict:
     """跑一个步骤，返回 {ok, text, error, meta}。"""
     run_id = run["id"]
@@ -727,7 +756,7 @@ def _run_step(run: dict, idx: int, bus: RunBus, extra_instruction: str = "") -> 
             wire_api=conf["wire_api"], label=f"{idx+1:02d}_{step.get('key')}",
             emit=_emit, cancel_check=lambda: is_cancelled(run_id))
     except agents.AgentCancelled:
-        raise _Cancelled()
+        raise _Cancelled("".join(buf))
     except agents.AgentError as e:
         log = Path(e.log).name if getattr(e, "log", "") else ""
         return {"ok": False, "error": str(e), "text": "".join(buf),
@@ -792,8 +821,15 @@ def _run_thread(run_id: str, start_step: int = 0):
                         bus.publish({"type": "status", "index": idx,
                                      "text": f"本步失败（{(r['error'] or '')[:80]}），"
                                              f"重试 {attempt+2}/{attempts}"})
-            except _Cancelled:
+            except _Cancelled as c:
+                saved = _save_partial(run_id, idx, step, c.text or "")
                 step["status"] = "cancelled"
+                if saved:
+                    line = {"kind": "note", "name": "",
+                            "text": f"停止前已流出 {len(c.text or '')} 字正文，"
+                                    f"留在工作区文件 {saved}"}
+                    step["trace"] = (step.get("trace") or []) + [line]
+                    bus.publish({"type": "note", "index": idx, "text": line["text"]})
                 db.update_run(run_id, status="cancelled", steps=steps)
                 bus.publish({"type": "state", "run": db.get_run(run_id)})
                 return
@@ -1064,10 +1100,16 @@ def preview_step_prompt(pipeline_name: str, index: int, brief: str = "") -> dict
     p = db.get_pipeline(pipeline_name)
     if not p:
         raise ValueError("流程不存在")
+    steps = p["steps"] or []
+    # 以前只判"是不是整数"，于是 /preview/-1 靠 Python 负索引静默返回最后一步、
+    # /preview/999 抛 IndexError 变成 500 且 detail 里印着 "list index out of range"。
+    if not (0 <= index < len(steps)):
+        raise IndexError(f"步骤序号 {index} 不在 0~{len(steps) - 1} 之间")
     run = {"id": "run-preview0000", "label": p.get("label") or pipeline_name,
            "pipeline": pipeline_name, "brief": brief,
            "steps": _snapshot_steps(p)}
-    system_text, user_text = build_step_prompt(run, index)
+    system_text, user_text = build_step_prompt(
+        run, index, ws=paths.WORKSPACES_DIR / db.ws_dir_name(run["id"]))
     return {"system": system_text, "user": user_text,
             "engine": (p["steps"][index].get("engine")
                        or db.get_setting("default_engine") or "")}

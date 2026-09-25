@@ -137,15 +137,15 @@ window.renderSkills = async function(){
   window.viewLoading();
   await plLoad();
   const row = s => `
-    <div class="pl-card-row" onclick="skView('${esc(s.name)}')">
+    <div class="pl-card-row" onclick="skView('${jsq(s.name)}')">
       <div class="pl-row-main">
         <div class="pl-row-title"><span class="pl-row-name">${esc(s.name)}</span>
           <span class="muted-sm">${s.chars>0?(s.chars/1000).toFixed(1)+'k':esc(t('sk.empty2'))}</span></div>
         ${s.desc?`<div class="pl-steps-mini"><span class="pl-step-chip pl-chip-wide">${esc(s.desc)}</span></div>`:''}
       </div>
       <div class="pl-row-ops" onclick="event.stopPropagation()">
-        <button class="pf-op" onclick="skView('${esc(s.name)}')">${esc(t('c.view'))}</button>
-        <button class="pf-op" onclick="nav.go('skill-edit/${esc(s.name)}')">${esc(t('c.edit'))}</button>
+        <button class="pf-op" onclick="skView('${jsq(s.name)}')">${esc(t('c.view'))}</button>
+        <button class="pf-op" onclick="nav.go('skill-edit/${jsq(s.name)}')">${esc(t('c.edit'))}</button>
       </div>
     </div>`;
   window.__chrome = {title:t('sk.title'), icon:'skill',
@@ -188,7 +188,7 @@ window.skView = async function(name){
         <button class="btn btn-ghost btn-sm" onclick="skCloseModal()">${esc(t('c.close'))}</button>
         <button class="btn btn-ghost btn-sm" onclick="skDuplicate('${esc(d.name)}')">${esc(t('sk.dupe'))}</button>
         <button class="btn btn-ghost btn-sm pl-danger" onclick="skDelete('${esc(d.name)}')">${esc(t('c.delete'))}</button>
-        <button class="btn btn-primary btn-sm" onclick="skCloseModal();nav.go('skill-edit/${esc(d.name)}')">${esc(t('c.edit'))}</button>
+        <button class="btn btn-primary btn-sm" onclick="skCloseModal();nav.go('skill-edit/${jsq(d.name)}')">${esc(t('c.edit'))}</button>
       </div>
     </div></div>`;
   document.body.appendChild(root);
@@ -282,7 +282,7 @@ window.renderPipelines = async function(){
   window.viewLoading();
   await plLoad();
   const row = p => `
-    <div class="pl-card-row${p.archived?' archived':''}" onclick="nav.go('pipeline-edit/${esc(p.name)}')">
+    <div class="pl-card-row${p.archived?' archived':''}" onclick="nav.go('pipeline-edit/${jsq(p.name)}')">
       <div class="pl-row-main">
         <div class="pl-row-title"><span class="pl-row-name">${esc(p.label||p.name)}</span>
           <code>${esc(p.name)}</code>
@@ -294,7 +294,7 @@ window.renderPipelines = async function(){
       </div>
       <div class="pl-row-ops" onclick="event.stopPropagation()">
         <button class="pf-op pf-op-start" onclick="taskModal('${esc(p.name)}')">${esc(t('list.runned'))}</button>
-        <button class="pf-op" onclick="nav.go('pipeline-edit/${esc(p.name)}')">${esc(t('c.edit'))}</button>
+        <button class="pf-op" onclick="nav.go('pipeline-edit/${jsq(p.name)}')">${esc(t('c.edit'))}</button>
         <button class="pf-op pf-op-more" data-tip-any="1" data-tip="${esc(t('c.more'))}"
           aria-label="${esc(t('c.more'))}" onclick="plRowMore(event,'${esc(p.name)}')">${ico('more')}</button>
       </div>
@@ -663,7 +663,7 @@ window.plPreview = async function(i){
       </div>
       <div class="sk-view-foot">
         <button class="btn btn-ghost btn-sm" onclick="plClosePreview()">${esc(t('c.close'))}</button>
-        <button class="btn btn-primary btn-sm" onclick="plClosePreview();nav.go('skill-edit/${esc(mainSkill)}')">${esc(t('ed.goSkill'))}</button>
+        <button class="btn btn-primary btn-sm" onclick="plClosePreview();nav.go('skill-edit/${jsq(mainSkill)}')">${esc(t('ed.goSkill'))}</button>
       </div>
     </div></div>`;
   document.body.appendChild(root);

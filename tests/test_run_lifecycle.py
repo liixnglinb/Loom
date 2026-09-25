@@ -16,7 +16,7 @@ import pytest
 from app import agents, db, runner
 
 STUB = r'''
-import json, sys
+import json, sys, time
 if "--version" in sys.argv:
     print("loom-stub 0.0.1"); sys.exit(0)
 sys.stdin.read()                      # 提示词从 stdin 进来，读掉别堵管道
@@ -31,6 +31,19 @@ w(json.dumps({"type": "assistant", "message": {"content": [
     {"type": "tool_use", "name": "Write", "input": {"file_path": "draft.md"}}]}}) + "\n")
 w(json.dumps({"type": "user", "message": {"content": [
     {"type": "tool_result", "content": "written"}]}}) + "\n")
+if mode == "slow":
+    # 先吐两段真正文，再每隔 50ms 一行 ping：够测试等到 delta，也够它按停止
+    w(json.dumps({"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "第一段已经流出的正文"}]}}) + "\n")
+    sys.stdout.flush()
+    w(json.dumps({"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "第二段已经流出的正文"}]}}) + "\n")
+    sys.stdout.flush()
+    for _ in range(400):
+        w(json.dumps({"type": "system", "subtype": "ping"}) + "\n")
+        sys.stdout.flush()
+        time.sleep(0.05)
+    sys.exit(0)
 if mode == "fail":
     w(json.dumps({"type": "system", "subtype": "api_retry", "attempt": 1,
                   "max_retries": 3, "error": "ConnectionRefused",
@@ -231,8 +244,14 @@ def test_revise_refuses_while_the_pipeline_is_running(dbsession):
     """修订线程和流水线线程各持一份 steps 整体回写同一行 JSON，
     同跑一步就是后写覆盖前写；codex 那路还要抢工作区的 AGENTS.md。"""
     _run_with(dbsession, "run-rev-run", [{"key": "a", "label": "A", "status": "pending", "out": "a.md"}], status="running")
-    with pytest.raises(ValueError):
-        runner.revise_step("run-rev-run", 0, "改一下")
+    try:
+        with pytest.raises(ValueError):
+            runner.revise_step("run-rev-run", 0, "改一下")
+    finally:
+        # 整库是会话级共享的：这条 running 留在那儿，后面 test_updater 里
+        # 那条「源码运行拒绝安装」就会被 count_active_runs 顶成 409，
+        # 红不红全看文件顺序。
+        dbsession.delete_run("run-rev-run")
 
 
 def test_revise_refuses_a_second_concurrent_revision(dbsession):
@@ -378,6 +397,35 @@ def test_cancel_does_not_force_a_live_run_out_of_running(dbsession):
     try:
         assert runner.cancel_run("live-c")["status"] == "running"
     finally:
-        runner._BUSES.pop("live-c", None)
-        runner._CANCEL.discard("live-c")
-        dbsession.delete_run("live-c")
+        runner._BUSES.pop("zom-c", None)
+        runner._CANCEL.discard("zom-c")
+        dbsession.delete_run("zom-c")
+
+
+def test_stopping_mid_step_keeps_the_streamed_text(stub_cli, flow, monkeypatch, workspaces):
+    """十分钟流出来的正文不能跟着一次停止一起蒸发。"""
+    monkeypatch.setattr(agents, "_claude_args", lambda *a, **k: ["--stub-mode=slow"])
+    run = runner.start_run(flow, label="跑到一半按停止")
+    bus = runner.bus_for(run["id"])
+    deadline = time.time() + 30
+    while not any(e.get("type") == "delta" for e in bus.history):
+        if time.time() > deadline:
+            raise AssertionError("桩一个字都没流出来，这条测试什么也没验")
+        time.sleep(0.05)
+    runner.cancel_run(run["id"])
+    done = _wait(run["id"])
+    assert done["status"] == "cancelled", done["status"]
+
+    ws = runner.workspace_dir(run["id"])
+    part = ws / "partial-draft.md"
+    assert part.is_file(), "按停止把已经流出来的正文连同调用栈一起扔了"
+    body = part.read_text(encoding="utf-8")
+    assert "第一段" in body and "第二段" in body, body
+    assert "ping" not in body
+    # 残包绝不能顶替正式产物名：下游那一步会把它当完整文件读
+    assert not (ws / "draft.md").exists()
+    line = (done["steps"][0].get("trace") or [])[-1]
+    assert line["kind"] == "note" and "partial-draft.md" in line["text"], line
+    # 这份正文还得看得见：产物品类按后缀认，名字不带 .md 就等于没有入口
+    arts = runner.read_artifacts(done)
+    assert "partial-draft.md" in arts, sorted(arts)

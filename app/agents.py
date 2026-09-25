@@ -529,6 +529,8 @@ def run_agent(engine: str, prompt: str, *, ws: Path, system_text: str = "",
     state = {"texts": [], "final": "", "tools": 0, "turns": 0, "is_error": False,
              "duration_ms": None, "cost_usd": None, "error": "", "errors": 0,
              "abort": False, "tok": {}, "tok_total": None}
+    t_start = time.time()   # claude 的 result 自带 duration_ms，codex 不给 ——
+                            # 不兜这一下墙钟，统计里全部 codex 步骤的时长都是 None。
     log_dir = ws / "_turn_logs"
     log_dir.mkdir(exist_ok=True)
     log_path = log_dir / f"{(label or engine)}_{time.strftime('%H%M%S')}.jsonl"
@@ -629,6 +631,8 @@ def run_agent(engine: str, prompt: str, *, ws: Path, system_text: str = "",
             pass
 
     text = (state["final"] or "").strip() or "\n\n".join(state["texts"]).strip()
+    if state["duration_ms"] is None:
+        state["duration_ms"] = max(0, int((time.time() - t_start) * 1000))
     result = {"text": text, "engine": engine, "rc": rc, "tools": state["tools"],
               "turns": state["turns"], "duration_ms": state["duration_ms"],
               "cost_usd": state["cost_usd"], "log": str(log_path),

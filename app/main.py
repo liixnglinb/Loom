@@ -13,6 +13,7 @@
 import re
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -22,6 +23,18 @@ app = FastAPI(title="Loom 织流")
 
 STATIC = paths.STATIC_DIR
 app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error(request, exc):
+    """pydantic 的 422 默认把 detail 吐成一个**数组**，而前端所有调用点都是
+    `if (r.detail) toast(r.detail)` —— 于是界面上印 `[object Object]`。
+    摊成一句人话；状态码仍按 FastAPI 的 422，不假装是业务校验的 400。
+    """
+    errs = getattr(exc, "errors", lambda: [])()
+    parts = [f"{'.'.join(str(x) for x in (e.get('loc') or [])[1:]) or '请求体'}：{e.get('msg')}"
+             for e in errs]
+    return JSONResponse({"detail": "；".join(parts) or "请求参数不合法"}, 422)
 
 
 @app.middleware("http")
@@ -163,7 +176,11 @@ def duplicate_pipeline(name: str, p: PipelineIn):
         return JSONResponse({"detail": "模板名只能含小写字母/数字/连字符/下划线"}, 400)
     if db.get_pipeline(newname):
         return JSONResponse({"detail": f"模板名「{newname}」已存在"}, 400)
-    steps = p.steps if p.steps else (src.get("steps") or [])
+    # create / update 都先过 normalize_steps，唯独 duplicate 直接把调用方给的
+    # steps 原样落库。脏字段会被 _snapshot_steps 整份拷进 runs.steps，之后
+    # usage_stats 里 `m = s.get("meta") or {}` 拿到一个字符串再 .get() 就抛，
+    # 而 /api/stats 没有兜异常 —— 开设置页就 500，且这条流程永久毒着统计。
+    steps = pipelines.normalize_steps(p.steps if p.steps else (src.get("steps") or []))
     okv, err = pipelines.validate_steps(steps)
     if not okv:
         return JSONResponse({"detail": err}, 400)
@@ -192,6 +209,10 @@ def preview_pipeline_step(name: str, index: int, brief: str = ""):
         return runner.preview_step_prompt(name, index, brief)
     except ValueError as e:
         return JSONResponse({"detail": str(e)}, 404)
+    except IndexError as e:
+        # 序号越界是调用方的错，不是服务端故障；以前落到 500 分支，
+        # detail 里还印着 "list index out of range" 这种内部实现。
+        return JSONResponse({"detail": str(e)}, 400)
     except Exception as e:
         return JSONResponse({"detail": f"预览失败: {e}"}, 500)
 
@@ -521,7 +542,9 @@ def start_pipeline_run(name: str, b: RunStartIn):
 
 @app.get("/api/runs")
 def list_runs(pipeline: str = "", limit: int = 50):
-    return {"runs": db.list_runs(pipeline or None, min(limit, 200))}
+    # 只写 min(limit,200) 挡不住负数，而 SQLite 的 LIMIT 为负 = 无上限 ——
+    # `?limit=-1` 就能把整表连同每行的 steps blob 一起拉进内存。
+    return {"runs": db.list_runs(pipeline or None, max(1, min(limit, 200)))}
 
 
 @app.get("/api/runs/{run_id}")
@@ -733,48 +756,59 @@ def get_agents():
 
 @app.post("/api/agents")
 def save_agents(b: EngineIn):
-    """局部更新：字段省略即不动，显式传空串才是清除。"""
+    """局部更新：字段省略即不动，显式传空串才是清除。
+
+    以前是边校验边写。于是 `{"default_engine":"codex","step_retry":"9"}` 这种
+    一条合法、一条越界的请求，会把 default_engine 先落库、再在 step_retry 上回 400 ——
+    界面报"保存失败"，服务端其实已经改了一半。现在先全部校验完再一次性写。
+    """
+    def bad(msg):
+        return JSONResponse({"detail": msg}, 400)
+
+    pending: dict[str, str] = {}
     if b.default_engine is not None:
-        eng = b.default_engine.strip()
-        if eng and eng not in agents.ENGINES:
-            return JSONResponse({"detail": "默认引擎无效"}, 400)
-        db.set_setting("default_engine", eng)
+        v = b.default_engine.strip()
+        if v and v not in agents.ENGINES:
+            return bad("默认引擎无效")
+        pending["default_engine"] = v
     for key, val in (("claude_cli", b.claude_cli), ("codex_cli", b.codex_cli)):
         if val is not None:
-            db.set_setting(key, val.strip())
+            pending[key] = val.strip()
     if b.agent_timeout is not None:
         try:
             n = int(b.agent_timeout)
         except ValueError:
-            return JSONResponse({"detail": "单步超时要填整数秒"}, 400)
+            return bad("单步超时要填整数秒")
         if not 60 <= n <= 21600:
-            return JSONResponse({"detail": "单步超时范围 60–21600 秒"}, 400)
-        db.set_setting("agent_timeout", str(n))
+            return bad("单步超时范围 60–21600 秒")
+        pending["agent_timeout"] = str(n)
     if b.codex_sandbox is not None:
         v = b.codex_sandbox.strip()
         if v and v not in agents.SANDBOXES:
-            return JSONResponse({"detail": "沙箱模式无效"}, 400)
-        db.set_setting("codex_sandbox", v)
+            return bad("沙箱模式无效")
+        pending["codex_sandbox"] = v
     if b.permission_mode is not None:
         v = b.permission_mode.strip()
         if v and v not in agents.PERM_MODES:
-            return JSONResponse({"detail": "这一档权限模式没有开放"}, 400)
-        db.set_setting("permission_mode", v)
+            return bad("这一档权限模式没有开放")
+        pending["permission_mode"] = v
     if b.reasoning_effort is not None:
         v = b.reasoning_effort.strip()
         if v and v not in agents.EFFORTS and v != "auto":
-            return JSONResponse({"detail": "推理力度无效"}, 400)
-        db.set_setting("reasoning_effort", v)
+            return bad("推理力度无效")
+        pending["reasoning_effort"] = v
     if b.step_retry is not None:
         try:
             n = int(b.step_retry)
         except ValueError:
-            return JSONResponse({"detail": "重试次数要填整数"}, 400)
+            return bad("重试次数要填整数")
         if not 0 <= n <= 3:
-            return JSONResponse({"detail": "重试次数范围 0–3"}, 400)
-        db.set_setting("step_retry", str(n))
+            return bad("重试次数范围 0–3")
+        pending["step_retry"] = str(n)
     if b.auto_continue is not None:
-        db.set_setting("auto_continue", "1" if b.auto_continue.strip() in ("1", "true") else "0")
+        pending["auto_continue"] = "1" if b.auto_continue.strip() in ("1", "true") else "0"
+    for k, v in pending.items():
+        db.set_setting(k, v)
     agents.clear_bin_cache()
     return get_agents()
 

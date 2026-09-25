@@ -255,4 +255,6 @@ def apply_update() -> dict:
     except Exception as e:
         return {"ok": False, "detail": f"启动安装程序失败：{e}"}
     threading.Timer(0.8, lambda: os._exit(0)).start()
-    return {"ok": True, "detail": f"正在安装并退出，稍后从 {exe.name} 重新启动即可"}
+    # detail 在这个应用里就是"出错"的键（前端一律 if(r.detail) 弹红条），
+    # 成功那句话要是也放这儿，装上之后会看到一条红色报错。
+    return {"ok": True, "message": f"正在安装并退出，稍后从 {exe.name} 重新启动即可"}

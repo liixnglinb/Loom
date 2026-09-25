@@ -279,6 +279,8 @@ def test_apply_still_runs_when_the_hash_matches(monkeypatch, tmp_path):
         r = updater.apply_update()
         assert r["ok"] is True, r
         assert len(started) == 1, "校验过了却没把安装器起起来"
+        # 前端把 detail 当错误键（if(r.detail) 弹红条），装成功时不能带它
+        assert "detail" not in r, f"成功响应里不该有 detail：{r}"
     finally:
         updater._set(phase="idle", path="", frozen=False, sha256="", size=0, got=0,
                      asset="", url="", latest="", error="")

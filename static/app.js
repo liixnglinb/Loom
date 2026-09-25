@@ -144,7 +144,10 @@ function paintShell(){
   set('winMax', ico(SHELL_MAX ? 'winRestore' : 'winMax'),
       t(SHELL_MAX ? 'win.restore' : 'win.max'));
   set('winClose', ico('close'), t('win.close'));
-  const rz = $('#rzLayer'); if(rz) rz.hidden = !SHELL_OK;
+  /* 最大化时八个拉边手柄也必须跟着藏：窗口铺满屏幕本来就拉不动，
+     留着它们等于一排按不动的假控件（pointerdown 里那道 SHELL_MAX 判断
+     只挡住动作，挡不住"看着能按"）。 */
+  const rz = $('#rzLayer'); if(rz) rz.hidden = !SHELL_OK || SHELL_MAX;
   document.documentElement.dataset.shell = SHELL_OK ? 'native' : '';
 }
 async function syncShell(){
@@ -163,6 +166,18 @@ window.winClose = async () => {
   await shellCall('win_close');
 };
 window.addEventListener('pywebviewready', () => { SHELL_OK = true; syncShell(); });
+
+/* Win+↑、贴边快照、拖动到屏幕顶这些系统途径进来的最大化不经过我们的按钮，
+   SHELL_MAX 就停在旧值上（图标还是"最大化"、拉边手柄还露着）。窗口尺寸一变
+   WebView2 就跟着变，resize 是这些变化唯一都会经过的信号；重新获得焦点再兜一次。
+   拖边框会连发几十个 resize，所以合并成一个尾巴上的调用。 */
+let shellSyncTimer = 0;
+function syncShellSoon(){
+  if(shellSyncTimer) clearTimeout(shellSyncTimer);
+  shellSyncTimer = setTimeout(() => { shellSyncTimer = 0; syncShell(); }, 100);
+}
+window.addEventListener('resize', syncShellSoon);
+window.addEventListener('focus', syncShellSoon);
 
 /* 双击标题行的空白处 = 最大化/还原。easy_drag 只管拖，不管这一下，得自己接。 */
 function shellDragBind(){
@@ -385,9 +400,9 @@ window.sbSearch = function(e){
     const ru = (ST.sbRuns||[]).filter(x=>!k || ((x.label||'')+' '+x.pipeline).toLowerCase().includes(k));
     const body = (fl.length||ru.length)
       ? fl.slice(0,6).map(x=>sbHit(x.label||x.name, t('sb.stepsN',{n:(x.steps||[]).length}),
-            `sbGo('pipeline-edit/${esc(x.name)}')`, 'flow')).join('')
+            `sbGo('pipeline-edit/${jsq(x.name)}')`, 'flow')).join('')
         + ru.slice(0,6).map(x=>sbHit(x.label||x.pipeline, RUN_ST()[x.status]||x.status,
-            `sbGo('run/${esc(x.id)}')`, 'runs')).join('')
+            `sbGo('run/${jsq(x.id)}')`, 'runs')).join('')
       : `<div class="sb-empty">${esc(t('sb.noHit'))}</div>`;
     p.innerHTML = `<div class="sb-fbox">${ico('search')}
         <input id="sbFQ" placeholder="${esc(t('sb.search'))}" value="${esc(q||'')}"
@@ -689,6 +704,7 @@ function viewTransitionIn(){
 }
 
 let NAV_SEQ=0;
+let NAV_CHAIN=Promise.resolve();   /* 导航排队用，见 nav.resolve() */
 /* 永远不把已有内容清空：旧页面一直留到新页面算好之后一次性换掉。
    换页时短暂显示上一页，比整页白一下再长出来要稳。 */
 function viewLoading(){
@@ -712,7 +728,14 @@ const nav = {
     if(!raw) raw = 'home';
     const [view, ...rest] = raw.split('/');
     const extra = rest.join('/');
-    viewTransitionOut().then(async ()=>{
+    /* 必须排队，不能各跑各的：以前 viewTransitionOut().then() 一挂上就并发，
+       连点两条运行记录时两次导航都先过了下面那句 seq 比较（那时 NAV_SEQ 还没再变），
+       然后先点的那条响应慢、后落地，界面就停在上一页 —— 更糟的是迟到的 renderSettings
+       会把 dataset.shell='settings' 留在一个非设置页上，侧栏和顶栏一起消失。
+       串起来之后开头那次比较才是有效的：被取代的那一轮根本不会开始渲染。 */
+    NAV_CHAIN = NAV_CHAIN.then(async ()=>{
+      if(seq!==NAV_SEQ) return;
+      await viewTransitionOut();
       if(seq!==NAV_SEQ) return;
       window.__chrome = {title:'', icon:'flow', actions:''};
       const v = $('#view'); if(v) v.classList.remove('with-composer');
@@ -728,6 +751,11 @@ const nav = {
       else if(view==='run') await run(()=>window.renderRunConsole(extra),'runs');
       else await run(window.renderHome,'home');   /* 认不出来的一律回首页输入台 */
       if(seq===NAV_SEQ){ viewTransitionIn(); renderSidebarLists(); }
+    }).catch(e => {
+      /* 排队就是把所有后续导航挂在这一条 promise 上：某一轮里抛出来异常
+         会让链子变成 rejected 状态，之后每一次 .then 都被跳过 —— 整个应用
+         再也翻不了页。所以这一层必须吃掉异常，链子永远是 resolved。 */
+      console.error('导航失败：', e);
     });
   },
 };
@@ -740,8 +768,13 @@ window.addEventListener('hashchange', ()=>nav.resolve());
    （侧栏「新建任务」、Ctrl+K、⋯ 菜单、流程行「运行」、页头「下任务」）
    仍然统一走 taskModal()，只是它现在做的是"回到首页并把这条流程选中"。 */
 function tkStageHtml(tpls, flow){
-  const ENGS = [{v:'', label:t('ed.engineDefault')},
-                {v:'claude', label:t('eng.claude')}, {v:'codex', label:t('eng.codex')}];
+  /* 引擎候选来自实测盘点（ST.agents 的 found 标记），不是写死两家 ——
+     本机没装 codex 时，选它只会让第一条任务在起进程那一步炸掉。
+     boot() 先 await loadAgents() 才渲染这里，所以 ST.agents 此时已就位；
+     两家都没检测到就只留「跟随默认」一枚，不放按下去必错的假控件。 */
+  const ready = (ST.agents||[]).filter(a=>a.found).map(a=>a.engine);
+  const ENGS = [{v:'', label:t('ed.engineDefault')}].concat(
+    ready.map(v => ({v, label:t('eng.'+v)})));
   const PERMS = [{v:'', label:t('ed.engineDefault'), note:t('pm.defaultNote')}].concat(
     PERM_MODES.map(m => ({v:m, label:t('pm.'+m), note:t('pm.'+m+'D')})));
   /* 模型候选只有真存在的预设名 —— 裸模型名这里不做：那是编辑器里逐步挑端点的事，
@@ -1928,7 +1961,16 @@ window.setDefaultEngine = async function(eng){
 };
 async function postAgents(body){
   const r = await post('/api/agents', body).catch(e=>({detail:String(e)}));
-  if(r.detail) toast(r.detail); else toast(t('eng.saved'), true);
+  if(r.detail){
+    /* 以前这里把 r 原样返回，而调用方一律写 `if(!await postAgents(...)) return;` ——
+       {detail:...} 是真值，那四道守卫一次也没生效过：保存失败照样改 ST，
+       于是页面上显示一个服务端根本没收下的值。失败要返回假值，并把这一节按 ST
+       里的旧值重画回去（控件已经跟着用户的点击换了显示，不重画就是假成功）。 */
+    toast(r.detail);
+    renderSettings();
+    return null;
+  }
+  toast(t('eng.saved'), true);
   return r;
 }
 window.saveTimeout = async function(v){
