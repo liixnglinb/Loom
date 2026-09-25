@@ -1243,6 +1243,45 @@ def test_the_resize_handles_and_the_launcher_agree_on_the_minimum_size():
     assert "frameless=True" in src and "js_api=api" in src, "窗口没开无边框或没接 bridge"
 
 
+def test_the_maximize_toggle_tracks_the_real_window_state_not_a_stale_flag():
+    """打包态用 CDP 往真窗口里问过：pywebview 的 Window.maximized 只是
+    create_window 的那个入参，winforms 后端从不回写它。所以按 `if window.maximized`
+    判分支的那次实测里，状态位恒为 False —— 第一次点最大化确实铺满了（标题行从
+    1426 宽变成 1707 宽），第二次点它还是走 maximize 分支，既不还原、图标也永远
+    停在"最大化"。真状态只在 events.maximized / restored 里。"""
+    src = (STATIC_DIR.parent / "loom_launch.py").read_text(encoding="utf-8")
+    body = src.split("class ShellApi:")[1].split("\ndef ")[0]
+    assert "self.window.maximized" not in body, \
+        "又去读 Window.maximized 了 —— winforms 从不回写它，见本条 docstring 的实测"
+    assert "+= lambda: setattr(self, \"_max\", True)" in body, "没接 events.maximized"
+    assert "+= lambda: setattr(self, \"_max\", False)" in body, "没接 events.restored"
+    toggle = body.split("def win_maximize_toggle")[1].split("def ")[0]
+    assert "if self._max:" in toggle and "self._window.restore()" in toggle, \
+        "最大化按钮没有还原分支"
+    state = body.split("def win_state")[1]
+    assert '"maximized": self._max' in state, "win_state 报的还是那个没人维护的位"
+    assert "api._attach(win)" in src, "建窗后没绑事件，状态位永远是初始值"
+
+
+def test_the_shell_bridge_exposes_only_methods_not_the_window_object():
+    """pywebview 扫 js_api 走的是 dir()，非下划线的属性只要是个对象就会**递归进去**
+    （webview/util.py 的 get_functions）。实测过一次：那个公开的 `self.window` 把扫描
+    一路带进 WinForms 的 .NET 对象图，日志刷出 4.2 MB
+    `Error while processing window.native.DefaultFont.FontFamily.GenericSansSerif...`，
+    最后 logger.error 自己在栈没恢复时又炸，注入给页面的 api 变成空对象 ——
+    三枚窗控点不动，而且没有任何一处显式报错。所以桥上的成员只能是以 _ 开头的。"""
+    src = (STATIC_DIR.parent / "loom_launch.py").read_text(encoding="utf-8")
+    body = src.split("class ShellApi:")[1].split("\ndef ")[0]
+    assigns = re.findall(r"self\.([A-Za-z_]\w*)\s*=", body)
+    for name in sorted(set(assigns)):
+        assert name.startswith("_"), \
+            f"ShellApi 把窗口对象挂成了公开成员 {name} —— 扫描会递归进 .NET 对象图"
+    exposed = [n for n in re.findall(r"\n    def (\w+)\(", body) if not n.startswith("_")]
+    assert sorted(exposed) == ["win_close", "win_maximize_toggle", "win_minimize",
+                              "win_resize", "win_state"], \
+        f"桥上暴露的不止那五枚窗控：{sorted(exposed)}"
+
+
 def test_an_empty_page_header_collapses_instead_of_holding_the_row():
     """首页没有页头标题也没有动作 —— 那条 52px 得整条收掉，不然只剩一个孤零零的
     图标占着位（无边框之后它紧挨着标题行，更像坏了）。

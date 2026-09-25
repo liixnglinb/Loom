@@ -206,28 +206,47 @@ def _anchor(edge: str, FixPoint):
 
 
 class ShellApi:
+    """只给页面挂这五枚方法。
+
+    成员一律以下划线开头：pywebview 扫 js_api 时按 `dir()` 走，非下划线的属性若是
+    对象就**递归进去**（webview/util.py 的 get_functions）。以前那个公开的
+    `self.window` 因此被一路递归进 WinForms 的 .NET 对象图，日志刷出 4.2 MB
+    `Error while processing window.native.DefaultFont.FontFamily...`，最后
+    `logger.error` 自己在还栈没恢复时又炸，注入给页面的 api 直接变成空对象 ——
+    三枚窗控按不动，而且没有任何一处显式报错。
+    """
+
     def __init__(self):
-        self.window = None
+        self._window = None
+        # Window.maximized 是 create_window 的那个入参，winforms 后端从不回写它。
+        # 打包态用 CDP 连点两次最大化实测：状态位恒为 False，第二次不还原、图标也
+        # 永远停在"最大化"。真状态只在 events.maximized / restored 里，得自己接。
+        self._max = False
+
+    def _attach(self, win):
+        self._window = win
+        win.events.maximized += lambda: setattr(self, "_max", True)
+        win.events.restored += lambda: setattr(self, "_max", False)
 
     def win_minimize(self):
-        self.window.minimize()
+        self._window.minimize()
 
     def win_maximize_toggle(self):
         # 这里必须自己判：WinForms 的 maximize 再调一次不会还原。
-        if self.window.maximized:
-            self.window.restore()
+        if self._max:
+            self._window.restore()
         else:
-            self.window.maximize()
+            self._window.maximize()
 
     def win_close(self):
-        self.window.destroy()
+        self._window.destroy()
 
     def win_resize(self, w, h, edge="se"):
         from webview.window import FixPoint
-        self.window.resize(int(w), int(h), _anchor(edge, FixPoint))
+        self._window.resize(int(w), int(h), _anchor(edge, FixPoint))
 
     def win_state(self):
-        return {"shell": "pywebview", "maximized": bool(self.window.maximized)}
+        return {"shell": "pywebview", "maximized": self._max}
 
 
 def _run_window(port: int) -> bool:
@@ -242,7 +261,7 @@ def _run_window(port: int) -> bool:
         win = webview.create_window(WINDOW_TITLE, f"http://127.0.0.1:{int(port)}",
                                     width=1440, height=900, min_size=(980, 620),
                                     frameless=True, easy_drag=True, js_api=api)
-        api.window = win
+        api._attach(win)
         webview.start()
         return True
     except Exception as e:
