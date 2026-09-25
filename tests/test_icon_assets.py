@@ -6,6 +6,7 @@
 两者都不会被别的测试碰到。
 """
 import io
+import re
 import struct
 from pathlib import Path
 
@@ -92,3 +93,41 @@ def test_generated_small_svg_matches_the_snapped_table():
     for x0, y0, x1, y1 in (g["stem"], g["foot"]):
         frag = f'<rect x="{x0}" y="{y0}" width="{x1 - x0 + 1}" height="{y1 - y0 + 1}" fill="#FFFFFF"/>'
         assert frag in svg, f"logo-sm.svg 与 SMALL[20] 漂了，缺：{frag}"
+
+
+def _row_halves(img, y, xl, xr):
+    px = img.load()
+
+    def mean(x0, x1):
+        v = [sum(px[x, y][:3]) / 3.0 for x in range(x0, x1)]
+        return sum(v) / len(v)
+
+    return mean(*xl), mean(*xr)
+
+
+def test_the_tile_is_lit_from_the_upper_left_only_where_there_are_pixels():
+    """砖上那道偏心柔光是这一轮给图标加的唯一细节，两种失败都不会报错：
+    ① SVG 的 stop 顺序写反（中心透明、外缘亮）—— 标签页里就是一圈雾；这一条
+    就是抓到的真 bug，第一版 svg_master() 正是反的。
+    ② 光也铺到 16~40 那五档 —— 光场在 16px 上就是几列脏灰，先把竖笔弄脏。
+    所以盯两件事：大尺寸**同一行左右**要有差（光是偏心的，不是竖向渐变），
+    小尺寸同一行左右必须一样（只剩原有的竖向渐变，没有横向的光）。"""
+    import make_icon
+
+    svg = (STATIC / "logo.svg").read_text(encoding="utf-8")
+    body = svg.split('id="sheen"')[1].split("</radialGradient>")[0]
+    ops = [float(v) for v in re.findall(r'stop-opacity="([\d.]+)"', body)]
+    assert len(ops) == 4, f"sheen 该有 4 段 stop，实际 {len(ops)}：{ops}"
+    assert ops[0] > ops[1] > ops[2] > ops[3], f"柔光方向反了：中心 {ops[0]} → 外缘 {ops[3]}"
+    assert ops[-1] == 0.0, f"外缘没收干净（{ops[-1]}），砖外会起一层雾"
+
+    big = make_icon.render(256).convert("RGB")
+    left, right = _row_halves(big, 30, (40, 90), (170, 220))
+    assert left - right > 4.0, f"256 上左上只比右下亮 {left - right:.1f}，柔光没生效"
+
+    for n, y in ((16, 2), (24, 3), (40, 5)):
+        s = make_icon.render(n).convert("RGB")
+        pad = max(3, n // 5)
+        a, b = _row_halves(s, y, (pad, n // 2 - 1), (n // 2 + 1, n - pad))
+        assert abs(a - b) < 2.0, (
+            f"{n}px 同一行左右差 {a - b:.1f} —— 柔光铺到小尺寸上了，那档必须平涂")

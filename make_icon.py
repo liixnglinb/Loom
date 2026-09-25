@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""生成 assets/loom.ico 与配套 PNG（和 static/logo.svg 同一套几何数值）。
+"""生成 assets/loom.ico 与配套 PNG，并写出 static/ 下那三个 SVG（同一套数值）。
 
 为什么用代码画而不是转 SVG：本机没有 cairosvg / inkscape，而这个图标只有
 圆角方块 + 两个矩形，按 SVG 里的坐标复画比引一个渲染依赖更可控。
@@ -9,6 +9,9 @@
 都是各自定过整数的，见 SMALL。
  ICO 一次写 16/20/24/32/40/48/64/128/256 九档 —— 少了 20/24/40，
 Windows 在 125%/150%/175% 缩放下就没得挑，只能把 32 强行缩成 24，那才是"图标发虚"的主因。
+
+砖上那道偏心柔光（SHEEN_*）只走 build()，也就是 48 及以上；SMALL 那五档（16/20/24/32/40）
+继续平涂。试过给小尺寸也加，光场在 16px 上就是几列脏灰 —— 细节要有像素可花。
 """
 import struct
 import sys
@@ -24,6 +27,10 @@ SIZE = 1024                      # 大图的画布，圆角边缘靠它才不会
 TOP = (0x1F, 0x1F, 0x1F)
 BOT = (0x00, 0x00, 0x00)
 LIGHT = (0xFF, 0xFF, 0xFF)
+# 2026-09-25 给砖加受光方向：一块只有竖向渐变的砖读起来是"色块"而不是"表面"。
+# 偏心柔光（光心在左上，半径给到 0.92 个画布，所以边界完全落在砖外，看不到弧）。
+# **只加在大尺寸上**：16~40 那五档是硬对齐到像素网格的平涂，光场在那儿只会变成脏。
+SHEEN_CX, SHEEN_CY, SHEEN_R, SHEEN_A = 0.30, 0.16, 0.92, 0.16
 # 母版几何（viewBox 120）：竖笔 + 横脚两个矩形拼，交集处重叠不会露缝
 STEM = (34, 26, 50, 94)
 FOOT = (34, 78, 88, 94)
@@ -53,6 +60,22 @@ def s(v: float, size: int = SIZE) -> float:
     return v * size / 120.0
 
 
+def sheen_field(n: int) -> Image.Image:
+    """柔光的 alpha 场，按 (1 - d²/r²)² 衰减 —— 这是"漫射"的形状，
+    线性衰减会看出一颗圆盘。在 256 上算完再 bicubic 放大：场本身没有高频，
+    逐像素算到 4096 只是慢，不会更准。"""
+    N = 256
+    img = Image.new("L", (N, N), 0)
+    px = img.load()
+    cx, cy, r = SHEEN_CX * N, SHEEN_CY * N, SHEEN_R * N
+    for y in range(N):
+        dy2 = (y - cy) ** 2
+        for x in range(N):
+            d2 = ((x - cx) ** 2 + dy2) / (r * r)
+            px[x, y] = 0 if d2 >= 1.0 else round(SHEEN_A * 255 * (1.0 - d2) ** 2)
+    return img.resize((n, n), Image.BICUBIC)
+
+
 def build(size: int = SIZE, samples: int = 4) -> Image.Image:
     """矢量那套几何画在 size 画布上，samples>1 时超采样一次，边缘才是干净的。"""
     ss = size * samples
@@ -64,6 +87,9 @@ def build(size: int = SIZE, samples: int = 4) -> Image.Image:
     mask = Image.new("L", (ss, ss), 0)
     ImageDraw.Draw(mask).rounded_rectangle([0, 0, ss - 1, ss - 1], radius=s(27, ss), fill=255)
     img.paste(strip, (0, 0), mask)
+    # 光也裁进同一块圆角砖内，才不会在砖外留一层雾
+    img.paste(Image.new("RGBA", (ss, ss), LIGHT + (255,)), (0, 0),
+              Image.composite(sheen_field(ss), Image.new("L", (ss, ss), 0), mask))
 
     d = ImageDraw.Draw(img)
     k = size / 120.0 * samples
@@ -103,6 +129,36 @@ def render(n: int) -> Image.Image:
     return build(n, samples=2 if n >= 64 else 1)
 
 
+def svg_master() -> str:
+    """母版 SVG（120 viewBox）。以前它是手写的，于是改图标要改两处、而且这两处会漂。
+    柔光在 SVG 里只能靠 stop 分段逼近 (1-d²/r²)²：取 d/r = 0 / .5 / .75 / 1 四点，
+    误差在肉眼之外，别再为它引一个渲染依赖。"""
+    f = lambda d2: round(SHEEN_A * (1.0 - d2) ** 2, 4)
+    stops = "".join(
+        f'<stop offset="{o}" stop-color="#FFFFFF" stop-opacity="{f(d2)}"/>'
+        for o, d2 in ((0, 0.0), (0.5, 0.25), (0.75, 0.5625), (1, 1.0)))
+    r = round(SHEEN_R * 120, 1)
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" '
+        'viewBox="0 0 120 120">\n'
+        '  <defs>\n'
+        '    <linearGradient id="loom" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="120">\n'
+        '      <stop offset="0" stop-color="#1F1F1F"/><stop offset="1" stop-color="#000000"/>\n'
+        '    </linearGradient>\n'
+        f'    <radialGradient id="sheen" gradientUnits="userSpaceOnUse" '
+        f'cx="{round(SHEEN_CX * 120, 1)}" cy="{round(SHEEN_CY * 120, 1)}" r="{r}">\n'
+        f'      {stops}\n'
+        '    </radialGradient>\n'
+        '  </defs>\n'
+        '  <rect width="120" height="120" rx="27" fill="url(#loom)"/>\n'
+        '  <rect width="120" height="120" rx="27" fill="url(#sheen)"/>\n'
+        f'  <rect x="{STEM[0]}" y="{STEM[1]}" width="{STEM[2] - STEM[0]}"'
+        f' height="{STEM[3] - STEM[1]}" fill="#FFFFFF"/>\n'
+        f'  <rect x="{FOOT[0]}" y="{FOOT[1]}" width="{FOOT[2] - FOOT[0]}"'
+        f' height="{FOOT[3] - FOOT[1]}" fill="#FFFFFF"/>\n'
+        '</svg>\n')
+
+
 def svg_snapped(n: int) -> str:
     """把 SMALL[n] 那套整数几何写成 SVG —— 侧边栏那颗只有 20 CSS px，标签页那档
     在 150% 缩放下约 24 个设备像素，缩放母版会让笔画落在半个像素上。
@@ -132,6 +188,9 @@ def main() -> int:
     static = BASE / "static"
     for n in (16, 32):
         render(n).save(static / f"favicon-{n}.png")
+    # 母版 SVG 以前是手写的 —— 改一处几何要记得改另一处，柔光这种新加的东西最容易
+    # 只落在 PNG 上，于是标签页/文档里的 SVG 和安装包图标不是同一个记号。现在同源。
+    (static / "logo.svg").write_text(svg_master(), encoding="utf-8")
     (static / "logo-sm.svg").write_text(svg_snapped(20), encoding="utf-8")
     # favicon.svg 以前是手写的母版几何，不在这条流水线里 —— 于是标签页上一直是
     # 眼距 9/120 那张糊脸（Chromium 优先用 SVG，PNG 兜底根本轮不到）。
