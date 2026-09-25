@@ -4,6 +4,9 @@
 这条阶梯是软件的核心约定（正文只能由智能体产出，API 预设只是注入给 CLI），
 所以每一级的优先级都要钉住。
 """
+import ast
+from pathlib import Path
+
 import pytest
 
 from app import agents, db, runner
@@ -219,3 +222,32 @@ def test_permission_mode_round_trips_and_validates(client):
         assert client.post("/api/agents", json={"permission_mode": bad}).status_code == 400
         assert client.get("/api/agents").json()["permission_mode"] == "plan", f"{bad} 被拒却改掉了存值"
     assert client.post("/api/agents", json={"permission_mode": ""}).json()["permission_mode"] == ""
+
+
+def test_every_child_process_launch_suppresses_the_console():
+    r"""打包版是 loom.spec 的 console=False —— 一个没有控制台的 GUI 进程。
+    它去起控制台子进程（npm 的 .cmd 垫片会被 _argv 包成 cmd.exe /c），Windows 就
+    给它新建一个控制台窗口，于是"每次开软件都弹一个黑窗"：boot() 打 /api/agents，
+    agents_status() 给两个引擎各跑一次 --version，所以是两次。
+
+    坑在于 capture_output=True 只接管管道，**不抑制控制台分配**，看着像已经处理过了。
+    实测抓到的调用参数就是 ['cmd.exe','/c','D:\npm-global\claude.CMD','--version']
+    加 creationflags 未传。这里用 ast 点名每一个 subprocess.run / Popen，
+    以后新加一处忘了带就会红。
+    """
+    tree = ast.parse(Path(agents.__file__).read_text(encoding="utf-8"))
+    sites = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+             and isinstance(n.func.value, ast.Name) and n.func.value.id == "subprocess"
+             and n.func.attr in ("run", "Popen")]
+    assert sites, "一个 subprocess 调用点都没找到，这条测试本身失效了"
+
+    missing = [f"{s.func.attr}@line{s.lineno}" for s in sites
+               if not any(k.arg == "creationflags" for k in s.keywords)]
+    assert not missing, f"这些起进程的地方没关控制台，会弹黑窗：{missing}"
+
+    for s in sites:
+        cf = next(k for k in s.keywords if k.arg == "creationflags")
+        assert isinstance(cf.value, ast.Name) and cf.value.id == "NO_WINDOW", (
+            f"line {s.lineno}：creationflags 该用模块级 NO_WINDOW，"
+            "别在调用点各写一套平台判断")

@@ -25,6 +25,11 @@ from pathlib import Path
 ENGINES = ("claude", "codex")
 DEFAULT_TIMEOUT = int(os.environ.get("FLOWFORGE_AGENT_TIMEOUT", "2700"))
 SANDBOXES = ("read-only", "workspace-write", "danger-full-access")
+# 打包版是 loom.spec 的 console=False，也就是一个没有控制台的 GUI 进程。GUI 进程去起
+# 控制台子进程（npm 的 .cmd 垫片会被 _argv 包成 `cmd.exe /c …`），Windows 就新建一个
+# 控制台窗口 —— 那就是"每次开软件都弹黑窗"。capture_output=True 只接管管道，
+# **不抑制控制台分配**，所以它给不了保护。0 是非 Windows 上的无害默认值。
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
 
 def _tok_add(dst: dict, usage: dict) -> dict:
@@ -194,7 +199,8 @@ def _probe_version(engine: str) -> str:
         return ""
     try:
         r = subprocess.run(_argv(b, ["--version"]), capture_output=True, text=True,
-                           timeout=25, encoding="utf-8", errors="replace")
+                           timeout=25, encoding="utf-8", errors="replace",
+                           creationflags=NO_WINDOW)
         ver = (r.stdout or r.stderr or "").strip().splitlines()
         _VER_CACHE[engine] = ver[0][:60] if ver else ""
     except Exception as e:
@@ -235,7 +241,7 @@ def _kill_tree(proc):
     try:
         if os.name == "nt":
             subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                           capture_output=True, timeout=20)
+                           capture_output=True, timeout=20, creationflags=NO_WINDOW)
         else:
             proc.kill()
     except Exception:
@@ -531,7 +537,8 @@ def run_agent(engine: str, prompt: str, *, ws: Path, system_text: str = "",
         proc = subprocess.Popen(_argv(b, args), cwd=str(run_cwd), env=env,
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True,
-                                encoding="utf-8", errors="replace", bufsize=1)
+                                encoding="utf-8", errors="replace", bufsize=1,
+                                creationflags=NO_WINDOW)
     except Exception as e:
         raise AgentError(f"启动 {engine} 失败：{e}")
     # Windows 的文本模式会把 \n 翻成 \r\n，提示词按 LF 送出去更稳定
