@@ -15,7 +15,10 @@
   color-scheme: light;
 
   --bg-page:#F8F8F8;        /* background */
-  --bg-shell:#F0F0F0;       /* sidebar：比内容区深一档，容器感靠它而不是接缝 */
+  /* 侧栏比内容区深一档，容器感靠这一档色差而不是接缝。原来写 #F0F0F0：
+     实测 L* 97.6 vs 94.8，ΔL* 只有 2.8，而暗色那对是 10.3 —— 亮色下这道分栏
+     几乎看不出来，等于用户要的"两边不一样"只在暗色成立。抬到 #E4E4E4 后 ΔL* 7.0。 */
+  --bg-shell:#E4E4E4;
   --bg-raised:#FFFFFF;      /* panel */
   --bg-sunken:rgba(13,13,13,.03);   /* surface：内凹、代码块、占位 */
   --bg-inset:rgba(13,13,13,.05);
@@ -854,7 +857,11 @@ body.up-on .up-card{opacity:1;transform:translate(-50%,-50%);pointer-events:auto
   background:var(--bg-page);color:var(--ink);font-size:var(--fs-body);
   transition:border-color var(--slide),background var(--slide),box-shadow var(--slide)}
 .pv-input:hover{border-color:var(--line-strong)}
-.pv-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent)}
+/* 焦点反馈只提边框亮度，不画外环：暗色下 --accent 就是 #FFFFFF，
+   那圈 22% 的 box-shadow 正是用户点名要撤掉的"白色光晕"（输入台同一条）。
+   outline 必须无条件撤：实测文本框（含 textarea）连鼠标点进去都算 :focus-visible，
+   写成 :not(:focus-visible) 等于没撤。键盘焦点靠边框提亮这一条同样成立。 */
+.pv-input:focus{outline:none;border-color:var(--line-strong)}
 .pv-input::placeholder{color:var(--ink-4)}
 textarea.pv-input{resize:vertical;line-height:1.6;min-height:60px}
 select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
@@ -1016,7 +1023,13 @@ select.pv-input{appearance:none;padding-right:28px;cursor:pointer;
   word-break:break-word;overflow-wrap:anywhere}
 .ws-md > :first-child{margin-top:0}
 .ws-md p{margin:0 0 11px}
-.ws-md h3,.ws-md h4,.ws-md h5,.ws-md h6{margin:20px 0 8px;font-weight:600;letter-spacing:-.012em;line-height:1.3}
+/* 参考实现 DESIGN.md:229 明写：markdown 的 h3-h6 同一字号，层级**靠字重不靠字号**，
+   h3-h4 semibold / h5 medium / h6 normal。以前四条一起挂 600，h5 和 h6 就等于没分级。
+   字号那一维按上一轮实测的刻度保留（h3 仍走 --fs-h2），只把字重按条款分成三档。 */
+.ws-md h3,.ws-md h4,.ws-md h5,.ws-md h6{margin:20px 0 8px;letter-spacing:-.012em;line-height:1.3}
+.ws-md h3,.ws-md h4{font-weight:600}
+.ws-md h5{font-weight:500}
+.ws-md h6{font-weight:400}
 .ws-md h3{font-size:var(--fs-h2)}
 .ws-md h4{font-size:var(--fs-lead)}
 .ws-md h5,.ws-md h6{font-size:var(--fs-body)}
@@ -1173,7 +1186,7 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
 .st-search{display:flex;align-items:center;gap:8px;margin:14px 0 4px;padding:0 11px;height:36px;
   border-radius:var(--r-3);background:var(--bg-active);border:1px solid transparent;
   transition:border-color var(--slide),box-shadow var(--slide),background var(--slide)}
-.st-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);background:var(--bg-raised)}
+.st-search:focus-within{border-color:var(--line-strong);background:var(--bg-raised)}
 .st-search .ic{color:var(--ink-4);width:14.625px;height:14.625px;stroke-width:1.8}
 .st-search input{flex:1;min-width:0;border:none;background:transparent;font-size:var(--fs-body)}
 .st-search input:focus{outline:none}
@@ -1227,7 +1240,7 @@ html[data-theme="light"] .modal{background:rgba(20,20,20,.32)}
   color:var(--ink);font-family:var(--font-ui);font-size:var(--fs-sub);
   transition:border-color var(--slide),box-shadow var(--slide)}
 .st-input:hover{border-color:var(--line-strong)}
-.st-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent)}
+.st-input:focus{outline:none;border-color:var(--line-strong)}
 .st-input::placeholder{color:var(--ink-4)}
 .st-input.mono{font-family:var(--font-mono);letter-spacing:.01em}
 .st-chips{display:flex;flex-wrap:wrap;gap:6px}

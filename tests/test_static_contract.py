@@ -1185,6 +1185,59 @@ def test_the_two_columns_are_split_by_color_and_not_by_a_line():
     assert "background" not in tb, "页头铺自己的底 = 它成了独立的一条带子"
 
 
+def _l_star(hx: str) -> float:
+    """CIE L*。用它而不是"看起来差很多"：亮色那对十六进制数只差 8，肉眼分不出分栏。"""
+    c = [int(hx[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    f = lambda v: v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = [f(v) for v in c]
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return 116 * y ** (1 / 3) - 16 if y > 0.008856 else 903.3 * y
+
+
+def test_the_light_columns_are_split_by_the_same_margin_of_difference():
+    """用户要的是"右侧工作区和左侧侧边栏颜色不一样"，不是"暗色下不一样"。
+    暗色那对 ΔL* = 10.3；亮色以前是 #F8F8F8 / #F0F0F0，ΔL* 只有 2.8 ——
+    差 3.7 倍，等于这条要求在亮色里没兑现。抬到 #E4E4E4 后 ΔL* = 7.0。"""
+    light = CSS.split(":root{")[1].split('html[data-theme="dark"]')[0]
+    shell = re.search(r"--bg-shell:(#[0-9A-Fa-f]{6})", light).group(1)
+    page = re.search(r"--bg-page:(#[0-9A-Fa-f]{6})", light).group(1)
+    d = abs(_l_star(shell) - _l_star(page))
+    assert d >= 6.0, f"亮色两栏 ΔL* 只有 {d:.1f}，看不出分栏（暗色那对是 10.3）"
+    sb = CSS.split(".sidebar{")[1].split("}")[0]
+    assert "border-right" not in sb.split("html[data-theme")[0], "亮色又靠竖线分栏了"
+
+
+def test_no_input_paints_an_accent_halo_on_focus():
+    """用户点名"点输入框时外面不要那种白色光晕"。暗色 --accent 就是 #FFFFFF，
+    所以 `box-shadow:0 0 0 3px color-mix(... var(--accent) ...)` 画出来的正是它。
+    输入台先改成了"只提边框亮度到 --line-strong"，这条把同一办法推广到设置页，
+    并防止下一个输入框又顺手抄那圈环。"""
+    assert "box-shadow:0 0 0 3px color-mix(in oklab, var(--accent)" not in CSS, \
+        "又有人用 --accent 画外环：暗色下那就是一圈白晕"
+    for cls in (".tk-card", ".pv-input", ".st-input"):
+        rule = CSS.split(cls)[1].split("}")[0]
+        assert "box-shadow:0 0 0" not in rule.split("{")[1], f"{cls} 带了外扩光环"
+    for cls in (".pv-input:focus", ".st-input:focus"):
+        rule = CSS.split(cls)[1].split("}")[0]
+        assert "border-color:var(--line-strong)" in rule, f"{cls} 没有可看的焦点反馈"
+        assert "outline:none" in rule, (
+            f"{cls} 必须无条件撤 outline —— 实测文本框连鼠标点进去都算 :focus-visible，"
+            "写成 :not(:focus-visible) 等于没撤")
+
+
+def test_workspace_markdown_headings_are_graded_by_weight_not_only_size():
+    """参考实现 DESIGN.md:229 明写 h3-h4 semibold / h5 medium / h6 normal，
+    层级靠字重。四条一起挂 600 时 h5、h6 和正文就分不开。"""
+    base = CSS.split(".ws-md h3,.ws-md h4,.ws-md h5,.ws-md h6{")[1].split("}")[0]
+    assert "font-weight" not in base, "四条又共用一个字重了"
+    for sel, w in ((".ws-md h3,.ws-md h4", "600"), (".ws-md h5", "500"),
+                   (".ws-md h6", "400")):
+        m = re.search(r"(?m)^%s\{([^}]*)\}" % re.escape(sel), CSS)
+        assert m, f"找不到独立的一条 {sel}{{...}}"
+        assert f"font-weight:{w}" in m.group(1), \
+            f"{sel} 该是 {w}（DESIGN.md:229）"
+
+
 def test_sidebar_row_pitch_survives_the_keycap_border():
     """行距 33 是量的（行中心 97/130/163）。撑爆它的不是文字，是那枚带 1px 边框的
     快捷键小标签：它自己的 line-box 一旦高于行的 line-height，整行就被顶到 22.3px。"""
