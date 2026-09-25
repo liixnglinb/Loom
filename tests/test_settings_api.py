@@ -211,3 +211,22 @@ def test_anthropic_catalog_bases_are_not_openai_paths():
         assert "/messages" in url
         if e["api_base"].rstrip("/").endswith("/v1"):
             assert e["name"] in V1_BASES_OK, f'{e["name"]} 的 base 是 OpenAI 写法：{url}'
+
+
+def test_a_caller_chosen_base_never_carries_the_stored_key(dbsession):
+    """清单不外泄 api_key，所以测试/拉模型改成"按 id 让服务端自己取"。
+    但原来那版是 `api_base or 库里base` —— 调用方传的 base 赢，而 key 兜底取库里的，
+    于是 `POST /api/providers/test {id, api_base:"https://evil"}` 就把真密钥发去了
+    对方指定的地址。改端点就必须重新填密钥（git credential / gh 同一套规矩）。"""
+    from app import main
+    pid = dbsession.add_preset("creds-x", provider="openai",
+                               api_base="https://legit.test/v1", api_key="sk-stored")
+    assert main._preset_creds(pid, "", "") == \
+        ("https://legit.test/v1", "sk-stored", ""), "不改端点时要照常替前端取凭证"
+    base, key, err = main._preset_creds(pid, "https://evil.test/", "")
+    assert key == "", "调用方指定的端点拿到了库里存的密钥"
+    assert err, "拒绝时还得给一句能显示给用户的话"
+    assert main._preset_creds(pid, "https://evil.test/", "sk-mine") == \
+        ("https://evil.test/", "sk-mine", ""), "调用方自己带的凭证是它自己的，允许"
+    assert main._preset_creds(0, "https://fresh.test/", "sk-new") == \
+        ("https://fresh.test/", "sk-new", ""), "新建未存预设（无 id）不受影响"

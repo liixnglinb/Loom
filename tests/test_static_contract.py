@@ -1343,3 +1343,14 @@ def test_an_empty_page_header_collapses_instead_of_holding_the_row():
     assert "bar.hidden = empty" in fn, "空页头没整条收起"
     assert "if(empty) return" in fn, "收起后还在往里面写图标 = 空行里剩一枚孤图标"
     assert ".topbar[hidden]{display:none}" in CSS, "display:flex 顶掉了 [hidden]"
+
+
+def test_the_close_window_guard_reads_the_counter_that_is_actually_written():
+    """有任务在跑时关窗口要先确认。这个确认以前恒不触发：它读 ST.activeRuns，
+    而全仓只有 ST.liveRuns 被写过 —— `undefined !== undefined` 为假，n 永远是 0，
+    于是点关闭直接杀掉正在跑的智能体。名字对不上不会报错，只会静默失效。"""
+    fn = APP_JS.split("window.winClose")[1].split("};")[0]
+    assert "ST.liveRuns" in fn, "关闭确认没读那份真被写的计数"
+    assert "activeRuns" not in APP_JS, \
+        "ST.activeRuns 是个从没被赋值过的名字，别再拿它当条件"
+    assert "liveRuns" in APP_JS.split("ST.liveRuns =")[0], "liveRuns 得先在 ST 初值里存在"

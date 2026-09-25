@@ -244,3 +244,36 @@ def test_memory_write_route_takes_no_path(client, home, monkeypatch):
     assert "从接口改的" in (home / ".codex" / "AGENTS.md").read_text(encoding="utf-8")
     assert client.put("/api/agents/capabilities/memory",
                       json={"engine": "claude", "content": "# x"}).status_code == 400
+
+
+def test_outside_root_judges_containment_correctly(tmp_path):
+    inside = tmp_path / "skills" / "a"
+    inside.mkdir(parents=True)
+    f = inside / "SKILL.md"
+    f.write_text("x", encoding="utf-8")
+    assert ci._outside_root(f, tmp_path / "skills") is False
+    elsewhere = tmp_path.parent / "definitely-outside.md"
+    elsewhere.write_text("y", encoding="utf-8")
+    assert ci._outside_root(elsewhere, tmp_path / "skills") is True
+    # 注：resolve() 对不存在的路径不抛（3.12 起 strict=False 是默认），所以这里不拿
+    # "不存在"当越界；preview_path 在调它之前已经 is_file() 过一道了。
+
+
+def test_preview_refuses_a_skill_file_that_resolves_outside_its_root(home, monkeypatch):
+    """符号链接绕过的是类目挡，不是名字挡：evil/SKILL.md 这个名字完全合法，
+    链接指向谁才是要害。本机建不了符号链接（要管理员或开发者模式），所以这里
+    把容器判断替身成"越界"，验 preview_path 确实听了它 —— 上面那条已经单独验过
+    这个替身本身的判断是对的。两条合起来才封住：谁把这句调用删掉，下面这条就红。"""
+    assert ci.preview_path("claude", "skills", "brandkit") is not None, \
+        "先确认正常技能本来能预览"
+    monkeypatch.setattr(ci, "_outside_root", lambda p, root: True)
+    got = ci.preview_path("claude", "skills", "brandkit")
+    assert got is None, "容器判断被听了个寂寞：越界路径还是会整份读出去"
+
+
+def test_memory_preview_still_refuses_the_secret_filenames(home):
+    """记忆那条不查容器（很多人把 CLAUDE.md 软链到 dotfiles 仓库），
+    所以 settings.json / config.toml 这些名字必须单独挡掉。"""
+    for bad in ("settings.json", "settings.local.json", "config.toml",
+                ".claude.json", "credentials.json"):
+        assert bad in ci.SECRET_NAMES, f"{bad} 漏出 deny-list"

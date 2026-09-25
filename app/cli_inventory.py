@@ -177,10 +177,35 @@ def reveal_path(engine: str, key: str):
 # 所以那三类连预览口都不开。
 PREVIEWABLE = ("memory", "skills", "commands", "agents")
 _NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_\-.]{0,63}")
+# 这一份是"就算被解析出来也绝不回传"的名单。上面那四个类目按类目挡，
+# 但符号链接能绕开类目挡（见 preview_path），所以再加一层按文件名挡的。
+SECRET_NAMES = frozenset({
+    "settings.json", "settings.local.json", ".claude.json", "config.toml",
+    ".credentials.json", "credentials.json", "oauth_creds.json", "auth.json",
+    "ide", "history.jsonl",
+})
+
+
+def _outside_root(p: Path, root: Path) -> bool:
+    """p 解开符号链接/junction 之后是否跑到 root 外面去了。读不出来一律算越界。"""
+    try:
+        return not p.resolve().is_relative_to(root.resolve())
+    except OSError:
+        return True
 
 
 def preview_path(engine: str, key: str, name: str = ""):
-    """路径只从这份清单里算：调用方给的是 引擎 + 类目 + 条目名，不是路径。"""
+    """路径只从这份清单里算：调用方给的是 引擎 + 类目 + 条目名，不是路径。
+
+    `_NAME_RE` 挡得住 `..`，但挡不住**符号链接**：`~/.claude/skills/evil/SKILL.md`
+    只要是指向 settings.json 的链接，`is_file()` 和 read_bytes() 都会跟过去，
+    于是"只回名字不回值"的预览口能整份读出密钥文件 —— 而在 `--dangerously-skip-permissions`
+    下跑的智能体自己就能在那个目录里种下这条链接。
+    所以拼出来的路径要 resolve 之后确认仍在类目根内（和 runner.ws_file 同一套守卫）。
+    记忆那条不查容器：它的文件名是清单里写死的一个值，不是调用方拼的，
+    而且很多人把 CLAUDE.md 软链到自己的 dotfiles 仓库，查容器等于弄坏这个用法。
+    它只过 SECRET_NAMES 这一层。
+    """
     if key not in PREVIEWABLE:
         return None
     item = next((i for i in scan_for(engine)["items"] if i["key"] == key), None)
@@ -188,11 +213,15 @@ def preview_path(engine: str, key: str, name: str = ""):
         return None
     base = Path(item["path"])
     if key == "memory":
-        return base if base.is_file() and base.suffix == ".md" else None
+        if base.is_file() and base.suffix == ".md" and base.name not in SECRET_NAMES:
+            return base
+        return None
     if not name or not _NAME_RE.fullmatch(name):
         return None
     p = (base / name / "SKILL.md") if key == "skills" else (base / (name + ".md"))
-    return p if p.is_file() else None
+    if not p.is_file() or p.name in SECRET_NAMES:
+        return None
+    return None if _outside_root(p, base) else p
 
 
 def preview_text(engine: str, key: str, name: str = "", max_bytes: int = 200_000):
@@ -224,13 +253,19 @@ def write_memory(engine: str, text: str) -> dict:
     if len(body) > MEMORY_MAX_BYTES:
         return {"ok": False, "path": str(p).replace("\\", "/"),
                 "detail": f"内容超过 {MEMORY_MAX_BYTES // 1024} KB，没有写入"}
-    tmp = p.with_name(p.name + ".tmp")
+    # 临时名不能是可预测的固定值：`CLAUDE.md.tmp` 若已被人换成一条指向别处的符号链接，
+    # tmp.write_bytes() 会跟着链接写进**目标文件**，等于把"只写记忆文件"变成"写任意文件"。
+    # 所以名字带随机后缀、且用 O_EXCL|O_NOFOLLOW 打开（存在即失败，不跟链接）。
+    tmp = p.with_name(f"{p.name}.{os.getpid()}-{os.urandom(4).hex()}.tmp")
     try:
-        tmp.write_bytes(body)
+        fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                     | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(body)
         os.replace(tmp, p)          # 同一目录内的原子替换：崩了也不会留下半截记忆
     except OSError as e:
         try:
-            tmp.unlink()
+            tmp.unlink(missing_ok=True)
         except OSError:
             pass
         return {"ok": False, "path": str(p).replace("\\", "/"),

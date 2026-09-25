@@ -115,12 +115,30 @@ def check(force: bool = False) -> dict:
         if not url.startswith("https://"):
             raise RuntimeError("清单里的下载地址不是 https")
         newer = is_newer(latest)
+        sha = str(m.get("sha256") or "").strip().lower()
+        try:
+            size = int(m.get("size") or 0)
+        except (TypeError, ValueError):
+            size = 0
+        asset = Path(str(m.get("file") or "")).name or Path(url).name
+        if newer:
+            # 校验值缺失就不能进 available。清单地址是用户可改的（main.py 只拦协议、
+            # 不锁域名），而 sha256 与 file 出自同一份清单 —— "有才校"等于没有校验，
+            # 一个不写 sha256 的清单就能把任意 exe 标成"已下载可安装"。
+            if len(sha) != 64 or any(c not in "0123456789abcdef" for c in sha):
+                raise RuntimeError("更新清单没有给出有效的 sha256，拒绝下载")
+            if size <= 0:
+                raise RuntimeError("更新清单没有给出安装包大小，拒绝下载")
+            # asset 只准是一个纯文件名，且必须与下载地址的末段一致：
+            # 它会被拼进 updates_dir()，带 `..` 或绝对路径的清单能把包写到启动目录。
+            if not asset.lower().endswith(".exe") or asset != Path(url).name:
+                raise RuntimeError("更新清单里的文件名与下载地址对不上，拒绝下载")
         _set(phase="available" if newer else "current",
              latest=latest, notes=str(m.get("notes") or "")[:2000],
              url=url if newer else "",
-             asset=str(m.get("file") or Path(url).name),
-             sha256=str(m.get("sha256") or ""),
-             size=int(m.get("size") or 0), got=0, path="",
+             asset=asset if newer else "",
+             sha256=sha if newer else "",
+             size=size if newer else 0, got=0, path="",
              checked_at=time.strftime("%Y-%m-%d %H:%M:%S"))
     except Exception as e:
         _set(phase="error", error=str(e)[:300])
@@ -167,6 +185,12 @@ def start_download() -> dict:
         if alive and alive.is_alive():
             return dict(STATE)
     dest = updates_dir() / (s["asset"] or "update.exe")
+    # check() 已经把 asset 收成纯文件名了，这里再兜一道：落点必须在 updates 目录内。
+    # 两处都写是因为这两条路可以分开长 —— 只留一处，将来加个新入口就把它绕过去了。
+    root = updates_dir().resolve()
+    if not dest.resolve().is_relative_to(root):
+        _set(phase="error", error="更新包目标路径不在更新目录内，已拒绝")
+        return snapshot()
     _set(phase="downloading", got=0, error="", path=str(dest))
     t = threading.Thread(target=_download,
                          args=(s["url"], dest, s["size"], s["sha256"]),
@@ -184,6 +208,14 @@ if %errorlevel% equ 0 del "%~f0"
 """
 
 
+def _sha256_of(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def apply_update() -> dict:
     """交给一个脱离本进程的批处理去跑安装器，然后我们自己退出。
 
@@ -194,6 +226,22 @@ def apply_update() -> dict:
         return {"ok": False, "detail": "源码运行没有可替换的程序，请用安装包装新版本"}
     if s["phase"] != "ready" or not s["path"] or not Path(s["path"]).is_file():
         return {"ok": False, "detail": "还没有下载完成的安装包"}
+    # ready 只是内存里的一个标志：从"校验通过"到"点安装"之间可以隔任意久，
+    # 期间那个文件被截断、被换掉、或上次异常退出留下的同名残包，光判 is_file() 是发现不了的。
+    # 所以执行前按清单里那份 sha256 重算一次 —— 这是这条链上唯一的落地前防线。
+    want = str(s["sha256"] or "").lower()
+    if not want:
+        return {"ok": False, "detail": "缺少校验值，请重新检查更新"}
+    try:
+        if _sha256_of(Path(s["path"])) != want:
+            try:
+                Path(s["path"]).unlink(missing_ok=True)
+            except OSError:
+                pass
+            _set(phase="error", error="安装包校验值已不匹配，已删除并停止安装")
+            return {"ok": False, "detail": "安装包校验失败，请重新下载"}
+    except OSError as e:
+        return {"ok": False, "detail": f"读不到安装包：{e}"}
     exe = Path(sys.executable)
     bat = updates_dir() / "update.bat"
     bat.write_text(BAT_TMPL.format(setup=str(s["path"]).replace('"', "")), encoding="mbcs")

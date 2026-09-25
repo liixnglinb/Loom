@@ -216,3 +216,69 @@ def test_apply_refuses_while_runs_are_active(client, dbsession):
     assert r.status_code == 409
     assert "任务" in r.json()["detail"]
     dbsession.delete_run(rid)
+
+
+_GOOD_MANIFEST = {"version": "9.9.9", "url": "https://x/Loom-9.9.9-setup.exe",
+                  "file": "Loom-9.9.9-setup.exe", "sha256": "ab" * 32, "size": 1234}
+
+
+@pytest.mark.parametrize("drop,patch,why", [
+    ("sha256", {}, "清单不给 sha256"),
+    ("size", {}, "清单不给大小"),
+    (None, {"sha256": "zz" * 32}, "sha256 不是十六进制"),
+    (None, {"file": r"..\..\Startup.exe"}, "文件名带相对路径"),
+    (None, {"file": "totally-other.exe"}, "文件名与下载地址末段不符"),
+])
+def test_check_refuses_a_manifest_that_cannot_be_verified(client, monkeypatch,
+                                                          drop, patch, why):
+    """清单地址是用户可改的（update_set_url 只拦协议、不锁域名），而 sha256 与 file
+    出自同一份清单。以前两个校验都是"有才校"，一份不写 sha256 的清单就能把任意 exe
+    标成 ready；file 里塞 `..` 还能把包写到启动目录去。"""
+    m = dict(_GOOD_MANIFEST)
+    if drop:
+        m.pop(drop)
+    m.update(patch)
+    monkeypatch.setattr(updater.requests, "get", lambda url, **kw: _JsonResp(m))
+    d = client.post("/api/update/check").json()
+    assert d["phase"] == "error", f"{why}：竟然进了 {d['phase']}，asset={d.get('asset')!r}"
+    assert "拒绝" in (d["error"] or "")
+
+
+def test_apply_rehashes_the_package_before_running_it(monkeypatch, tmp_path):
+    """ready 只是内存里的一个标志：从校验通过到点安装之间可以隔任意久，
+    期间文件被截断/被换掉、或是上次异常退出留下的同名残包，光判 is_file() 发现不了。"""
+    exe = tmp_path / "Loom-9.9.9-setup.exe"
+    exe.write_bytes(b"genuine installer bytes")
+    updater._set(phase="ready", path=str(exe), frozen=True, size=23, got=23,
+                 asset=exe.name, url="https://x/" + exe.name,
+                 sha256="0" * 64, error="", latest="9.9.9")
+    started = []
+    monkeypatch.setattr(updater.subprocess, "Popen", lambda *a, **k: started.append(a))
+    try:
+        r = updater.apply_update()
+        assert r["ok"] is False, "校验值对不上却照样装了"
+        assert started == [], "校验没过就已经把安装器起起来了"
+        assert not exe.exists(), "校验失败的残包必须删掉，别留在那儿等人再点一次"
+    finally:
+        updater._set(phase="idle", path="", frozen=False, sha256="", size=0, got=0,
+                     asset="", url="", latest="", error="")
+
+
+def test_apply_still_runs_when_the_hash_matches(monkeypatch, tmp_path):
+    exe = tmp_path / "Loom-9.9.9-setup.exe"
+    exe.write_bytes(b"genuine installer bytes")
+    good = hashlib.sha256(exe.read_bytes()).hexdigest()
+    updater._set(phase="ready", path=str(exe), frozen=True, size=23, got=23,
+                 asset=exe.name, url="https://x/" + exe.name,
+                 sha256=good, error="", latest="9.9.9")
+    started = []
+    monkeypatch.setattr(updater.subprocess, "Popen", lambda *a, **k: started.append(a))
+    monkeypatch.setattr(updater.threading, "Timer",
+                        lambda *a, **k: type("T", (), {"start": lambda s: None})())
+    try:
+        r = updater.apply_update()
+        assert r["ok"] is True, r
+        assert len(started) == 1, "校验过了却没把安装器起起来"
+    finally:
+        updater._set(phase="idle", path="", frozen=False, sha256="", size=0, got=0,
+                     asset="", url="", latest="", error="")

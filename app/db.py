@@ -409,5 +409,31 @@ def delete_run(run_id):
     return True
 
 
+def reconcile_interrupted_runs():
+    """把上一世留下的"正在跑"归成 failed，返回处理条数。
+
+    `running` / `revising` 是**线程持有型**状态：只有那个跑任务的线程会把它改成终态。
+    进程被杀 / 断电 / 更新器 os._exit(0) 之后，这一行永远停在 running，而重启后
+    没有任何线程会来救它，于是四件事同时坏掉：侧栏永远转圈、"停止"按钮改了库也
+    没人读（cancel_run 只往内存 _CANCEL 里塞 id）、重跑被"运行中不能重跑"挡住、
+    而 count_active_runs() 把它一直算成活跃 —— **应用内更新从此永久 409**。
+    `waiting` 不在其列：停在检查点等人本来就是跨重启可恢复的状态。
+    """
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT id FROM runs WHERE status IN ('running','revising')")
+    ids = [r["id"] for r in c.fetchall()]
+    if ids:
+        c.execute(
+            "UPDATE runs SET status='failed', error=?, updated_at=? "
+            "WHERE status IN ('running','revising')",
+            ("应用退出时这条还在跑，已按中断处理（现场仍在，可重跑）", _now()))
+        conn.commit()
+    conn.close()
+    return len(ids)
+
+
 # 模块加载即建表（保证任何模块 import db 后立即可查询）
 init_db()
+# 紧接着对账一次：必须在任何读 status 的地方之前，否则侧栏/更新检查会先看到僵尸。
+reconcile_interrupted_runs()

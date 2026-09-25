@@ -953,9 +953,15 @@ def cancel_run(run_id: str) -> dict:
     if not run:
         raise ValueError("运行不存在")
     _CANCEL.add(run_id)
-    if run["status"] in ("waiting",):
+    b = _BUSES.get(run_id)
+    live = bool(b and not getattr(b, "closed", False))
+    # waiting：没有线程在等它，直接落库。
+    # running/revising 但**本进程里没有活着的总线**：那是上一世留下的僵尸
+    # （启动对账 reconcile_interrupted_runs 会清掉绝大多数；这里兜住对账之后
+    # 又出现的边角）。以前只判 waiting，于是点"停止"只往内存集合塞一个 id、
+    # 前端照样 toast「已取消」，库里那行永远还是 running。
+    if run["status"] in ("waiting",) or (run["status"] in ("running", "revising") and not live):
         db.update_run(run_id, status="cancelled", waiting_reason="")
-        b = _BUSES.get(run_id)
         if b:
             b.publish({"type": "state", "run": db.get_run(run_id)})
     return db.get_run(run_id)

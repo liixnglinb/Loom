@@ -953,8 +953,6 @@ class ModelsListIn(BaseModel):
     api_base: str = ""
     api_key: str = ""
     provider: str = "openai"
-    models_url: str = ""
-    is_full_url: bool = False
 
 
 def _preset_payload():
@@ -974,13 +972,27 @@ def _preset_payload():
 
 def _preset_creds(pid: int, api_base: str, api_key: str):
     """按 id 让服务端自己去库里取端点与密钥 —— 清单已经不回传 api_key 了，
-    测试和拉模型也不能再靠前端把密钥带回来。显式传进来的值优先（那是在编辑新密钥）。"""
+    测试和拉模型也不能再靠前端把密钥带回来。
+
+    但**库里存的密钥永远不跟着调用方指定的端点走**。编辑已存预设时前端会把 base 连同
+    id 一起传来（密钥框是空的，因为清单不外泄密钥），那正好是"把真密钥发去一个前端
+    指定的地址"的通道：`api_base or 库里base` 让调用方的 base 赢，而 key 兜底取库里的。
+    现在改端点就必须重新填密钥（git credential / gh 都是这个规矩）。
+    返回 (base, key, err)；err 非空时调用方直接回 400。
+    """
     if not pid:
-        return api_base, api_key
+        return api_base, api_key, ""
     p = db.get_preset(pid)
     if not p:
-        return api_base, api_key
-    return (api_base or p.get("api_base") or ""), (api_key or p.get("api_key") or "")
+        return api_base, api_key, ""
+    stored_base = (p.get("api_base") or "").strip()
+    stored_key = p.get("api_key") or ""
+    want_base = (api_base or "").strip()
+    if want_base and want_base != stored_base:
+        if not (api_key or "").strip():
+            return want_base, "", "端点改过了，密钥不会跟着去新地址：请重新填一次密钥"
+        return want_base, api_key.strip(), ""
+    return (want_base or stored_base), (api_key or stored_key), ""
 
 
 def _redact(msg: str, key: str) -> str:
@@ -1044,7 +1056,9 @@ def set_default(pid: int):
 
 @app.post("/api/providers/test")
 def test_provider(t: PresetTestIn):
-    base, key = _preset_creds(t.id, t.api_base, t.api_key)
+    base, key, err = _preset_creds(t.id, t.api_base, t.api_key)
+    if err:
+        return JSONResponse({"detail": err}, 400)
     ok, msg = llm.test_connection(t.provider, base, key, t.model)
     return {"ok": ok, "msg": _redact(msg, key)}
 
@@ -1055,18 +1069,16 @@ _MODEL_COMPAT_SUFFIXES = (
 )
 
 
-def _model_url_candidates(base: str, override: str = "", is_full_url: bool = False):
-    """构造 /models 候选，兼容 Anthropic 子路径。"""
-    if override.strip():
-        return [override.strip()]
+def _model_url_candidates(base: str):
+    """从端点推 /models 候选，兼容 Anthropic 子路径。
+
+    以前这里还收一个 `models_url` 覆盖参数和一个 `is_full_url` 开关，前端零引用
+    （grep static/ 无命中）、测试零覆盖，唯一作用是把服务端要 GET 的地址整个交给
+    调用方 —— 一个没有入口的后端能力，同时是纯攻击面。删掉。
+    """
     b = (base or "").strip().rstrip("/")
     if not b:
         return []
-    if is_full_url:
-        if "/v1/" in b:
-            return [b.split("/v1/", 1)[0] + "/v1/models"]
-        root = b.rsplit("/", 1)[0]
-        return [root + "/v1/models"] if "://" in root else []
     out = []
     last = b.rsplit("/", 1)[-1]
     versioned = len(last) > 1 and last[0] == "v" and last[1:].isdigit()
@@ -1088,8 +1100,10 @@ def _model_url_candidates(base: str, override: str = "", is_full_url: bool = Fal
 def models_list(b: ModelsListIn):
     """按候选策略拉取模型列表，支持 OpenAI/Anthropic/Gemini 认证头。"""
     import requests as _requests
-    b.api_base, b.api_key = _preset_creds(b.id, b.api_base, b.api_key)
-    urls = _model_url_candidates(b.api_base, b.models_url, b.is_full_url)
+    b.api_base, b.api_key, err = _preset_creds(b.id, b.api_base, b.api_key)
+    if err:
+        return {"ok": False, "models": [], "error": err, "tried": []}
+    urls = _model_url_candidates(b.api_base)
     if not urls:
         return {"ok": False, "models": [], "error": "缺少或无法解析模型端点", "tried": []}
     proto = (b.provider or "openai").lower()

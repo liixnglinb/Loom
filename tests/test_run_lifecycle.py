@@ -325,3 +325,59 @@ def test_deleting_a_run_never_touches_the_chosen_folder(client, stub_cli, flow,
     assert client.delete(f"/api/runs/{run['id']}").status_code == 200
     assert keep.is_file() and keep.read_text(encoding="utf-8").startswith("# 用户的文件")
     assert [p.name for p in d.iterdir()] == ["keep.md"]
+
+
+def test_startup_reconcile_clears_zombie_running_rows(dbsession):
+    """running / revising 是线程持有型状态：只有那个跑任务的线程会把它改成终态。
+    进程被杀 / 断电 / 更新器 os._exit(0) 之后这一行永远停在 running，而重启后没有
+    任何线程会来救它 —— 侧栏永远转圈、"停止"改了库也没人读、重跑被"运行中"挡住，
+    而 count_active_runs() 一直把它算成活跃，**应用内更新从此永久 409**。
+    """
+    for rid, st in (("zom-r", "running"), ("zom-v", "revising"), ("zom-w", "waiting")):
+        dbsession.create_run(rid, "zombie-pipeline", rid)
+        dbsession.update_run(rid, status=st)
+    # 整个会话共用一个库，别的模块可能留下自己的活跃行 —— 所以断言增量而不是绝对值，
+    # 并且只认我们自己那三行。
+    before = dbsession.count_active_runs()
+    assert before >= 3
+    assert dbsession.reconcile_interrupted_runs() >= 2
+    assert dbsession.get_run("zom-r")["status"] == "failed"
+    assert dbsession.get_run("zom-v")["status"] == "failed"
+    assert "中断" in (dbsession.get_run("zom-r")["error"] or "")
+    assert dbsession.get_run("zom-w")["status"] == "waiting", \
+        "停在检查点是可跨重启恢复的状态，不能一起抹掉"
+    assert dbsession.count_active_runs() <= before - 2
+    assert dbsession.reconcile_interrupted_runs() == 0, "第二次必须是 0，别每次启动都改一遍库"
+    for rid in ("zom-r", "zom-v", "zom-w"):
+        dbsession.delete_run(rid)
+
+
+def test_cancel_on_a_zombie_running_row_actually_lands_in_the_db(dbsession):
+    """以前 cancel_run 只判 waiting，对 running 行只往内存 _CANCEL 塞一个 id 就当成功了，
+    而重启后没有任何线程在读那个集合 —— 前端照样 toast「已取消」，库里还是 running。"""
+    dbsession.create_run("zom-c", "zombie-pipeline", "僵尸")
+    dbsession.update_run("zom-c", status="running")
+    runner._BUSES.pop("zom-c", None)
+    assert runner.cancel_run("zom-c")["status"] == "cancelled"
+    assert dbsession.get_run("zom-c")["status"] == "cancelled"
+    dbsession.delete_run("zom-c")
+
+
+def test_cancel_does_not_force_a_live_run_out_of_running(dbsession):
+    """反方向也要钉住：总线还活着说明真有线程在跑，那时只能等它自己收尾，
+    强行改库会让那个线程后面把状态又写回去。"""
+    class _LiveBus:
+        closed = False
+
+        def publish(self, ev):
+            pass
+
+    dbsession.create_run("live-c", "zombie-pipeline", "在跑")
+    dbsession.update_run("live-c", status="running")
+    runner._BUSES["live-c"] = _LiveBus()
+    try:
+        assert runner.cancel_run("live-c")["status"] == "running"
+    finally:
+        runner._BUSES.pop("live-c", None)
+        runner._CANCEL.discard("live-c")
+        dbsession.delete_run("live-c")

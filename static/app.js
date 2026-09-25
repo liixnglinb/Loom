@@ -155,7 +155,10 @@ async function syncShell(){
 window.winMin = () => { shellCall('win_minimize'); };
 window.winMaxToggle = async () => { await shellCall('win_maximize_toggle'); await syncShell(); };
 window.winClose = async () => {
-  const n = (ST.activeRuns !== undefined) ? ST.activeRuns : 0;
+  /* 读的是 liveRuns —— 以前这里读的是另一个从没被赋值过的名字，于是那个条件恒假、
+     n 恒 0：有任务在跑时关窗口从来不弹确认，直接杀掉正在跑的智能体。
+     名字对不上不会报错，只会静默失效，所以有一条测试全局禁那个拼法。 */
+  const n = (ST.liveRuns !== undefined) ? ST.liveRuns : 0;
   if(n > 0 && !confirm(t('win.closeBusy', {n}))) return;
   await shellCall('win_close');
 };
