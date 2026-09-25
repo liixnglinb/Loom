@@ -62,6 +62,7 @@ const ST = { agents:[], defaultEngine:'',
              agentTimeout:'2700', effortOptions:['auto'], permMode:'',
              reasoningEffort:'auto', stepRetry:'0', autoContinue:'0',
              skills:[], flows:[], runs:[], caps:null, version:'',
+             liveRuns:0,
              presets:null };   /* 端点预设清单，首页模型 chip 的候选；进过设置页会刷新 */
 window.ST = ST;
 
@@ -104,10 +105,12 @@ function renderNav(active){
   paintFootMe(); paintUpdate();
 }
 
-/* 品牌位 = 侧栏折叠开关。回首页不再挂这儿：主导航第一项就是它，两处入口不如一处。 */
+/* 折叠开关。它原来长在侧栏顶部（品牌位就是它，一个控件两件事），
+   无边框之后搬到标题行右侧，和窗口按钮同排 —— 品牌位退回纯标识。 */
 function paintBrand(){
-  const b = $('#sbBrand'); if(!b) return;
+  const b = $('#tbCollapse'); if(!b) return;
   const collapsed = document.documentElement.dataset.sidebar === 'collapsed';
+  b.innerHTML = ico('panel');
   b.dataset.tip = t('sb.toggle');
   b.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
   b.setAttribute('aria-label', t('sb.toggle'));
@@ -117,6 +120,91 @@ window.sbToggle = async function(){
   await window.setAppearance({sidebar: cur ? 'expanded' : 'collapsed'});
   hideTip(); paintBrand();
 };
+
+/* ---------------- 窗口外壳（无边框标题行右侧那三枚） ----------------
+   只有 pywebview 把 bridge 注进来才出现：浏览器里那三枚按不动的按钮是骗人的，
+   而关掉标签就等于关窗口，本来也不需要它们。 */
+let SHELL_OK = false, SHELL_MAX = false;
+function shellApi(fn){
+  const api = window.pywebview && window.pywebview.api;
+  return (SHELL_OK && api && typeof api[fn] === 'function') ? api[fn].bind(api) : null;
+}
+function shellCall(fn, ...args){
+  const f = shellApi(fn);
+  return f ? Promise.resolve(f(...args)) : Promise.resolve(null);
+}
+function paintShell(){
+  const box = $('#tbWin'); if(!box) return;
+  box.hidden = !SHELL_OK;
+  const set = (id, html, tip) => {
+    const e = document.getElementById(id);
+    if(e){ e.innerHTML = html; e.dataset.tip = tip; e.setAttribute('aria-label', tip); }
+  };
+  set('winMin', ico('winMin'), t('win.min'));
+  set('winMax', ico(SHELL_MAX ? 'winRestore' : 'winMax'),
+      t(SHELL_MAX ? 'win.restore' : 'win.max'));
+  set('winClose', ico('close'), t('win.close'));
+  const rz = $('#rzLayer'); if(rz) rz.hidden = !SHELL_OK;
+  document.documentElement.dataset.shell = SHELL_OK ? 'native' : '';
+}
+async function syncShell(){
+  const s = await shellCall('win_state');
+  SHELL_MAX = !!(s && s.maximized);
+  paintShell();
+}
+window.winMin = () => { shellCall('win_minimize'); };
+window.winMaxToggle = async () => { await shellCall('win_maximize_toggle'); await syncShell(); };
+window.winClose = async () => {
+  const n = (ST.activeRuns !== undefined) ? ST.activeRuns : 0;
+  if(n > 0 && !confirm(t('win.closeBusy', {n}))) return;
+  await shellCall('win_close');
+};
+window.addEventListener('pywebviewready', () => { SHELL_OK = true; syncShell(); });
+
+/* 双击标题行的空白处 = 最大化/还原。easy_drag 只管拖，不管这一下，得自己接。 */
+function shellDragBind(){
+  document.querySelectorAll('.pywebview-drag-region').forEach(el => {
+    if(el.dataset.dbldbl) return;
+    el.dataset.dbldbl = '1';
+    el.addEventListener('dblclick', (e) => {
+      if(e.target.closest('button')) return;
+      window.winMaxToggle();
+    });
+  });
+}
+
+/* 八方向拉边：pywebview 的 frameless 把可拉的边框一起去掉了，
+   所以页面上铺八个透明手柄，按下后把目标尺寸发给 shell，
+   由 Python 侧按对侧那个角钉住位置。最小尺寸和后端建窗的 min_size 同一个数。 */
+const RZ_MIN_W = 980, RZ_MIN_H = 620;
+function shellResizeBind(){
+  const layer = $('#rzLayer'); if(!layer || layer.dataset.bound) return;
+  layer.dataset.bound = '1';
+  layer.querySelectorAll('.rz').forEach(h => {
+    h.addEventListener('pointerdown', (e) => {
+      if(!SHELL_OK || SHELL_MAX) return;
+      const edge = h.dataset.edge;
+      const sx = e.screenX, sy = e.screenY, w0 = window.outerWidth, h0 = window.outerHeight;
+      h.setPointerCapture(e.pointerId);
+      const move = (ev) => {
+        const dx = ev.screenX - sx, dy = ev.screenY - sy;
+        let w = w0 + (edge.includes('e') ? dx : edge.includes('w') ? -dx : 0);
+        let hh = h0 + (edge.includes('s') ? dy : edge.includes('n') ? -dy : 0);
+        shellCall('win_resize', Math.max(RZ_MIN_W, Math.round(w)),
+                  Math.max(RZ_MIN_H, Math.round(hh)), edge);
+      };
+      const up = () => {
+        h.removeEventListener('pointermove', move);
+        h.removeEventListener('pointerup', up);
+        h.removeEventListener('pointercancel', up);
+        syncShell();
+      };
+      h.addEventListener('pointermove', move);
+      h.addEventListener('pointerup', up);
+      h.addEventListener('pointercancel', up);
+    });
+  });
+}
 
 /* ---------------- 悬停提示 ----------------
    原生 title 有一秒延迟、样式跟着系统，折叠成轨道后全靠它补标签不够用。
@@ -160,6 +248,12 @@ window.addEventListener('scroll', hideTip, true);
 window.__chrome = {title:'', icon:'flow', actions:''};
 function paintChrome(){
   const c = window.__chrome || {title:'', icon:'flow'};
+  const bar = document.querySelector('.topbar');
+  /* 没标题也没动作就把整条收掉：首页的页头是空的，留 52px 只放一个图标，
+     看着像坏了的占位。运行台/列表页都有标题，不受影响。 */
+  const empty = !(c.title||'').trim() && !(c.actions||'').trim();
+  if(bar){ bar.hidden = empty; }
+  if(empty) return;
   const tt = $('#tbTitle');
   if(tt) tt.innerHTML = `${ico(c.icon||'flow')}<span>${esc(c.title||'')}</span>`;
   const ta = $('#tbActions');
@@ -213,6 +307,7 @@ async function renderSidebarLists(){
   ST.sbFlows = pr.pipelines||[]; ST.sbRuns = runs;
   const cur = (location.hash.split('/')[2]||'');
   const live = runs.filter(u=>u.status==='running'||u.status==='revising'||u.status==='waiting').length;
+  ST.liveRuns = live;   /* 关窗口前要知道有没有活着的运行，标题行那三枚按钮用 */
 
   const proj = flows.filter(p=>!p.archived);
   /* 归档列表必须走同一个 flows 口径：否则「没跑过的流程」从没在侧栏出现过，
@@ -2203,6 +2298,7 @@ document.addEventListener('keydown', (e)=>{
 async function boot(){
   await window.loadAppearance();
   await loadAgents();
+  paintShell(); shellDragBind(); shellResizeBind();
   renderNav('pipelines');
   nav.resolve();
   upInit();

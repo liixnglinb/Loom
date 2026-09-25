@@ -189,12 +189,60 @@ def _open_in_browser(port: int):
     webbrowser.open(f"http://127.0.0.1:{int(port)}")
 
 
+# 无边框窗口：页面上能碰窗口的只有这一个对象、六个动作。它不读磁盘、不起进程、
+# 不碰任何业务数据 —— 窗口控制被放进 Web 页面时，这条面必须小到能一眼看完。
+def _anchor(edge: str, FixPoint):
+    """拖哪条边，就把对侧那个角钉住。"""
+    return {
+        "e": FixPoint.NORTH | FixPoint.WEST,
+        "s": FixPoint.NORTH | FixPoint.WEST,
+        "se": FixPoint.NORTH | FixPoint.WEST,
+        "w": FixPoint.NORTH | FixPoint.EAST,
+        "n": FixPoint.SOUTH | FixPoint.WEST,
+        "ne": FixPoint.SOUTH | FixPoint.WEST,
+        "nw": FixPoint.SOUTH | FixPoint.EAST,
+        "sw": FixPoint.NORTH | FixPoint.EAST,
+    }.get((edge or "se").strip().lower(), FixPoint.NORTH | FixPoint.WEST)
+
+
+class ShellApi:
+    def __init__(self):
+        self.window = None
+
+    def win_minimize(self):
+        self.window.minimize()
+
+    def win_maximize_toggle(self):
+        # 这里必须自己判：WinForms 的 maximize 再调一次不会还原。
+        if self.window.maximized:
+            self.window.restore()
+        else:
+            self.window.maximize()
+
+    def win_close(self):
+        self.window.destroy()
+
+    def win_resize(self, w, h, edge="se"):
+        from webview.window import FixPoint
+        self.window.resize(int(w), int(h), _anchor(edge, FixPoint))
+
+    def win_state(self):
+        return {"shell": "pywebview", "maximized": bool(self.window.maximized)}
+
+
 def _run_window(port: int) -> bool:
-    """开原生窗口；返回 False 表示这条路口前不可用，调用方退回浏览器。"""
+    """开原生窗口；返回 False 表示这条路口前不可用，调用方退回浏览器。
+
+    frameless 之后系统标题栏没了，最小化/最大化/关闭由页面顶部那一条画 ——
+    所以窗口控制走 js_api。原生壳起不来就退回浏览器，那条路上没有 bridge，
+    页面自己会把那三枚按钮藏掉（不给按不动的假按钮）。"""
     try:
         import webview
-        webview.create_window(WINDOW_TITLE, f"http://127.0.0.1:{int(port)}",
-                              width=1440, height=900, min_size=(980, 620))
+        api = ShellApi()
+        win = webview.create_window(WINDOW_TITLE, f"http://127.0.0.1:{int(port)}",
+                                    width=1440, height=900, min_size=(980, 620),
+                                    frameless=True, easy_drag=True, js_api=api)
+        api.window = win
         webview.start()
         return True
     except Exception as e:

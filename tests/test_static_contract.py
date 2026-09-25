@@ -544,10 +544,10 @@ def test_keybindings_come_from_one_table_and_are_all_documented():
     我们以前是绑定一处、说明一处，靠正则比对两边 —— 表化之后两边同源，
     这条测试改查三件真的会出事的事：全局条目没处理函数、处理函数没人绑、
     以及品牌位不再是那个可聚焦的开关。"""
-    brand = re.search(r"<(button|a) class=\"sb-brand\"[^>]*>", INDEX_HTML)
-    assert brand, "找不到品牌元素"
-    assert brand.group(1) == "button", "品牌位用 <a> 没 href，键盘 Tab 到不了"
-    assert 'onclick="sbToggle()"' in brand.group(0), "品牌位不再是侧栏开关"
+    # 无边框之后折叠开关搬到了标题行右侧（品牌位退回纯标识，不再兼任开关）
+    brand = re.search(r'<button class="[^"]*ic-btn[^"]*"[^>]*id="tbCollapse"[^>]*>', INDEX_HTML)
+    assert brand, "找不到标题行里的侧栏开关"
+    assert 'onclick="sbToggle()"' in brand.group(0), "标题行那枚开关没接上 sbToggle"
 
     rows = _keymap_rows()
     assert rows, "KEYMAP 表不见了或字段顺序变了"
@@ -628,7 +628,7 @@ def test_tooltip_host_honours_the_hidden_attribute():
 
 
 # 展开态也只剩图标的按钮：没有 data-tip-any 就只在折叠时提示，等于平时没说明
-TIP_ANY_IDS = ["sbBrand", "sbActBtn", "sbUpdate"]
+TIP_ANY_IDS = ["tbCollapse", "sbActBtn", "sbUpdate", "winMin", "winMax", "winClose"]
 
 
 def test_icon_only_buttons_tip_in_both_widths():
@@ -1198,3 +1198,56 @@ def test_sidebar_row_pitch_survives_the_keycap_border():
     assert klh + 2 <= lh, f"快捷键标签 {klh}+2px 边框 > 行 {lh}px，它会把整行撑高"
     pitch = lh + pad * 2 + gap
     assert pitch == 33, f"侧栏行距算出来是 {pitch}，量到的是 33"
+
+
+# ---------------- 无边框标题行（窗口外壳） ----------------
+
+def test_the_title_bar_paints_no_surface_of_its_own():
+    """参考图那条行不是"一条栏"，是左右两栏各自往上长出来的空白：
+    左段取侧栏色、右段取页面色，中间没有横线。给它自己一个底色就前功尽弃。"""
+    tl = CSS.split(".titlebar{")[1].split("}")[0]
+    assert "background" not in tl, "标题行铺了自己的底 = 右侧又被切出一道带子"
+    left = CSS.split(".tlb-left{")[1].split("}")[0]
+    right = CSS.split(".tlb-right{")[1].split("}")[0]
+    assert "var(--bg-shell)" in left, "左段没跟侧栏同色"
+    assert "var(--bg-page)" in right, "右段没跟页面同色"
+    assert "border-bottom" not in tl and "border-bottom" not in left and "border-bottom" not in right
+
+
+def test_window_buttons_only_exist_when_the_bridge_exists():
+    """没有 pywebview 就没有窗口可控制 —— 三枚按不动的按钮是骗人的。
+    HTML 里默认 hidden，JS 只在 bridge 到位时才把它翻开。"""
+    assert '<div class="tlb-win" id="tbWin" hidden>' in INDEX_HTML
+    assert ".tlb-win[hidden]{display:none}" in CSS, \
+        "[hidden] 的默认 display:none 会被 display:flex 顶掉，三枚按钮会漏出来"
+    fn = APP_JS.split("function paintShell()")[1].split("\n};")[0]
+    assert "box.hidden = !SHELL_OK" in fn
+    assert "pywebviewready" in APP_JS, "没有 bridge 就绪事件，SHELL_OK 永远是 false"
+
+
+def test_the_resize_handles_and_the_launcher_agree_on_the_minimum_size():
+    """无边框把系统那条可拉的边框一起没了，所以拉边是页面上八个透明手柄做的。
+    夹住尺寸的那两个数必须和建窗时的 min_size 是同一个 —— 不然能拉到比允许更小，
+    然后布局在没人看的地方碎掉。"""
+    edges = set(re.findall(r'data-edge="(\w+)"', INDEX_HTML))
+    assert edges == {"n", "s", "w", "e", "nw", "ne", "sw", "se"}, f"拉边手柄不全：{sorted(edges)}"
+    for cls in edges:
+        assert f".rz-{cls}{{" in CSS, f".rz-{cls} 没有定位规则"
+    w = int(re.search(r"\bRZ_MIN_W = (\d+)", APP_JS).group(1))
+    h = int(re.search(r"\bRZ_MIN_H = (\d+)", APP_JS).group(1))
+    src = (STATIC_DIR.parent / "loom_launch.py").read_text(encoding="utf-8")
+    m = re.search(r"min_size=\((\d+),\s*(\d+)\)", src)
+    assert m, "建窗参数里没有 min_size"
+    assert (int(m.group(1)), int(m.group(2))) == (w, h), \
+        f"页面夹的是 {w}x{h}，建窗写的是 {m.group(1)}x{m.group(2)}"
+    assert "frameless=True" in src and "js_api=api" in src, "窗口没开无边框或没接 bridge"
+
+
+def test_an_empty_page_header_collapses_instead_of_holding_the_row():
+    """首页没有页头标题也没有动作 —— 那条 52px 得整条收掉，不然只剩一个孤零零的
+    图标占着位（无边框之后它紧挨着标题行，更像坏了）。
+    .topbar 是 display:flex，所以 [hidden] 必须配一条显式的 none。"""
+    fn = APP_JS.split("function paintChrome()")[1].split("\n}\n")[0]
+    assert "bar.hidden = empty" in fn, "空页头没整条收起"
+    assert "if(empty) return" in fn, "收起后还在往里面写图标 = 空行里剩一枚孤图标"
+    assert ".topbar[hidden]{display:none}" in CSS, "display:flex 顶掉了 [hidden]"

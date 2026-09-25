@@ -252,13 +252,13 @@ PYTHONUTF8=1 "<python>" -m pytest -q          # 全绿即可，不需网络
 - 中英字典必须一一对应，且**不能有没人用的 key**（`t()` 用 `||` 取字典会把空文案印成 key 本身）。
 - CSS 变量必须有定义；圆角/字号只能取刻度里的档位；`--fs-*` 八档每档都得有人用。
 - **`rem` 只准出现在 `--fs-*` 那八档，几何一律 px**（2026-09-22 定的）。根字号是
-  `html{font-size:calc(13px * var(--text-scale))}`，也就是「文字大小」设置在动的东西 ——
+  `html{font-size:calc(14px * var(--text-scale))}`，也就是「文字大小」设置在动的东西 ——
   图标/内边距/行高一旦用 rem，选「特大」就等于把整个界面放大 26%，跟「界面缩放」
   （`body{zoom}`）职责重叠，而且这几轮量出来的像素节奏只在默认档成立。
   改前实测：图标 16.25px → 20.47px；改后两个档位都是 16.25px，字号照常 13 → 16.38px。
 - 挂到 `window` 上的处理函数必须有调用方 —— 内联 `onclick` 只能调它们，但反方向没人管：
   把弹层改成首页时 ✕ 按钮没了，`tkHideSugs` 就成了孤儿，几百条测试一条不红。
-- 模板里写了 `class="xxx"` 而 style.css 没这条规则 → 直接失败（上一任就是这么写出过一个 `.pl-row-sub`，量出来字号还是 13px）。
+- 模板里写了 `class="xxx"` 而 style.css 没这条规则 → 直接失败（上一任就是这么写出过一个 `.pl-row-sub`，量出来字号还是正文 14px）。
 - 静态 `style="font-size:…/padding:…"` 禁止（绕过刻度）；动态宽度不算。
 - 侧栏折叠轨道：清单里每个文字类都必须有 `display:none` 规则，**多藏一个也算漂移**。
 - 键位是一张表（`app.js` 的 `KEYMAP`）：绑定和设置页的「键位」说明同源。加一行就必须有 `sc.<id>` / `sc.<id>D` 两份文案，全局那几行还得有 `KEY_ACTION` 里的处理函数 —— 别再写 `if(k===...)`。
@@ -267,7 +267,7 @@ PYTHONUTF8=1 "<python>" -m pytest -q          # 全绿即可，不需网络
 - 居中的浮层收起时必须 `pointer-events:none`（`inset:0` 的遮罩只用 opacity 收 = 全屏点不动）。
 - **`ws` 和 `cwd` 是两件事，不许合并。** `ws` 是 Loom 自己的落盘处（派生工作区 `run-<id>`：转录、给 claude 的系统提示文件、步骤产物），`cwd` 只是智能体在哪个目录干活（下任务时选的文件夹）。合成一个的后果是具体的：`delete_run` 里那句 `rmtree(workspace_dir(...))` 会去删用户的工程目录，而 codex 那路会往里面写 `AGENTS.md` 覆盖人家的项目记忆 —— 所以 codex + 自定义文件夹在 `start_run` 就直接拒（按 `resolve_engine` 判，和实际跑的那套同源）。
 - 派生工作区的目录名只有一份规则：`db.ws_dir_name(run_id)`。`runner._ws_path` 和 `create_run` 写进库的那个名字都必须走它 —— 从前是两份各写各的，库里存着 `run-run-<id>` 这种磁盘上根本不存在的名字。
-- 滑块读数说「13px」：`ROOT_PX`（app.js）必须等于 CSS 里 `html{font-size:calc(13px * …)}` 的那个 13，测试钉着。
+- 滑块读数说「14px」：`ROOT_PX`（app.js）必须等于 CSS 里 `html{font-size:calc(14px * …)}` 的那个 14，测试钉着。
 - 设置页外观的档位表只有一处真相：`ui.js` 的 `TEXT_SIZES/ZOOMS/WIDTHS/THEMES/ACCENTS`，`APP` 里的键名和
   `loadAppearance` 白名单必须同名（测试钉着），否则滑块会静默停在 0 档。
 - **`node --check` 过一遍每个 `static/*.js`。** 其余契约全靠正则扫源码，看不见语法错误：

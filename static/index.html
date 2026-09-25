@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#181818">
-<link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=3c5ef459">
-<link rel="alternate icon" type="image/png" sizes="16x16" href="/static/favicon-16.png?v=3c5ef459">
-<link rel="alternate icon" type="image/png" sizes="32x32" href="/static/favicon-32.png?v=3c5ef459">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=97f88413">
+<link rel="alternate icon" type="image/png" sizes="16x16" href="/static/favicon-16.png?v=97f88413">
+<link rel="alternate icon" type="image/png" sizes="32x32" href="/static/favicon-32.png?v=97f88413">
 <title>Loom 织流</title>
 <link rel="stylesheet" href="/static/fonts/fonts.css">
-<link rel="stylesheet" href="/static/style.css?v=3c5ef459">
+<link rel="stylesheet" href="/static/style.css?v=97f88413">
 <script>
 /* 先落外观属性再渲染，避免深色模式闪白 */
 window.__FF_BOOT = fetch('/api/settings').then(r=>r.ok?r.json():{}).then(s=>{
@@ -29,18 +29,26 @@ window.__FF_BOOT = fetch('/api/settings').then(r=>r.ok?r.json():{}).then(s=>{
 </script>
 </head>
 <body>
+<div class="titlebar">
+  <div class="tlb-left pywebview-drag-region">
+    <span class="tlb-brand"><img class="sb-logo" src="/static/logo-sm.svg?v=97f88413" alt=""><span
+      class="sb-name" id="brandName">织流</span></span>
+  </div>
+  <div class="tlb-right">
+    <div class="tlb-drag pywebview-drag-region"></div>
+    <div class="tlb-acts">
+      <button class="ic-btn" id="sbActBtn" data-tip-any="1" onclick="sbActivity(event)"></button>
+      <button class="ic-btn" id="tbCollapse" data-tip-any="1" onclick="sbToggle()"></button>
+    </div>
+    <div class="tlb-win" id="tbWin" hidden>
+      <button class="tlb-wb" id="winMin" data-tip-any="1" onclick="winMin()"></button>
+      <button class="tlb-wb" id="winMax" data-tip-any="1" onclick="winMaxToggle()"></button>
+      <button class="tlb-wb tlb-wclose" id="winClose" data-tip-any="1" onclick="winClose()"></button>
+    </div>
+  </div>
+</div>
 <div id="app" class="app">
   <aside class="sidebar">
-    <div class="sb-top">
-      <button class="sb-brand" id="sbBrand" data-tip-any="1" data-tip=""
-        aria-expanded="true" onclick="sbToggle()">
-        <img class="sb-logo" src="/static/logo-sm.svg?v=3c5ef459" alt="">
-        <span class="sb-name" id="brandName">织流</span>
-      </button>
-      <div class="sb-acts">
-        <button class="ic-btn" id="sbActBtn" data-tip-any="1" onclick="sbActivity(event)"></button>
-      </div>
-    </div>
     <div class="sb-scroll">
       <nav class="sb-nav" id="mainNav"></nav>
       <div id="sbLists"></div>
@@ -69,12 +77,19 @@ window.__FF_BOOT = fetch('/api/settings').then(r=>r.ok?r.json():{}).then(s=>{
   </main>
 </div>
 
+<div class="rz-layer" id="rzLayer" hidden>
+  <i class="rz rz-n" data-edge="n"></i><i class="rz rz-s" data-edge="s"></i>
+  <i class="rz rz-w" data-edge="w"></i><i class="rz rz-e" data-edge="e"></i>
+  <i class="rz rz-nw" data-edge="nw"></i><i class="rz rz-ne" data-edge="ne"></i>
+  <i class="rz rz-sw" data-edge="sw"></i><i class="rz rz-se" data-edge="se"></i>
+</div>
+
 <div class="ff-tip" id="ffTip" hidden></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="/static/providers-catalog.js?v=3c5ef459"></script>
-<script src="/static/ui.js?v=3c5ef459"></script>
-<script src="/static/app.js?v=3c5ef459"></script>
-<script src="/static/editor.js?v=3c5ef459"></script>
-<script src="/static/run.js?v=3c5ef459"></script>
+<script src="/static/providers-catalog.js?v=97f88413"></script>
+<script src="/static/ui.js?v=97f88413"></script>
+<script src="/static/app.js?v=97f88413"></script>
+<script src="/static/editor.js?v=97f88413"></script>
+<script src="/static/run.js?v=97f88413"></script>
 </body>
 </html>

@@ -22,6 +22,8 @@ const DICT = {
     'sb.archivedEmpty': '没有归档的流程', 'sb.archivedToast': '已归档「{name}」',
     'sb.unarchivedToast': '已把「{name}」放回项目', 'sb.noRunYet': '这条流程还没有运行过，没有产物可看。',
     'sb.stepsN': '{n} 步', 'sb.toggle': '切换侧边栏',
+    'win.min': '最小化', 'win.max': '最大化', 'win.restore': '还原', 'win.close': '关闭',
+    'win.closeBusy': '还有 {n} 个任务在跑或停在检查点，现在关窗口会把它们一起带走。确定关闭？',
     'foot.theme': '外观', 'foot.lang': '语言', 'foot.engines': '智能体引擎',
     'up.grp': '更新', 'up.url': '更新清单地址', 'up.urlD': '留空即用内置地址（COS 上的 latest.json），下载页读的是同一份',
     'up.urlPh': 'https://…/latest.json', 'up.status': '更新状态', 'up.statusD': '当前版本 v{v}',
@@ -302,6 +304,8 @@ const DICT = {
     'sb.archivedEmpty': 'No archived workflows', 'sb.archivedToast': 'Archived “{name}”',
     'sb.unarchivedToast': 'Moved “{name}” back to projects', 'sb.noRunYet': 'This workflow has not run yet — nothing to show.',
     'sb.stepsN': '{n} steps', 'sb.toggle': 'Toggle sidebar',
+    'win.min': 'Minimize', 'win.max': 'Maximize', 'win.restore': 'Restore', 'win.close': 'Close',
+    'win.closeBusy': '{n} task(s) are running or paused at a checkpoint; closing the window takes them with it. Close anyway?',
     'foot.theme': 'Theme', 'foot.lang': 'Language', 'foot.engines': 'Agent engines',
     'up.grp': 'Updates', 'up.url': 'Update manifest URL', 'up.urlD': 'Leave empty to use the built-in COS latest.json — the download page reads the same file',
     'up.urlPh': 'https://…/latest.json', 'up.status': 'Update status', 'up.statusD': 'Running v{v}',
@@ -614,6 +618,11 @@ const ICONS = {
   collapse: '<path d="M19.4 9.6h-5v-5M14.4 4.6l5 5M4.6 14.4h5v5M9.6 19.4l-5-5"/>',
   share:    '<circle cx="17.6" cy="5.8" r="2.5"/><circle cx="6.4" cy="12" r="2.5"/><circle cx="17.6" cy="18.2" r="2.5"/><path d="M8.6 10.8 15.4 7M8.6 13.2l6.8 3.8"/>',
   panel:    '<rect x="3.2" y="4.6" width="17.6" height="14.8" rx="2.6"/><path d="M14.6 4.6v14.8"/>',
+  /* 无边框窗口的三枚：24 网格、1.7 描边，和其余线性图标同一套。
+     最小化是一根 12 长的横线、最大化是一个 12×12 方框、还原是错位的双框。 */
+  winMin:   '<path d="M6 12h12"/>',
+  winMax:   '<rect x="6" y="6" width="12" height="12" rx="1.6"/>',
+  winRestore:'<rect x="8.4" y="5.6" width="10" height="10" rx="1.4"/><path d="M5.6 8.4v10h10"/>',
   save:     '<path d="M5.6 4.4h9.6l4.4 4.4v10a1.8 1.8 0 0 1-1.8 1.8H5.6a1.8 1.8 0 0 1-1.8-1.8V6.2a1.8 1.8 0 0 1 1.8-1.8z"/><path d="M8 4.4v5h6.4v-5M8 20.6v-5.4h8v5.4"/>',
   import:   '<path d="M12 3.6v10.6M7.6 10 12 14.4 16.4 10M4 16.4v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
 

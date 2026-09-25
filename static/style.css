@@ -113,6 +113,8 @@
   --content-w:1180px;
   --sidebar-w:244px;
   --rail-w:56px;
+  /* 标题行高：参考图量的 —— 顶部那条带子 56 原图 px ≈ 37 CSS，取整 40。 */
+  --titlebar-h:40px;
   --topbar-h:52px;
 
   /* 明暗磁贴和强调色色板要显示「另一个主题长什么样」，不能跟着当前主题走，
@@ -392,6 +394,9 @@ html,body{height:100%}
 body{
   font-family:var(--font-ui);color:var(--ink);background:var(--bg-page);
   font-size:var(--fs-body);line-height:1.55;margin:0;letter-spacing:0;
+  /* 列向 flex：标题行在上、应用主体在下。无边框窗口下这一条是窗口的一部分，
+     不能让页面自己滚它。 */
+  height:100vh;display:flex;flex-direction:column;
   -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
   overflow:hidden;zoom:var(--ui-zoom);
 }
@@ -424,8 +429,61 @@ code{font-family:var(--font-mono);font-size:.92em}
 .ic-btn .ic{width:16.25px;height:16.25px}
 
 /* ---------- 外壳 ---------- */
-.app{display:flex;height:100vh;background:var(--bg-page)}
+.app{display:flex;flex:1;min-height:0;background:var(--bg-page)}
 
+/* ---------------- 顶部标题行 ----------------
+   无边框窗口下这一条就是标题栏。它**不铺自己的底色**：左段是侧栏色、右段是页面色，
+   等于两栏各自往上多长出一段空白，窗口按钮浮在那段空白上。参考图里从窗口顶边往下扫，
+   左右各自一路到底只有一个颜色、中间没有横线 —— "融为一体"是这么来的，
+   不是把标题栏做得像内容。
+   拖拽：pywebview 的 easy_drag 只认 .pywebview-drag-region（祖先链匹配），
+   所以可拖的是左段和右段中间那块占位，按钮全在占位的兄弟节点里，点按钮不会拖着窗口走。 */
+.titlebar{height:var(--titlebar-h);flex-shrink:0;display:flex;align-items:stretch;
+  user-select:none;-webkit-user-select:none}
+.tlb-left{width:var(--sidebar-w);flex-shrink:0;display:flex;align-items:center;
+  background:var(--bg-shell);padding:0 8px 0 12px;transition:width var(--slide)}
+.tlb-right{flex:1;min-width:0;display:flex;align-items:center;background:var(--bg-page)}
+.tlb-drag{flex:1;min-width:0;height:100%}
+.tlb-brand{display:flex;align-items:center;gap:7px;min-width:0;
+  font-size:var(--fs-lead);font-weight:600;letter-spacing:-.01em;color:var(--ink)}
+.tlb-acts{display:flex;gap:1px;flex-shrink:0;padding-right:2px}
+.tlb-win{display:flex;flex-shrink:0;align-items:stretch;height:100%}
+/* [hidden] 的默认 display:none 会被上面那条 display:flex 顶掉 —— 不写这行，
+   浏览器里（没有 js_api）会看到三枚按了没反应的窗口按钮。 */
+.tlb-win[hidden]{display:none}
+/* 窗口三键不套 .ic-btn：那枚基类带 --r-2 圆角，而贴着窗口边的按钮必须是方的。
+   与其为它开一个"圆角=0"的例外，不如不继承 —— 默认就是 0。 */
+.tlb-wb{display:inline-flex;align-items:center;justify-content:center;
+  width:40px;height:100%;border:none;background:transparent;color:var(--ink-3);cursor:pointer;
+  position:relative;transition:background var(--slide),color var(--slide)}
+.tlb-wb .ic{width:16px;height:16px}
+.tlb-wb:hover{background:var(--bg-hover);color:var(--ink)}
+/* 关闭键的悬停红走 --bad：亮 #CC3B33 / 暗 #E8695F 两档都是按各自主题调过的，
+   写死 Windows 那个 #c42b1c 会在亮色下压不住白字。 */
+.tlb-wclose:hover{background:var(--bad);color:var(--on-solid)}
+/* pywebview 的 easy_drag 只认这个类名（见 DRAG_REGION_SELECTOR）。
+   它本身要能选中文字就太难看了 —— 拖一下变成选了一屏。 */
+.pywebview-drag-region{user-select:none;-webkit-user-select:none}
+
+/* 无边框之后系统那条能拉边的边框也没了：八个方向的透明手柄，
+   按下时把新尺寸发给 shell 的 win_resize，由 Python 侧按对侧那个角钉住。 */
+.rz-layer{position:fixed;inset:0;z-index:var(--z-menu);pointer-events:none}
+.rz-layer[hidden]{display:none}
+.rz{position:absolute;pointer-events:auto}
+.rz-n{top:0;left:9px;right:9px;height:5px;cursor:n-resize}
+.rz-s{bottom:0;left:9px;right:9px;height:5px;cursor:s-resize}
+.rz-w{left:0;top:9px;bottom:9px;width:5px;cursor:w-resize}
+.rz-e{right:0;top:9px;bottom:9px;width:5px;cursor:e-resize}
+.rz-nw{left:0;top:0;width:10px;height:10px;cursor:nw-resize}
+.rz-ne{right:0;top:0;width:10px;height:10px;cursor:ne-resize}
+.rz-sw{left:0;bottom:0;width:10px;height:10px;cursor:sw-resize}
+.rz-se{right:0;bottom:0;width:10px;height:10px;cursor:se-resize}
+
+.sb-logo{width:20px;height:20px;border-radius:var(--r-1);flex-shrink:0}
+.sb-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-name span{color:var(--accent)}
+.ic-btn.on{color:var(--ink);background:var(--bg-active)}
+.ic-btn{position:relative}
 .sidebar{
   width:var(--sidebar-w);flex-shrink:0;display:flex;flex-direction:column;
   background:var(--bg-shell);
@@ -433,17 +491,6 @@ code{font-family:var(--font-mono);font-size:.92em}
      的色差。加线等于把已经分开的两层又糊上一道接缝。 */
   padding:10px 8px 8px;overflow:hidden;transition:width var(--slide)
 }
-.sb-top{display:flex;align-items:center;gap:4px;padding:2px 2px 8px 4px}
-.sb-brand{display:flex;align-items:center;gap:7px;cursor:pointer;font-family:inherit;
-  font-size:var(--fs-lead);font-weight:600;border:none;background:transparent;text-align:left;
-  letter-spacing:-.01em;color:var(--ink);padding:2px 4px;border-radius:var(--r-1);min-width:0}
-.sb-brand:hover{background:var(--bg-hover)}
-.sb-logo{width:20px;height:20px;border-radius:var(--r-1);flex-shrink:0}
-.sb-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sb-name span{color:var(--accent)}
-.sb-acts{margin-left:auto;display:flex;gap:1px;flex-shrink:0}
-.ic-btn.on{color:var(--ink);background:var(--bg-active)}
-.ic-btn{position:relative}
 .sb-badge{position:absolute;top:1px;right:1px;min-width:14px;height:14px;padding:0 3px;border-radius:var(--r-pill);
   background:var(--accent);color:var(--on-accent);font-size:var(--fs-micro);font-weight:700;line-height:14px;
   text-align:center;font-family:var(--font-mono);border:2px solid var(--bg-shell);box-sizing:content-box}
@@ -643,9 +690,9 @@ body.up-on .up-card{opacity:1;transform:translate(-50%,-50%);pointer-events:auto
 @media (min-width:861px){
   html[data-sidebar="collapsed"]{--sidebar-w:var(--rail-w)}
   html[data-sidebar="collapsed"] .sidebar{padding:10px 6px 8px}
-  html[data-sidebar="collapsed"] .sb-top{flex-direction:column;align-items:center;gap:2px;padding:2px 0 8px}
-  html[data-sidebar="collapsed"] .sb-brand{padding:5px;gap:0}
-  html[data-sidebar="collapsed"] .sb-acts{flex-direction:column;margin-left:0;gap:2px}
+  /* 标题行左段跟着 --sidebar-w 一起缩，品牌名由下面那条 .sb-name 藏掉；
+     这里只把左内边距改成居中（原来 12px 的左缩进在 56px 轨道里会把标识推歪）。 */
+  html[data-sidebar="collapsed"] .tlb-left{padding:0;justify-content:center}
   html[data-sidebar="collapsed"] .sb-name,
   html[data-sidebar="collapsed"] .sb-item span,
   html[data-sidebar="collapsed"] .sb-group>span,
@@ -685,6 +732,8 @@ body.up-on .up-card{opacity:1;transform:translate(-50%,-50%);pointer-events:auto
      和它下面的内容同属一个表面（参考图里那条行和页面是同一个 #161616）。 */
   padding:0 18px;
 }
+/* 同上：display:flex 会顶掉 [hidden] 的默认 none，不写这行空页头还是占 52px */
+.topbar[hidden]{display:none}
 .tb-title{display:flex;align-items:center;gap:8px;font-size:var(--fs-body);font-weight:600;color:var(--ink);
   min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tb-title .ic{color:var(--ink-3);width:17.875px;height:17.875px;stroke-width:1.65}
