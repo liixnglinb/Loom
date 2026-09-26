@@ -111,10 +111,15 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
 要修得连 `.sb-kbd` / `.sb-group` 那一族"暗字压浅底"一起看，属于一次独立的亮色对比度专项。
 
 **这一轮留下两条没验的，别当成已验**：① 打包态 `apply_update()` 仍然没真跑过（下面第 2 节那条老账，
-1.2.x 不改变这一点）。**1.2.4 又往这条没验过的路上加了两件事**：批处理装完会 `del` 那个 setup.exe，
-而开机还会扫一遍 `data/updates` —— 两条都有测试，但都只在临时目录里验过，真装机路径（安装器
-`/SILENT` 返回后那个文件到底还被不被占用）没人量过。真出问题时最坏的结果是包留在那儿没删掉，
-不会伤人；最好的一次验证机会是下一次装 1.2.4 的时候顺手看一眼 `data\updates`。
+1.2.x 不改变这一点）。**1.2.4 又往这条没验过的路上加了两件事**：批处理装成功后 `del` 那个 setup.exe，
+另外开机还扫一遍 `data/updates`。发完之后专门拿**真 PE 桩**（Git 自带的 `true.exe`/`false.exe` 改名成
+`Loom-9.9.9-setup.exe`）在临时目录里把那段 BAT 真跑了四遍，量出来两件事：
+删/留两支控制流**是对的**；但 **`timeout /t 3` 在标准输入被重定向时（我们是 `DETACHED_PROCESS` 起的）
+根本不睡** —— 整段脚本 0.69 秒就往下走，而我们自己 0.8 秒才 `os._exit`，那三秒"等主进程退场"是 0 秒，
+安装器一上来就在换一个还没退出的程序（能装上靠的是 `/CLOSEAPPLICATIONS` 兜底，不是设计）。
+已改成 `ping -n 4 127.0.0.1` + 安装器直接当子进程调用，实测 3.69 秒，`tests/test_update_cleanup.py`
+里三条真跑的测试钉着（含"至少睡 2 秒"这条）。**真装机路径（安装器返回后那个文件还被不被占用）
+仍然没人量过** —— 最坏结果只是包留在那儿没删掉，下次开机那一扫会收走。
 ② 安装包仍无代码签名，SmartScreen 照拦。
 （原来第三条"无边框窗控拿不到桥"**已经验掉了**：`webview.start(func,args)` 那条路确实不返回，
 但启动前设 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=92xx`，再从
@@ -265,6 +270,14 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
   Python 元组赋值是**从左到右顺序消费**的 —— `b0, b1 = self._rd(2)[0], self._rd(1)[0]`
   读掉的是 3 个字节，`b1` 其实是帧的第三字节，解出来的消息全是碎的。CDP 还会把一条消息拆成多帧
   （FIN=0），要收齐再 `json.loads`。
+- **测安装批处理，桩必须是真 PE。** 拿一个 `.cmd` 当"假安装器"测出来的结论是假的，而且假得很像真的：
+  批处理里直接写 `foo.cmd`（不带 `call`）是**交出控制权、永不返回**，而 `start "" /wait foo.cmd`
+  也不等 —— 两种写法都让我得出"那两行 del 根本没执行"，实际换成真 exe 桩后删/留两支全对。
+  本机随手可得的真 PE 桩：`D:\Git\Git\usr\bin\true.exe`（退 0）/ `false.exe`（退 1），改名成
+  `Loom-x.y.z-setup.exe` 用即可，它们会忽略 `/SILENT` 那串参数。
+- **`timeout /t N` 在标准输入被重定向时不睡**（`DETACHED_PROCESS` / `stdin=DEVNULL` 都算），
+  它直接报错返回，脚本照往下走 —— 想要真等待用 `ping -n N+1 127.0.0.1 >nul`。
+  这个坑的隐蔽之处在于：不睡不报错，只会让"等三秒"变成"等 0.02 秒"，而那段脚本等的是自己进程的退场。
 - **系统途径的窗口状态要用系统途径测**：`ctypes.windll.user32.ShowWindowW(hwnd, 3)`（SW_MAXIMIZE）
   才等价于 Win+↑ / 贴边快照；在页面里调我们自己的 `winMaxToggle()` 走的是"按钮自己同步"那条路，
   永远测不到 `resize`/`focus` 监听。真窗口里的取数口：`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=92xx`

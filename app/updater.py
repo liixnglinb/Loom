@@ -270,9 +270,17 @@ def start_download() -> dict:
 
 BAT_TMPL = """@echo off
 rem Loom 更新脚本：等主进程退出 -> 静默安装 -> 装完把安装包和自己也删掉
-timeout /t 3 /nobreak >nul
-start "" /wait "{setup}" /SILENT /NORESTART /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS
-if %errorlevel% neq 0 goto :keep
+rem 等待用 ping 不用 timeout：timeout 在标准输入被重定向时（我们是用 DETACHED_PROCESS
+rem 起的，就是这种）不睡、直接报错返回。实测整段脚本 0.69 秒就往下走，而主进程是
+rem 0.8 秒后才 os._exit —— "等主进程退场"那三秒其实是 0 秒，安装器一上来就在换
+rem 一个还没退出的程序（能装上，靠的是 /CLOSEAPPLICATIONS 兜底，不是设计）。
+ping -n 4 127.0.0.1 >nul 2>&1
+rem 安装器直接当子进程调用，不用 start /wait：cmd 等子进程结束、退出码照实传回来。
+rem 换这个不是因为它坏了（真 PE 桩下两种写法删/留都对），是少一个会骗人的环节：
+rem start /wait 对批处理桩根本不返回，%errorlevel% 留空，`if %errorlevel% neq 0`
+rem 当场语法错 —— 哪天有人把这里指向一个 .cmd，它就是静默的错。
+"{setup}" /SILENT /NORESTART /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS
+if errorlevel 1 goto :keep
 rem 只有装成功才删。这两行以前没有：以前只删脚本自己，那个 60MB 的 setup.exe
 rem 一直躺在 data\\updates 里，每升一级多一个，而没有任何界面看得见它。
 del "{setup}" >nul 2>&1
