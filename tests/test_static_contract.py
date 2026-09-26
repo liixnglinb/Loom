@@ -431,6 +431,33 @@ def test_update_offers_a_centered_dialog_not_just_a_capsule():
         assert f"t('{key}'" in APP_JS, f"三态标题缺 {key}"
 
 
+def test_update_dialog_renders_the_release_notes():
+    """清单里的 notes 从 make_release 一路传到 STATE，却一直没被渲染 ——
+    发版时写的那段说明，用户在软件里一个字都看不到，浮层只有版本号和一个按钮。"""
+    seg = APP_JS.split('function upCardHtml(')[1].split('\n}\n')[0]
+    assert 'class="up-notes"' in seg, "发版说明没进浮层"
+    assert "${esc(u.notes)}" in seg, "notes 必须转义：它是清单里来的外部文本，全站没有 CSP"
+    assert "u.phase !== 'error'" in seg, "出错那一轮要看的是错误原因，别叠一段说明"
+    assert ".up-notes{" in CSS, "样式没落地，那段说明会挤成一行"
+    body = CSS.split(".up-notes{")[1].split("}")[0]
+    assert "max-height" in body and "overflow-y:auto" in body, \
+        "清单里 notes 最长 2000 字，不封顶会把浮层顶成半屏高"
+
+
+def test_the_selector_registry_does_not_grow_forever():
+    """没传 id 的 ffSelect 每次渲染都领一个新号（ffs1、ffs2…），条目登记进 FF_SEL
+    就没人删。编辑器每步两三枚、每重画一遍换一批号，长会话能攒上千条，
+    每条还攥着整份 opts 数组。"""
+    body = APP_JS.split("function ffPrune()")[1].split("\n}")[0]
+    assert "querySelectorAll('.ff-sel')" in body, "判据必须是「按钮还在不在 DOM 里」"
+    assert "delete FF_SEL[k]" in body, "没真删条目"
+    opener = APP_JS.split("window.ffOpen = function")[1].split("\n};")[0]
+    assert "ffPrune()" in opener, "修剪要挂在 ffOpen 上：那一刻点击方已在 DOM 里"
+    maker = APP_JS.split("function ffSelect(")[1].split("\n}\n")[0]
+    assert "ffPrune" not in maker, \
+        "不能在 ffSelect 里修剪：那时它生成的字符串还没进 DOM，会把同一轮刚登记的活条目一起删掉"
+
+
 def test_update_dialog_shows_real_progress_and_no_fake_buttons():
     """进度条刻度来自 got/size，不是装饰；后端只有 check/download/apply/url 四条端点，
     所以参考实现里的「取消下载」「跳过此版本」「自动下载并安装」我们一概不放。"""

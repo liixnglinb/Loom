@@ -588,11 +588,15 @@ function upCardHtml(){
             直接把用户正开着的那层关掉，等于"点了重新检查，窗口自己消失了"。 */
     btns = `<button class="btn btn-primary" onclick="upCheckNow()">${esc(t('up.recheck'))}</button>${later}`;
   const title = known ? upTitle(u) : t('up.tUpToDate', {v: u.local || ''});
+  /* 清单里的 notes 一直落到 STATE，却从没被渲染过 —— 发版时写的那段说明，
+     用户在软件里一个字都看不到。出错的这一轮不显示：那时候要看的是错误原因。 */
+  const notes = (u.phase !== 'error' && String(u.notes || '').trim())
+    ? `<div class="up-notes">${esc(u.notes)}</div>` : '';
   return `<div class="up-head"><b id="upHeadTtl">${esc(title)}</b>
       <button class="up-x ic-btn" onclick="upClose()" data-tip-any="1"
         data-tip="${esc(t('up.close'))}" aria-label="${esc(t('up.close'))}">${ico('close')}</button></div>
     <div class="up-ver">${esc(t('up.nowOn', {v: u.local || ''}))}</div>
-    ${bar}${err}
+    ${bar}${err}${notes}
     <div class="up-btns">${btns}</div>`;
 }
 
@@ -2192,8 +2196,21 @@ window.ffSetValue = function(id, v, label){
   if(sv && label != null) sv.textContent = label;
 };
 
+/* FF_SEL 里没传 id 的选择器每次渲染都领一个新号（ffs1、ffs2…），旧条目以前没人删。
+   编辑器每步两三枚、每重画一遍就换一批号，一个长会话能攒上千条，每条还攥着整份
+   opts 数组（模型清单那种能到几百项）。判据只有一条：按钮不在 DOM 里了，
+   那个 key 就再也点不出来，留着只是占内存。
+   必须挂在 ffOpen 上而不是 ffSelect 里 —— 后者生成的是字符串，那一刻它的按钮
+   还没进 DOM，边生成边删会把同一轮里刚登记的活条目一起删掉。 */
+function ffPrune(){
+  const live = new Set();
+  document.querySelectorAll('.ff-sel').forEach(b => live.add(b.dataset.k));
+  for(const k in FF_SEL){ if(!live.has(k)) delete FF_SEL[k]; }
+}
+
 window.ffOpen = function(e, key){
   e.stopPropagation();
+  ffPrune();
   const cfg = FF_SEL[key]; if(!cfg) return;
   const m = ffMenuEl();
   if(!m.hidden && m.dataset.k===key){ ffClose(); return; }

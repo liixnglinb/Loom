@@ -331,6 +331,42 @@ def test_codex_refuses_a_run_with_a_custom_workdir(client, dbsession,
     dbsession.delete_pipeline("cx-flow")   # 库是共享的，别把这条流程漏给"出厂为空"那条断言
 
 
+def test_a_run_with_a_workdir_pins_the_engine_it_started_with(
+        client, stub_cli, dbsession, workspaces, tmp_path):
+    """上一条测的是"起跑那一刻拒得对"，这条测的是**之后**：步级 engine 留空时
+    resolve_engine 每一步都重新读设置里的 default_engine，于是起跑通过之后跑到一半
+    去设置里把默认换成 codex，后半条 run 就带着用户的工作文件夹跑起来了 ——
+    正是起跑前拒掉的那个组合。选了工作文件夹就得把引擎钉进这一步的快照。"""
+    # codex 也指到那个桩上：万一钉不住，这里跑的也是桩，
+    # 不会去碰本机真装的 codex（测试不该花用户的额度）。
+    # settings 有会话级的还原（conftest 的 _restore_settings），这里不用自己擦。
+    db.set_setting("codex_cli", stub_cli)
+    agents.clear_bin_cache()
+    d = tmp_path / "工程"
+    d.mkdir()
+    dbsession.create_pipeline("pin-flow", label="钉住", steps=[
+        {"key": "a", "label": "A", "out": "", "engine": "", "skill": "",
+         "checkpoint": True},
+        {"key": "b", "label": "B", "out": "", "engine": "", "skill": ""}])
+    try:
+        r = _start(client, "pin-flow", {"brief": "x", "workdir": str(d)})
+        assert r.status_code == 200, r.text
+        run = r.json()["run"]
+        assert [s["engine"] for s in run["steps"]] == ["claude", "claude"], \
+            "选了工作文件夹却没把解析出的引擎钉进步骤快照"
+        _wait(run["id"])                      # 第一步跑完，停在检查点
+        db.set_setting("default_engine", "codex")
+        agents.clear_bin_cache()
+        runner.resume_run(run["id"])
+        done = _wait(run["id"])
+        assert done["status"] == "done", done["error"]
+        assert done["steps"][1]["engine_used"] == "claude", \
+            "中途换默认引擎，后半条 run 被拐去 codex 了"
+    finally:
+        agents.clear_bin_cache()
+        dbsession.delete_pipeline("pin-flow")
+
+
 def test_deleting_a_run_never_touches_the_chosen_folder(client, stub_cli, flow,
                                                         workspaces, tmp_path):
     """delete_run 里那句 rmtree 吃的是派生工作区。这条钉死它别顺手扩到用户目录：

@@ -66,3 +66,56 @@ def test_get_skill_is_readable_by_anyone_with_the_id(client, demo):
     d = client.get(f"/api/skills/{demo}").json()
     assert d["editable"] is True
     assert d["content"] == BODY + "\n"
+
+
+def test_skill_content_is_capped_on_both_write_paths(client):
+    """SKILL.md 是**整篇**塞进每一步的提示词的（runner.compose_skill_prompt）。
+    没上限的话一张贴进来的大表就能把某一步的上下文全吃掉 —— 智能体要么直接
+    报错，要么把这一步的预算全花在复读上。超限要在写盘之前拒掉。"""
+    from app.main import _SKILL_WRITE_MAX_BYTES
+    big = "字" * (_SKILL_WRITE_MAX_BYTES)      # 一字 3 字节，稳超上限
+
+    r = client.post("/api/skills", json={"name": "cap-new", "content": big})
+    assert r.status_code == 413, r.status_code
+    assert "KB" in r.json()["detail"]
+    assert not (paths.USER_SKILLS_DIR / "cap-new").exists(), "拒了却还是把目录建出来了"
+
+    assert client.post("/api/skills", json={"name": "cap-ok", "content": "小"}).status_code == 200
+    r2 = client.put("/api/skills/cap-ok", json={"name": "cap-ok", "content": big})
+    assert r2.status_code == 413, r2.status_code
+    kept = (paths.USER_SKILLS_DIR / "cap-ok" / "SKILL.md").read_text(encoding="utf-8")
+    assert kept.strip() == "小", f"拒掉的写入把原文覆盖掉了：{kept[:40]}"
+    client.delete("/api/skills/cap-ok")
+
+
+def test_imported_package_respects_the_same_cap(client):
+    """导入那条路吃的是别人写的包，更得判 —— 超限的包整个不收。"""
+    import io
+    import zipfile
+
+    from app.main import _SKILL_WRITE_MAX_BYTES
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("big-skill/SKILL.md",
+                    "---\nname: big-skill\n---\n\n" + "字" * _SKILL_WRITE_MAX_BYTES)
+    r = client.post("/api/skills/import",
+                    files={"file": ("big.zip", buf.getvalue(), "application/zip")})
+    assert r.status_code == 413, r.status_code
+    assert not (paths.USER_SKILLS_DIR / "big-skill").exists()
+
+
+def test_import_reads_in_chunks_not_all_at_once():
+    """那个 200MB 上限以前是 raw = await file.read() 之后才判 len —— 也就是
+    **先把整个文件读进内存再决定要不要拒绝**。一台 16GB 的机器上，一个 2GB 的
+    包会先把它顶到 swapping 才被拒。分块累加才是真有上限。"""
+    import inspect
+    import re
+
+    from app import main
+    # 只扫真代码：那句"以前是 raw = await file.read()"的注释会把这条断言撞红，
+    # 而它描述的恰恰是被修掉的旧写法。
+    src = "\n".join(l for l in inspect.getsource(main.import_skill).splitlines()
+                    if not l.strip().startswith("#"))
+    assert not re.search(r"await file\.read\(\s*\)", src), \
+        "又变回一次性读完了：无参 read() 会把整个上传先吃进内存"
+    assert re.search(r"await file\.read\(\s*1 << 20\s*\)", src), "没按块读"

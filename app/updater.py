@@ -59,14 +59,82 @@ def updates_dir() -> Path:
     return d
 
 
-def _ver(s: str):
-    """把 v1.2.3 / 1.2.3-rc1 拆成可比较的整数元组；非数字段丢掉。"""
-    nums = re.findall(r"\d+", (s or "").split("+")[0])
-    return tuple(int(n) for n in nums[:4]) or (0,)
+def sweep_leftovers() -> int:
+    """开机清掉 data/updates 里上一次装完留下的安装包和批处理，返回删掉的个数。
+
+    以前只删自己（update.bat 装成功后 del "%~f0"），那个 60MB 的 setup.exe 永远留在
+    那儿；每升一级多一个，而这个目录没有任何界面入口，没人知道它在那儿。
+    只在启动时扫：那时候不可能有下载在飞（STATE 从 idle 起），也不会碰到刚下好
+    还没点的包 —— 那个是本轮要用的，留着。
+    """
+    root = updates_dir()
+    kept = snapshot().get("path") or ""
+    keep = str(Path(kept).resolve()) if kept else ""
+    n = 0
+    for f in root.iterdir():
+        try:
+            # iterdir 只看这一层，is_file 挡掉子目录：不递归、不跟别人放的目录较劲
+            if not f.is_file():
+                continue
+            if keep and str(f.resolve()) == keep:
+                continue        # 已经下好、等着被装的那一个不动它
+            if f.suffix.lower() not in (".exe", ".bat", ".tmp"):
+                continue
+            f.unlink()
+            n += 1
+        except OSError:
+            continue        # 被占用（杀软还在扫它）就下一轮再说，别为了清理卡住启动
+    return n
+
+
+_VER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+.*)?$")
+
+
+def _loose(s: str):
+    """认不出的形状退回"把数字全拽出来比"：老清单、手改过的地址、带前缀的标签，
+    都不该让一次检查更新整个报错。"""
+    nums = tuple(int(n) for n in re.findall(r"\d+", (s or "").split("+")[0])[:4])
+    return nums or (0,)
+
+
+def _pre_key(pre: str):
+    """预发布段按 semver 的规则比：点号切开，纯数字段按数值、其余按字符串，
+    数字段排在字母段前面。"""
+    return [(0, int(p), "") if p.isdigit() else (1, 0, p) for p in pre.split(".")]
+
+
+def cmp_ver(a: str, b: str) -> int:
+    """a 比 b：>0 表示 a 更新。两边都先过 norm_tag（v1.2.3 → 1.2.3）。
+
+    以前直接把整串里的数字拽出来比，于是 1.3.0-rc1 变成 (1,3,0,1) —— 比正式版
+    1.3.0 的 (1,3,0) **大**：正式版发出去之后，已在 1.3.0 的人会被推荐回那个 rc，
+    点下去就是一次降级安装。semver 的规则正好相反：同号时带预发布段的那一边更旧。
+    """
+    na, nb = norm_tag(a), norm_tag(b)
+    ma, mb = _VER_RE.match(na), _VER_RE.match(nb)
+    if not ma or not mb:
+        ta, tb = _loose(na), _loose(nb)
+        return (ta > tb) - (ta < tb)
+    core_a = tuple(int(x) for x in ma.groups()[:3])
+    core_b = tuple(int(x) for x in mb.groups()[:3])
+    if core_a != core_b:
+        return 1 if core_a > core_b else -1
+    pa, pb = ma.group(4), mb.group(4)
+    if pa and not pb:
+        return -1          # 1.3.0-rc1 < 1.3.0
+    if pb and not pa:
+        return 1
+    if not pa and not pb:
+        return 0
+    ka, kb = _pre_key(pa), _pre_key(pb)
+    if ka != kb:
+        return 1 if ka > kb else -1
+    # 前缀相同、一边更长的那条更新（semver 的 1.0.0-alpha < 1.0.0-alpha.1）
+    return (len(ka) > len(kb)) - (len(ka) < len(kb))
 
 
 def is_newer(latest: str, local: str = APP_VERSION) -> bool:
-    return _ver(latest) > _ver(local)
+    return cmp_ver(latest, local) > 0
 
 
 def snapshot() -> dict:
@@ -201,10 +269,15 @@ def start_download() -> dict:
 
 
 BAT_TMPL = """@echo off
-rem Loom 更新脚本：等主进程退出 -> 静默安装 -> 装完自删
+rem Loom 更新脚本：等主进程退出 -> 静默安装 -> 装完把安装包和自己也删掉
 timeout /t 3 /nobreak >nul
 start "" /wait "{setup}" /SILENT /NORESTART /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS
-if %errorlevel% equ 0 del "%~f0"
+if %errorlevel% neq 0 goto :keep
+rem 只有装成功才删。这两行以前没有：以前只删脚本自己，那个 60MB 的 setup.exe
+rem 一直躺在 data\\updates 里，每升一级多一个，而没有任何界面看得见它。
+del "{setup}" >nul 2>&1
+del "%~f0" >nul 2>&1
+:keep
 """
 
 

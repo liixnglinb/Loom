@@ -37,10 +37,6 @@ _RUN_STATUS = ("pending", "running", "done", "failed", "cancelled", "revising")
 _NO_MODEL_HINT = "（沿用 CLI 自身配置）"
 
 
-def _norm_run_id(rid: str) -> str | None:
-    return rid if (rid and re.fullmatch(r"run-[a-z0-9]{6,40}", rid)) else None
-
-
 def new_run_id() -> str:
     return "run-" + uuid.uuid4().hex[:12]
 
@@ -279,71 +275,100 @@ def _streaks(daily: dict) -> tuple:
     return now, best
 
 
+# 一次 SQL pass 把每个 (天, 引擎, 模型) 分组的量聚起来。为什么在 SQL 里解 JSON：
+# 以前这里读的是 list_runs(None, 500) 再在 Python 里逐行 json.loads，500 是怕卡而
+# 定的窗口 —— 代价是第 501 条以后的运行**不进任何统计**，一年热力图只画得出最近
+# 十几天的格子，"最长一步"和"峰值那天"也跟着窗口一起偏低。
+# json_each 让 SQLite 自己去解：4000 条 ×7 步实测 188ms（窗口那版 16ms），
+# 一次点设置页的开销，换回的是全表的真数。
+_STATS_SQL = """
+WITH valid AS (SELECT created_at, steps FROM runs
+               WHERE json_valid(steps) AND json_type(steps) = 'array')
+SELECT
+  COALESCE(NULLIF(json_extract(j.value,'$.meta.day'),''),
+           substr(v.created_at,1,10))                       AS day,
+  COALESCE(json_extract(j.value,'$.meta.engine'),
+           json_extract(j.value,'$.engine_used'),'')        AS eng,
+  CASE WHEN COALESCE(json_extract(j.value,'$.meta.model'),'') <> ''
+       THEN json_extract(j.value,'$.meta.model')
+       WHEN COALESCE(json_extract(j.value,'$.model_used'),'') = ? THEN ''
+       ELSE COALESCE(json_extract(j.value,'$.model_used'),'') END AS model,
+  COUNT(*)                                                  AS steps,
+  SUM(CASE WHEN json_extract(j.value,'$.status')='done' THEN 1 ELSE 0 END) AS steps_done,
+  SUM(COALESCE(json_extract(j.value,'$.meta.cost_usd'),0))  AS cost,
+  SUM(COALESCE(json_extract(j.value,'$.meta.duration_ms'),0)) AS dur,
+  MAX(COALESCE(json_extract(j.value,'$.meta.duration_ms'),0)) AS peak_ms,
+  SUM(COALESCE(json_extract(j.value,'$.meta.tools'),0))     AS tools,
+  SUM(COALESCE(json_extract(j.value,'$.meta.turns'),0))     AS turns,
+  SUM(COALESCE(json_extract(j.value,'$.meta.tokens.in'),0))         AS tok_in,
+  SUM(COALESCE(json_extract(j.value,'$.meta.tokens.out'),0))        AS tok_out,
+  SUM(COALESCE(json_extract(j.value,'$.meta.tokens.cache_read'),0)) AS tok_cr,
+  SUM(COALESCE(json_extract(j.value,'$.meta.tokens.cache_write'),0)) AS tok_cw,
+  SUM(COALESCE(json_extract(j.value,'$.meta.tokens.reason'),0))     AS tok_rs,
+  SUM(CASE WHEN json_type(j.value,'$.meta.tokens.total') IN ('integer','real')
+      THEN json_extract(j.value,'$.meta.tokens.total')
+      ELSE COALESCE(json_extract(j.value,'$.meta.tokens.in'),0)
+         + COALESCE(json_extract(j.value,'$.meta.tokens.out'),0)
+         + COALESCE(json_extract(j.value,'$.meta.tokens.cache_read'),0)
+         + COALESCE(json_extract(j.value,'$.meta.tokens.cache_write'),0) END) AS tok_total
+FROM valid v, json_each(v.steps) j
+GROUP BY day, eng, model
+"""
+
+
 def usage_stats() -> dict:
     """把 runs 表里的 step.meta 汇总成看得懂的用量。没有的字段一律按 0 计。
 
-    逐条累计的那几项（token / 时长 / 步骤 / 成本）只扫最近 500 条 —— 一次
-    list_runs 要把每行的 steps JSON 全解出来，跑几千条再点设置页会卡住。
-    但"总共跑过几次"和状态分布不看窗口：那是 COUNT(*) 一下的事，
-    跟着窗口走就会在 500 这条线上永远卡住。"""
-    runs = db.list_runs(None, 500)
+    全表，不再有任何扫描窗口：逐条累计、极值、热力图、连续天数全部走同一条
+    _STATS_SQL。by_status 与总次数那两条本来就走 COUNT(*)，维持不变。
+    """
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(_STATS_SQL, (_NO_MODEL_HINT,)).fetchall()
+    finally:
+        conn.close()
     by_status = db.run_status_counts()
     cost = dur = tools = turns = steps_done = steps_total = 0
-    for r in runs:
-        for s in (r.get("steps") or []):
-            steps_total += 1
-            if s.get("status") == "done":
-                steps_done += 1
-            m = s.get("meta") or {}
-            cost += float(m.get("cost_usd") or 0)
-            dur += int(m.get("duration_ms") or 0)
-            tools += int(m.get("tools") or 0)
-            turns += int(m.get("turns") or 0)
     tok = {"in": 0, "out": 0, "cache_read": 0, "cache_write": 0, "reason": 0, "total": 0}
     daily: dict = {}
     by_model: dict = {}
     peak_dur = 0
-    for r in runs:
-        for st in (r.get("steps") or []):
-            m = st.get("meta") or {}
-            t = m.get("tokens") or {}
-            day = m.get("day") or (r.get("created_at") or "")[:10]
-            for k in ("in", "out", "cache_read", "cache_write", "reason"):
-                v = t.get(k)
-                if isinstance(v, int):
-                    tok[k] += v
-            n = t.get("total")
-            if not isinstance(n, int):
-                # 老数据里没有 total，按四项不相交的明细补一份（reason 不在此列）
-                n = sum(v for k in ("in", "out", "cache_read", "cache_write")
-                        if isinstance((v := t.get(k)), int))
-            tok["total"] += n
-            s_turns = int(m.get("turns") or 0)
-            s_tools = int(m.get("tools") or 0)
-            if day:
-                d = daily.setdefault(day, {"tokens": 0, "steps": 0, "turns": 0, "tools": 0})
-                d["tokens"] += n
-                d["steps"] += 1
-                d["turns"] += s_turns
-                d["tools"] += s_tools
-            # 模型用量按「引擎 + 模型」分桶。老步骤的 meta 里没有 model，退回 step.model_used，
-            # 但那句给人看的标签要还原成空串 —— 接口里不该出现中文标签当键。
-            model = str(m.get("model") or "")
-            if not model:
-                used = str(st.get("model_used") or "")
-                model = "" if used == _NO_MODEL_HINT else used
-            eng = str(m.get("engine") or st.get("engine_used") or "")
-            b = by_model.setdefault((eng, model), {"engine": eng, "model": model,
-                                                   "tokens": 0, "turns": 0, "steps": 0,
-                                                   "cost_usd": 0.0, "daily": {}})
-            b["tokens"] += n
-            b["turns"] += s_turns
-            b["steps"] += 1
-            b["cost_usd"] += float(m.get("cost_usd") or 0)
-            if day:
-                # 趋势图按模型画多条线，所以每个桶自带逐日序列
-                b["daily"][day] = b["daily"].get(day, 0) + n
-            peak_dur = max(peak_dur, int(m.get("duration_ms") or 0))
+    for r in rows:
+        day = r["day"] or ""
+        n = int(r["tok_total"] or 0)
+        s_turns = int(r["turns"] or 0)
+        s_tools = int(r["tools"] or 0)
+        s_steps = int(r["steps"] or 0)
+        steps_total += s_steps
+        steps_done += int(r["steps_done"] or 0)
+        cost += float(r["cost"] or 0)
+        dur += int(r["dur"] or 0)
+        tools += s_tools
+        turns += s_turns
+        peak_dur = max(peak_dur, int(r["peak_ms"] or 0))
+        tok["in"] += int(r["tok_in"] or 0)
+        tok["out"] += int(r["tok_out"] or 0)
+        tok["cache_read"] += int(r["tok_cr"] or 0)
+        tok["cache_write"] += int(r["tok_cw"] or 0)
+        tok["reason"] += int(r["tok_rs"] or 0)
+        tok["total"] += n
+        if day:
+            d = daily.setdefault(day, {"tokens": 0, "steps": 0, "turns": 0, "tools": 0})
+            d["tokens"] += n
+            d["steps"] += s_steps
+            d["turns"] += s_turns
+            d["tools"] += s_tools
+        b = by_model.setdefault((r["eng"] or "", r["model"] or ""),
+                                {"engine": r["eng"] or "", "model": r["model"] or "",
+                                 "tokens": 0, "turns": 0, "steps": 0,
+                                 "cost_usd": 0.0, "daily": {}})
+        b["tokens"] += n
+        b["turns"] += s_turns
+        b["steps"] += s_steps
+        b["cost_usd"] += float(r["cost"] or 0)
+        if day:
+            # 趋势图按模型画多条线，所以每个桶自带逐日序列
+            b["daily"][day] = b["daily"].get(day, 0) + n
     streak_now, streak_best = _streaks(daily)
     ws_bytes, ws_dirs = workspace_bytes()
     return {
@@ -571,6 +596,9 @@ def resolve_agent_config(step: dict) -> dict:
                         f"{engine} 大概率加载不到「{step.get('skill') or ''}」。")
     want = (step.get("model") or "").strip()
     preset = db.get_preset_by_name(want) if want else None
+    # 这里不能加"预设被删了"的告警：want 认不到预设时，它同样可能是一个**裸模型名**
+    # （那套阶梯里明写着"挂到默认预设上"），一发就全是假警报。真要区分得给步骤
+    # 快照加一个来源标记，那是改 schema 的事，记进 HANDOFF 的已知取舍。
     raw_model_id = ""
     if preset:
         conf["preset"] = preset.get("name") or ""
@@ -937,6 +965,13 @@ def start_run(pipeline_name: str, label: str = "", brief: str = "", engine: str 
                     "指令的，换到你的文件夹后就读不到 Loom 写的那份了（而把同名文件写进"
                     "你的目录，等于覆盖你自己的 AGENTS.md）。要么把引擎换成 Claude Code，"
                     "要么留空用默认工作区。")
+        # 上面那道拒绝只挡得住"起跑这一刻"。步级 engine 留空的那几步，
+        # resolve_engine 是**每一步当时**读设置里的 default_engine —— 于是跑到一半
+        # 去设置里把默认换成 codex，后面几步就带着你的文件夹跑起来了，正是刚才
+        # 拒掉的那个组合。选了工作文件夹就把解析结果钉进步骤快照：一条 run 用哪个
+        # 引擎，是下任务那一刻定的，不是后面任何一次设置改变得动的。
+        for s in steps:
+            s["engine"] = resolve_engine(s)
     run = db.create_run(run_id, pipeline_name,
                         label or p.get("label") or pipeline_name,
                         steps, brief=brief, workdir=wd)

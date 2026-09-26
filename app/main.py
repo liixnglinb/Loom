@@ -291,6 +291,24 @@ class SkillIn(BaseModel):
     desc: str = ""   # 仅用于新建时若无正文标题则补一行简介头
 
 
+# 技能正文的大小上限，和记忆文件同一档（cli_inventory.MEMORY_MAX_BYTES）。
+# 为什么必须有个上限：这份正文是**整篇**塞进每一步的提示词的
+# （runner.compose_skill_prompt），一张 5MB 的表就是一步 5MB 的上下文 ——
+# 智能体要么直接报错，要么把这一步的预算全花在复读上。
+_SKILL_WRITE_MAX_BYTES = 512 * 1024
+
+
+def _skill_too_big(content: str):
+    """超上限返回 413，没超返回 None。"""
+    n = len((content or "").encode("utf-8"))
+    if n > _SKILL_WRITE_MAX_BYTES:
+        return JSONResponse(
+            {"detail": f"技能正文超过 {_SKILL_WRITE_MAX_BYTES // 1024} KB"
+                       f"（这份 {n // 1024} KB），没有写入 —— "
+                       f"正文会整篇进每一步的提示词"}, 413)
+    return None
+
+
 @app.post("/api/skills")
 def create_skill(s: SkillIn):
     """新建自建 skill：写入 modex-data/skills/<name>/SKILL.md（可写目录）。"""
@@ -302,6 +320,9 @@ def create_skill(s: SkillIn):
     content = (s.content or "").strip()
     if not content:
         content = (s.desc or "").strip() or (s.name + " 技能说明")
+    over = _skill_too_big(content)
+    if over:
+        return over
     d.mkdir(parents=True, exist_ok=True)
     (d / "SKILL.md").write_text(content + "\n", encoding="utf-8")
     return {"ok": True, "name": s.name}
@@ -313,6 +334,9 @@ def update_skill(name: str, s: SkillIn):
     d = _skill_dir_safe(name)
     if not d or not (d / "SKILL.md").exists():
         return JSONResponse({"detail": "skill 不存在"}, 404)
+    over = _skill_too_big(s.content or "")
+    if over:
+        return over
     (d / "SKILL.md").write_text((s.content or "").rstrip() + "\n", encoding="utf-8")
     return {"ok": True, "name": name}
 
@@ -458,9 +482,21 @@ async def import_skill(file: UploadFile = File(...)):
     技能名优先取 SKILL.md frontmatter 的 name 字段，否则用 zip 内层目录名 / 文件名。
     """
     import zipfile, tempfile, shutil, io
-    raw = await file.read()
-    if len(raw) > _SKILL_MAX_BYTES:
-        return JSONResponse({"detail": "文件超过 200MB 上限"}, 413)
+    # 以前是 raw = await file.read() 再判 len —— 那个 200MB 上限是在**已经把它
+    # 全读进内存之后**才生效的，等于没有上限：一个 2GB 的包会先把这个 16GB 的
+    # 机器顶到 swapping，然后才被拒。分块读到上限就停手。
+    chunks = []
+    total = 0
+    while True:
+        part = await file.read(1 << 20)
+        if not part:
+            break
+        total += len(part)
+        if total > _SKILL_MAX_BYTES:
+            return JSONResponse({"detail": f"文件超过 "
+                                           f"{_SKILL_MAX_BYTES // (1024 * 1024)}MB 上限"}, 413)
+        chunks.append(part)
+    raw = b"".join(chunks)
     fname = (file.filename or "").strip()
     lower = fname.lower()
 
@@ -479,6 +515,9 @@ async def import_skill(file: UploadFile = File(...)):
                 return JSONResponse({"detail": "压缩包内未找到 SKILL.md（标准 skill 包需含 SKILL.md）"}, 400)
             pkg_name = md.parent.name if md.parent != tmp_root else (Path(fname).stem or "skill")
             text = md.read_text(encoding="utf-8", errors="replace")
+            over = _skill_too_big(text)
+            if over:
+                return over      # 包里那篇正文超限：整包装进来照样毒着每一步的提示词
             fm_name, _note = _skill_name_from_md(text, pkg_name)
             try:
                 result = _install_skill_dir(md.parent, fm_name or pkg_name)
@@ -488,6 +527,9 @@ async def import_skill(file: UploadFile = File(...)):
 
         if lower.endswith(".md") or fname == "SKILL.md":
             text = raw.decode("utf-8", errors="replace")
+            over = _skill_too_big(text)
+            if over:
+                return over
             stem = Path(fname).stem
             fm_name, _note = _skill_name_from_md(text, stem)
             name = _norm_skill_name(fm_name or stem)

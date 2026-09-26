@@ -286,6 +286,20 @@ def main():
 
     port = pick_port(preferred)
 
+    # 建表 / 补列 / 收上一世留下的"正在跑"，必须在主线程、且在这儿就发生。
+    # 以前它是 _serve 那条线程 import app.main 时顺带做的，于是数据库起不来时
+    # 异常死在线程里：主线程只看见端口一直没通，40 秒后弹"启动超时"，
+    # boot-error.log 一个字都没写 —— 真实原因（磁盘满、目录没权限、一次失败的
+    # 列迁移）就这么被吞了。init_db 是幂等的，显式叫一次不是多余动作。
+    try:
+        from app import db, updater
+        db.init_db()
+        updater.sweep_leftovers()
+    except Exception as e:
+        _log_exc("db", e)
+        _alert(f"数据目录打不开：{e}\n\n详情见安装目录 data\\boot-error.log")
+        return 3
+
     url = f"http://127.0.0.1:{port}"
     print(f"Loom 织流 启动 {url}")
     try:

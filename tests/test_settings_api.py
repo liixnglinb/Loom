@@ -6,6 +6,8 @@ import pytest
 
 from conftest import STATIC_DIR
 
+from app import db  # noqa: E402  (conftest 已经把数据目录挪进沙箱)
+
 
 def _get(client):
     r = client.get("/api/agents")
@@ -230,3 +232,41 @@ def test_a_caller_chosen_base_never_carries_the_stored_key(dbsession):
         ("https://evil.test/", "sk-mine", ""), "调用方自己带的凭证是它自己的，允许"
     assert main._preset_creds(0, "https://fresh.test/", "sk-new") == \
         ("https://fresh.test/", "sk-new", ""), "新建未存预设（无 id）不受影响"
+
+
+def _defaults(d):
+    return [x["name"] for x in d["presets"] if x.get("is_default")]
+
+
+def test_deleting_the_default_preset_leaves_a_default(client):
+    """删掉「默认」那一张，以前库里就一个默认都不剩：get_default_preset() 回 None，
+    于是所有没显式挑端点的步骤从此静默地不注入端点 —— 整套 API 接入不再起作用，
+    而界面上没有任何一处说它没了。删的时候必须把默认挪到还留着的那一张上。
+
+    库是会话级共享的、别的用例也会留下预设，所以这里只断言不变量：
+    删完之后恰好还剩一个默认，且它仍在这张表里、不是被删掉那一张。"""
+    a = _mk_preset(client, "gate-def-a")
+    b = _mk_preset(client, "gate-def-b")
+    try:
+        assert client.post(f"/api/providers/{b}/default").status_code == 200
+        d = client.delete(f"/api/providers/{b}").json()
+        left = _defaults(d)
+        assert len(left) == 1, f"删掉默认之后剩了 {len(left)} 个默认：{left}"
+        assert left[0] != "gate-def-b", "补位补到了刚被删掉那一张上"
+        assert left[0] in [x["name"] for x in d["presets"]]
+        assert db.get_default_preset(), "服务端已经拿不到默认预设"
+    finally:
+        client.delete(f"/api/providers/{a}")
+
+
+def test_deleting_a_non_default_preset_does_not_move_the_default(client):
+    """反向钉住：只有删的确实是默认那一张时才补位。
+    否则删一张备用端点会把用户挑好的默认悄悄换掉。"""
+    keep = _mk_preset(client, "gate-keep")
+    extra = _mk_preset(client, "gate-extra")
+    try:
+        assert client.post(f"/api/providers/{keep}/default").status_code == 200
+        d = client.delete(f"/api/providers/{extra}").json()
+        assert _defaults(d) == ["gate-keep"], _defaults(d)
+    finally:
+        client.delete(f"/api/providers/{keep}")

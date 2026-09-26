@@ -635,6 +635,10 @@ body.up-on .up-card{opacity:1;transform:translate(-50%,-50%);pointer-events:auto
 .up-mb{font-family:var(--font-mono);font-size:var(--fs-meta);color:var(--ink-3);margin-top:4px;
   font-variant-numeric:tabular-nums}
 .up-err{font-size:var(--fs-meta);color:var(--bad);margin-top:8px;line-height:1.5}
+/* 发版说明：清单里 notes 最长 2000 字，所以自带滚动，别把浮层顶成半屏高。 */
+.up-notes{font-size:var(--fs-meta);color:var(--ink-2);margin-top:10px;line-height:1.55;
+  max-height:132px;overflow-y:auto;white-space:pre-line;
+  border-left:2px solid var(--line-strong);padding-left:9px}
 .up-btns{display:flex;gap:8px;margin-top:16px}
 
 /* 侧栏搜索面板 */

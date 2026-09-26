@@ -158,6 +158,38 @@ def test_run_totals_are_not_limited_by_the_scan_window(dbsession, fresh_runs, mo
     assert d["by_status"] == {"done": 2, "failed": 1}
 
 
+def test_step_totals_and_extremes_cover_every_run(dbsession, fresh_runs):
+    """500 条那个扫描窗口以前不只影响总次数：第 501 条运行连**格子都画不出来**。
+    热力图少 94 天、"最长一步"偏低、累计 token 少算 —— 而页面上写的是"一年"，
+    没人看得出它其实在报最近 500 条。现在这些数走的是同一条全表 SQL。
+
+    造 501 条：最旧那条带着全表最大的 duration 和只有它才有的日期，
+    它一旦被窗口丢掉，下面三个断言立刻红。"""
+    old_day = (date.today() - timedelta(days=400)).isoformat()
+    recent = date.today()
+    for i in range(501):
+        rid = f"run-win{i:04d}"
+        day = old_day if i == 0 else recent.isoformat()
+        steps = [{"key": "a", "status": "done",
+                  "meta": {"day": day, "tokens": {"in": 10, "total": 10},
+                           "duration_ms": 9_999_999 if i == 0 else 1000,
+                           "cost_usd": 0.0, "tools": 1, "turns": 1}}]
+        dbsession.create_run(rid, "p", "t", steps)
+        # created_at 决定"谁落在最近 500 条里"，必须真排出先后，不能全是此刻
+        dbsession.update_run(rid, status="done", steps=steps,
+                             created_at=f"{day} 09:00:00")
+    st = runner.usage_stats()
+    try:
+        assert st["steps_total"] == 501, st["steps_total"]
+        assert st["peak_step_ms"] == 9_999_999, "极值还跟着窗口走"
+        assert old_day in st["daily"], f"400 天前那天没进热力图：{len(st['daily'])} 天"
+        assert st["daily"][old_day]["steps"] == 1
+        assert st["tokens"]["in"] >= 501 * 10
+    finally:
+        for i in range(501):
+            dbsession.delete_run(f"run-win{i:04d}")
+
+
 def test_orphan_scan_covers_every_run_not_just_the_window(dbsession, fresh_runs,
                                                           workspaces, monkeypatch):
     """孤儿工作区=有目录没记录。以前拿 list_runs 的前 500 条当"全部记录"，

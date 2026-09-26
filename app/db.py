@@ -17,6 +17,14 @@ DB_PATH = DB_DIR / "flowforge.db"
 def get_conn():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    # WAL：写任务的那条线程一步要写好几回落库，而页面每 400ms 轮询一次事件、
+    # 设置页随时在读 runs。默认的回滚日志模式下读者会把写者堵死（反之也一样），
+    # 表现就是偶发 "database is locked" 的 500。busy_timeout 兜同一件事的另一半：
+    # 真撞上锁时等 5 秒而不是立刻抛。synchronous=NORMAL 是 WAL 下的常规配对 ——
+    # 仍然只在本机断电时才可能丢最后几条，进程崩溃不丢已提交事务。
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
@@ -84,6 +92,12 @@ def init_db():
     _add_column(c, "runs", "brief", "brief TEXT NOT NULL DEFAULT ''")  # 任务说明
     # 下任务时选的工作文件夹（只当智能体的 cwd）。空串=没选，沿用派生工作区。
     _add_column(c, "runs", "workdir", "workdir TEXT NOT NULL DEFAULT ''")
+    # 两条索引都是给 runs 那张列表用的：list_runs 永远按 (created_at, id) 倒着取，
+    # 侧栏按流程筛一遍。没索引时这是每次打开页面一次全表扫 + 排序，跑到几百条
+    # 就能看出卡顿；(pipeline, created_at, id) 那条顺带把筛选和排序一起 cover 了。
+    # DESC 不用写：SQLite 倒着扫普通索引就是 created_at DESC, id DESC。
+    c.execute("CREATE INDEX IF NOT EXISTS idx_runs_created ON runs(created_at, id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_runs_pipeline ON runs(pipeline, created_at, id)")
     conn.commit(); conn.close()
 
 
@@ -295,7 +309,19 @@ def set_default_preset(pid):
 
 def delete_preset(pid):
     conn = get_conn(); c = conn.cursor()
+    row = c.execute("SELECT is_default FROM api_presets WHERE id=?", (pid,)).fetchone()
+    was_default = bool(row and row[0])
     c.execute("DELETE FROM api_presets WHERE id=?", (pid,))
+    if was_default and not c.execute(
+            "SELECT id FROM api_presets WHERE is_default=1 LIMIT 1").fetchone():
+        # 删掉的正好是「默认」那一张：库里从此一个默认都没有，
+        # get_default_preset() 回 None，于是所有没显式挑端点的步骤从此静默不注入
+        # 端点 —— 整套 API 接入配置不再起作用，而界面上没有任何一处说它没了。
+        # 补一个上去（取最早那张，和 add_preset 挑第一张的规则同一套）。
+        nxt = c.execute("SELECT id FROM api_presets ORDER BY id ASC LIMIT 1").fetchone()
+        if nxt:
+            c.execute("UPDATE api_presets SET is_default=1, updated_at=? WHERE id=?",
+                      (_now(), nxt[0]))
     conn.commit(); conn.close()
 
 

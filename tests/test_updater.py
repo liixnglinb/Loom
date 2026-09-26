@@ -58,13 +58,35 @@ class _StreamResp:
     ("1.0.0", "1.0.1", False),
     ("v2.0", "1.9.9", True),
     ("", "1.0.0", False),
-    # 已知取舍：按"抠数字"比较，非版本号的标签会被它的数字段支配。
+    # 已知取舍：认不出的形状退回"抠数字"比较，非版本号的标签会被它的数字段支配。
     # release-7 -> (7,) 会赢过 (1,0,0)。发版请用版本号做 version，别指望这里兜住。
     ("release-7", "1.0.0", True),
     ("build.20240101", "1.0.0", True),
+    # 预发布：这一组以前全是反的。抠数字会把 1.3.0-rc1 读成 (1,3,0,1)，
+    # 于是正式版 1.3.0 发出去之后，已在 1.3.0 的人被推荐回那个 rc —— 点一下
+    # 就是一次降级安装。semver 同号时带预发布段的那一边更旧。
+    ("1.3.0-rc1", "1.3.0", False),
+    ("1.3.0", "1.3.0-rc1", True),
+    ("1.3.0-rc2", "1.3.0-rc1", True),
+    ("1.3.0-rc1", "1.3.0-rc2", False),
+    ("1.3.0-alpha", "1.3.0-alpha.1", False),
+    ("1.3.0-alpha.1", "1.3.0-alpha", True),
+    ("1.3.0-beta", "1.3.0-rc1", False),        # 字母段按字符串：beta < rc
+    ("1.3.0", "1.3.0", False),
+    ("1.2.10", "1.2.9", True),                 # 两位数小版本号别再按字符串比
+    ("v1.3.0+build7", "1.3.0", False),         # build 元数据不参与新旧
 ])
 def test_version_compare(latest, local, newer):
     assert updater.is_newer(latest, local) is newer
+
+
+def test_version_compare_is_antisymmetric():
+    """新旧是个全序：a 比 b 的结果必须正好是 b 比 a 的反面。
+    只在单向断言里挑几个数，很容易两个方向都返回「更新」。"""
+    pairs = [("1.0.0", "1.0.1"), ("1.3.0", "1.3.0-rc1"), ("2.0", "1.9.9"),
+             ("1.2.3", "1.2.3"), ("v1.0.0", "1.0.0"), ("release-7", "1.0.0")]
+    for a, b in pairs:
+        assert updater.cmp_ver(a, b) == -updater.cmp_ver(b, a), f"{a} vs {b}"
 
 
 def test_norm_tag_strips_the_leading_v(client):
