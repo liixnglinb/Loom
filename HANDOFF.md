@@ -13,15 +13,17 @@
 |---|---|---|
 | 源码仓库 | `liixnglinb/Loom`（**公开**，main） | `gh api repos/liixnglinb/Loom/commits/main --jq .sha` |
 | 旧 ModelFlow | 保留在同仓库 `modelflow-legacy` 分支 + `v0.8.8-legacy` 标签 | `gh api repos/liixnglinb/Loom/branches --jq '.[].name'` |
-| 安装包 | `https://modelflow-1447874637.cos.ap-guangzhou.myqcloud.com/Loom-1.0.0-setup.exe`（36.2 MB，公有读） | `curl -sI <url> \| grep -i content-length` |
-| 版本清单 | 同桶 `latest.json`（公有读，含 version/url/sha256/size/notes） | `curl -s .../latest.json` |
+| 安装包 | `https://modelflow-1447874637.cos.ap-guangzhou.myqcloud.com/<清单里那个 file>`（公有读；**别在这里写死版本**，照着 latest.json 读） | `curl -sI <url> \| grep -i content-length` |
+| 版本清单 | 同桶 `latest.json`（公有读，含 version/url/file/sha256/size/notes）—— 真源只有这一份 | `curl -s .../latest.json` |
 | 下载页 | `https://lxlrwxs.top/modelflow/`（**URL 沿用 modelflow**，内容已是 Loom，无授权码） | 带浏览器 UA 抓页面，`grep -c 授权码` 应为 0 |
 | 软件内更新 | 读同一份 `latest.json`；打包态可静默装上 | `curl -s localhost:8000/api/update` |
 
 ```bash
-# 一把梭验证（任何一条不对就是分发链断了）
-curl -s https://modelflow-1447874637.cos.ap-guangzhou.myqcloud.com/latest.json
-curl -sI https://modelflow-1447874637.cos.ap-guangzhou.myqcloud.com/Loom-1.0.0-setup.exe | head -3
+# 一把梭验证（任何一条不对就是分发链断了）。文件名从清单里读，不写死版本：
+# 这一节以前写死过 Loom-1.0.0，发三版之后整段就是假的，照着复核的人会以为分发链断了。
+M=https://modelflow-1447874637.cos.ap-guangzhou.myqcloud.com/latest.json
+curl -s $M
+curl -sI "$(curl -s $M | sed -n 's/.*"url": "\([^"]*\)".*/\1/p')" | head -3
 curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-setup.exe" | head -1
 ```
 
@@ -39,6 +41,46 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
 要推：`unset GITHUB_TOKEN GH_TOKEN`，再走第 3 节那条 `http.curloptResolve` 命令。推完再跑一次上面
 那条 `gh api`，**线上 sha 真变了才算上去**（本地 `origin/main` 引用会滞后，别拿它当线上状态；
 本文档也故意不写死本地 HEAD 的 sha —— 改它自己就会多出一个提交）。
+
+**这一轮（2026-09-26，发 1.2.4）是"六路对抗复核"查出来的东西全修完**。用户只说了两个字：全部修。
+按严重度分三批，每条各钉一条会红的测试，改完一条就去掉那段代码确认它真会红：
+
+- **P0（`e351efb`）**：符号链接能把两家 CLI 的密钥文件读进接口（`_outside_root` + 名字黑名单 +
+  写盘 tmp 用 `O_EXCL|O_NOFOLLOW`）；进程被杀后 `running` 那行永远留在库里 → 侧栏转圈、停止按钮失效、
+  重跑被挡、`count_active_runs()` 恒算它活跃，**应用内更新从此永久 409**（`reconcile_interrupted_runs`）；
+  僵尸行的 cancel；更新器开始下载前不核对目标目录（`asset` 带 `..` 就能把包写到启动目录）；
+  `/api/providers/test` 会把库里存的密钥发去调用方指定的 base（改成只连 127.0.0.1）；
+  关窗口时那个"有任务在跑"的确认恒不触发（读了一个从没被赋值过的 `ST.activeRuns`，现全局禁用那个拼法）。
+- **P1（`b31d8d4`）**：markdown 渲染只转 `& < >`，一个带双引号的 URL 就能逃出 `href` 属性挂上任意事件
+  处理器（全站没 CSP，产物面板和记忆预览同一个 sink）；八处内联 `onclick` 里误用 `esc()`（那是 HTML
+  文本用的，放进 JS 字符串少转一层）；两次导航并发会把 `dataset.shell` 留在错的页上（侧栏顶栏一起消失），
+  串成一条链之后**必须给链尾挂 catch**，否则一轮抛异常整个应用再也翻不了页；按停止把已经流出来的正文
+  连着调用栈一起扔（现在落 `partial-*.md`，产物列表里点得开）；`postAgents` 失败也返回真值，
+  四道 `if(!await postAgents(...))` 守卫一次也没生效过；最大化时八个拉边手柄不藏；
+  输入台的引擎候选写死两家（现在读实测盘点）。
+- **P2（`d63eaae`）**：SQLite 开 WAL + `busy_timeout`（读写互相堵死会冒成接口 500，三个线程的测试
+  在 DELETE 模式下立刻红）；`runs` 两条索引；**统计口径脱离 500 行窗口**（见第 2 节那条，改成
+  一条 `json_each` 全表聚合，并和旧实现做过逐字段等价比对）；semver 正式比较（以前 `1.3.0-rc1`
+  被读成 `(1,3,0,1)`，比正式版 `1.3.0` **大** —— 正式版发出去之后还会推荐已在 1.3.0 的人降回 rc）；
+  装完把 60MB 安装包留在 `data/updates`（批处理删 + 开机扫）；建表/补列挪回主线程包进 try
+  （以前它死在服务线程里，用户只看到"启动超时"，`boot-error.log` 一个字都没写）；
+  选了工作文件夹就把引擎钉进快照（否则跑到一半换默认引擎，后半条 run 带着用户目录跑 codex，
+  正是起跑前拒掉的那个组合）；删掉「默认」预设时补位；技能正文 512KB 上限 + 导入改成边读边判；
+  `upload_cos.py` 发布前自检（sha256/size 对着真包重算、file/version/url/桶四者互核、不过一个字节
+  都不传，传完再匿名回读比版本比 sha、对 HEAD 状态码和大小）；更新浮层渲染 `notes`（发版说明写了
+  这么多次，软件里从来没显示过）；`FF_SEL` 回收。
+
+**这一轮的方法论收获，四条别丢**（都在第 3 节有对应条目）：
+① **自己写的注释会撞红自己的静态契约测试** —— 测试用正则扫源码，看不出那是注释。
+`onmouseover="alert(1)`、`ST.activeRuns`、`await file.read()` 三次都是这么炸的。写"以前这里错在 X"
+的注释时，别把 X 的原文写成可被扫到的形状。
+② **库是会话级共享的**：一条 `status='running'` 留在库里，后面更新器那条测试就随机红，
+红不红只看文件顺序。跨文件要么自己 `finally` 删干净，要么把断言写成增量（`>= 2` / `<= before - 2`）。
+③ **验证仪器要先验**：Node 24 的全局 `WebSocket` 跟 WebView2 的 CDP 端点握不上手（同一 URL
+`curl` 能拿到 101），得用 stdlib socket 自己写帧解析；帧头那两个 `self._rd(2)[0], self._rd(1)[0]`
+是**顺序消费 3 个字节**，解出来的全是碎帧。
+④ **系统途径要真走系统途径**：`ctypes.ShowWindow(hwnd, SW_MAXIMIZE)` 才等价于 Win+↑，
+在页面里调我们自己的按钮测不到 `resize`/`focus` 那条 —— 而那正是这批要修的东西。
 
 **这一轮（2026-09-25，发 1.2.0）做完的**：权限模式收成三档并让模式接管沙箱（第四档用检查点代替）、
 运行级模型覆盖（候选只列真存在的端点预设）、工作文件夹（**只换智能体的 cwd，Loom 自己的写入仍留在
@@ -69,7 +111,11 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
 要修得连 `.sb-kbd` / `.sb-group` 那一族"暗字压浅底"一起看，属于一次独立的亮色对比度专项。
 
 **这一轮留下两条没验的，别当成已验**：① 打包态 `apply_update()` 仍然没真跑过（下面第 2 节那条老账，
-1.2.x 不改变这一点）；② 安装包仍无代码签名，SmartScreen 照拦。
+1.2.x 不改变这一点）。**1.2.4 又往这条没验过的路上加了两件事**：批处理装完会 `del` 那个 setup.exe，
+而开机还会扫一遍 `data/updates` —— 两条都有测试，但都只在临时目录里验过，真装机路径（安装器
+`/SILENT` 返回后那个文件到底还被不被占用）没人量过。真出问题时最坏的结果是包留在那儿没删掉，
+不会伤人；最好的一次验证机会是下一次装 1.2.4 的时候顺手看一眼 `data\updates`。
+② 安装包仍无代码签名，SmartScreen 照拦。
 （原来第三条"无边框窗控拿不到桥"**已经验掉了**：`webview.start(func,args)` 那条路确实不返回，
 但启动前设 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=92xx`，再从
 `/json/list` 拿 page 目标的 ws 连 CDP `Runtime.evaluate`，就能在真窗口里量。实测结果见第 2 节
@@ -144,10 +190,18 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
   而 `test_appearance_bulk_cannot_touch_engine_keys` 那类边界也会被拖进来。
   热力图列数恒定 52（锚点是"今天那一周的周日往回数 51 周"）—— 按天数换算再补一周的写法
   会在非周日收尾时多出第 53 列，把网格顶出卡片。
-- **统计页有两套口径，别混。** 逐条累计（token / 时长 / 步骤 / 成本）只扫最近 500 条 run —— 一次
-  `list_runs` 要把每行 steps JSON 全解出来，跑几千条再点设置页会卡住；而"总次数"和状态分布走
-  `db.run_status_counts()`（COUNT(*)），孤儿工作区判定走 `db.all_run_ids()`（全表）。
-  把后两者接回窗口的写法都出现过，后果分别是：跑到 501 就永远显示 500、第 501 条的现场被当成孤儿报出来。
+- **统计口径已经统一成全表，别再往回改。** 2026-09-26 之前这里有两套口径：逐条累计（token / 时长 / 步骤 /
+  成本 / 极值 / 热力图）只扫最近 500 条，而"总次数"和状态分布走 `db.run_status_counts()`（COUNT(*)）、
+  孤儿工作区判定走 `db.all_run_ids()`（全表）。窗口那半套的代价是**第 501 条连格子都画不出来**：
+  实测 4000 条数据下一年热力图少 94 天、"最长一步"偏低。现在逐条累计走 `runner._STATS_SQL`
+  （一条 `json_each` 全表聚合，4000 条 ×7 步实测 188ms），三套口径并成一套。
+  回到窗口的写法以前出现过两次，这次由 `test_step_totals_and_extremes_cover_every_run` 钉住
+  （造 501 条，最旧那条带着全表极大值和只有它才有的日期）。
+- **删端点预设时为什么不弹"还有 N 个步骤在用"**：步骤的 `model` 字段有两种合法身份 —— 预设名，
+  或者**裸模型 id**（那套阶梯里明写着"挂到默认预设上"）。删预设时手上只有一个字符串，
+  认不出来的那些既可能是被删的预设也可能是用户手打的模型名，一报警就全是假警报。
+  要区分必须给步骤快照加一个来源标记（`preset:` 前缀之类），那是改 schema + 迁老数据的事。
+  删掉「默认」那一张会静默把整套端点配置弄没，这条已经修了（`db.delete_preset` 补位）。
 - **软件只剩一个技能目录。** `paths.BASE / "skills"` 那四支扫描（列表 / 详情 / 另存源 / 提示词装载）已全撤：
   装过 1.0.0 的目录里还留着 `skills/ff-*`，扫它等于让出厂技能悄悄复活。随之 `editable`/`source` 恒为真，
   技能徽标、只读提示、编辑器 readonly 与 `sk.viewTitle`/`sk.readonly`/`sk.badgeUser`/`c.user` 一并删掉；
@@ -196,6 +250,28 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
 - 内嵌的 in-app 浏览器经常 `visibilityState: hidden`，CSS `:hover` 的 computed style 量不到；JS 驱动的提示（`data-tip`）可以用 `dispatchEvent(new PointerEvent('pointerover'))` 触发。截图工具基本用不了（`NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`）。
 - **隐藏标签页里 CSS transition 不走**：切完主题立刻 `getComputedStyle` 会量到上一套主题的颜色，看起来像暗色令牌漏进浅色。多等两秒或先重渲染再量，别急着改 CSS。
 - 想在浏览器里验一个只有真下载才会出现的状态：临时 `window.fetch = (u,o)=> String(u).includes('/api/update')&&… ? Promise.resolve(new Response(JSON.stringify(假状态))) : real(u,o)`，再 `await renderSettings('update')`。**验完必须把 fetch 换回去并重渲染**，否则页面留着一个不存在的下载进度。
+- **静态契约测试是正则扫源码的，看不出那是注释。** 三次自己撞红自己：在 `ui.js` 注释里写了一行
+  `onmouseover="alert(1)` 当反例（`test_inline_handlers_only_call_exported_globals` 扫 `on\w+="..."`
+  把它当真处理器）、在 `app.js` 注释里提了一句 `ST.activeRuns`（全局禁那个拼法的那条断言当场红）、
+  在 `main.py` 注释里写 `raw = await file.read()`（`test_import_reads_in_chunks_not_all_at_once`
+  扫源码，把旧写法当新代码）。**描述错误用法时别写成可被扫到的形状**，或者让测试先剔掉注释行。
+- **测试库是会话级共享的，`runs` 表不会自动清。** 一条 `status='running'` 留在库里，后面
+  `test_updater` 那条"源码态拒绝安装"就会被 `count_active_runs()` 顶成 409 —— 红不红只看文件顺序，
+  全量跑绿、单跑两文件红。造脏状态的那条要么 `finally: delete_run(...)`，要么把断言写成增量
+  （`>= 2` / `<= before - 2`）。（settings 有 `conftest._restore_settings` 自动还原，`runs` /
+  `api_presets` 没有 —— 预设那几条因此只能断言不变量，不能断言"表里只剩我这一条"。）
+- **验仪器本身**：Node 24 的全局 `WebSocket` 跟 WebView2 的 CDP 端点握不上手（同一个 URL
+  `curl` 能拿到 101，Node 连不上），只能用 stdlib socket 自己写帧解析。写帧解析时注意
+  Python 元组赋值是**从左到右顺序消费**的 —— `b0, b1 = self._rd(2)[0], self._rd(1)[0]`
+  读掉的是 3 个字节，`b1` 其实是帧的第三字节，解出来的消息全是碎的。CDP 还会把一条消息拆成多帧
+  （FIN=0），要收齐再 `json.loads`。
+- **系统途径的窗口状态要用系统途径测**：`ctypes.windll.user32.ShowWindowW(hwnd, 3)`（SW_MAXIMIZE）
+  才等价于 Win+↑ / 贴边快照；在页面里调我们自己的 `winMaxToggle()` 走的是"按钮自己同步"那条路，
+  永远测不到 `resize`/`focus` 监听。真窗口里的取数口：`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=92xx`
+  + `/json/list` 拿 `webSocketDebuggerUrl`（Git Bash 会把 `/devtools/page/x` 这种参数改写成本地路径，
+  路径要在脚本里从 `/json/list` 现取）。
+- **SQLite 开了 WAL 之后数据目录会多 `flowforge.db-wal` / `-shm` 两个影子文件**，`modex-data/` 整目录
+  已在 `.gitignore` 里，别单独给它们加例外；安装包不碰数据目录，升级不受影响。
 
 ---
 
@@ -231,7 +307,7 @@ loom_launch.py         打包态入口（pywebview 窗口 → 失败退回浏览
 loom.spec              PyInstaller。**excludes 里那串重库别删**，见 make_release 注释
 installer.iss          Inno。装 {localappdata}\Programs\Loom，卸载保留 data\
 make_release.py        一键出 setup.exe + latest.json；拒绝把开发机 data/ 打进包
-upload_cos.py          上传 + 设公有读 + 匿名回读验证（签名成功 ≠ 公网能下）
+upload_cos.py          传之前先自检清单与真包（sha256/size/file/version/url/桶互核，不过就一个字节都不传），再上传 + 设公有读 + 匿名回读验证（签名成功 ≠ 公网能下）
 sync_landing.py        发版第 5 步：下载页兜底版本号/体积，锚点 + 计数断言都写死在里面
 make_icon.py           PIL 画图标（本机无 SVG 渲染器）。大档走矢量几何，16/20/24/32/40
                        走 SMALL 表按目标像素网格各画一遍 —— 别改回"画 1024 再缩放"，
@@ -309,6 +385,25 @@ PYTHONUTF8=1 "<python>" -m pytest -q          # 全绿即可，不需网络
 - **`node --check` 过一遍每个 `static/*.js`。** 其余契约全靠正则扫源码，看不见语法错误：
   这一轮把 Python 的"相邻字符串自动相连"当成 JS 写进字典，设置页整个白屏
   （`t is not a function`），200 条测试一条不红。
+- 「检测连通」那两条路都要重新看：`/api/providers/test` 现在**只准连 127.0.0.1**，且库里存的密钥
+  永远不会被发去调用方指定的 base（改 base 不重打 key 就报错，不静默外送）。
+- **数据层三条别退回**（`tests/test_db_concurrency.py`）：连接必须开 WAL + `busy_timeout>=5000`
+  + `synchronous=NORMAL`（只设在一个新连接上不算， pragma 是**每连接**的，journal_mode 才是库级持久的）；
+  `runs` 上那两条索引必须还在，且 `EXPLAIN QUERY PLAN` 里不许出现 `TEMP B-TREE`；
+  三线程同读同写那条在 DELETE 模式下会当场红 —— 它就是为盯这个而写的。
+- **统计口径不许再退回扫描窗口**：`test_step_totals_and_extremes_cover_every_run` 造 501 条，
+  最旧那条带着全表最大 `duration_ms` 和只有它才有的日期；窗口一回来三条断言全红。
+- **版本号比较是 semver**，不是抠数字。反向断言也要跑（`test_version_compare_is_antisymmetric`）：
+  只在单向挑几个数，很容易两个方向都返回「更新」。
+- **发布脚本必须在传之前自检**（`tests/test_publish_selfcheck.py`）：`consistency_errors` 覆盖
+  sha256/size 与真包、file↔version、url↔file↔桶、notes 非空。更新器现在完全信任 `latest.json`
+  做安全判定，所以一份对不上的清单传上去 = 所有人「检查通过、点安装就报错」。
+- 引擎归属是**起跑那一刻定死的**：选了工作文件夹就把 `resolve_engine` 的结果钉进步骤快照
+  （`test_a_run_with_a_workdir_pins_the_engine_it_started_with`）。步级 engine 留空 = 每一步重读全局默认，
+  跑到一半改设置会把后半条 run 拐去 codex —— 而 codex + 用户目录正是起跑前拒掉的那个组合。
+- 技能正文有 512KB 上限（新建 / 编辑 / 导入三条路都判），那份正文是**整篇**进每一步提示词的。
+  导入的 200MB 上限是边读边判，不许回到 `await file.read()` 之后才看 `len`。
+- 更新浮层要渲染清单里的 `notes`（转义 + 带滚动上限），`FF_SEL` 的修剪只准挂在 `ffOpen` 上。
 - 路径越界用例是参数化的一整套（`../../db`、`%2e%2e`、绝对路径…），新加读文件的端点要接进同一套校验。
 - **内联 `onclick="x()"` 里的名字必须在 `window` 上找得到。** 四个脚本各自是 IIFE，没导出的函数在全局作用域里
   不存在 —— 产出面板那个「刷新」就是这么死的（按钮照画，点一下 ReferenceError，而几百条测试一条都不会红）。
