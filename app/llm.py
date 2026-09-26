@@ -79,7 +79,18 @@ def _chat_anthropic(api_base, api_key, model, messages, temperature, max_tokens)
         raise LLMError(f"LLM 调用失败 HTTP {resp.status_code}: {resp.text[:300]}")
     try:
         data = resp.json()
-        return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+        blocks = data.get("content") or []
+        text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+        if not text.strip():
+            # 思考型模型先出 thinking 再出 text（百炼 qwen3.8-flash 实测：16 token 的
+            # 预算全花在 thinking 上，stop_reason=max_tokens，一个 text 块都没有）。
+            # 连接明明是通的、回文却是空的，界面上就成了"点了没反应"。
+            # 退一步把 thinking 的开头回显出来，至少看得出对面真回了话。
+            think = "".join(b.get("thinking", "") for b in blocks
+                            if b.get("type") == "thinking").strip()
+            if think:
+                text = "（思考）" + think
+        return text
     except Exception:
         raise LLMError(f"LLM 返回异常: {resp.text[:300]}")
 
@@ -96,9 +107,12 @@ def chat(provider, api_base, api_key, model, messages, temperature=0.7, max_toke
 
 
 def test_connection(provider="openai", api_base="", api_key="", model=""):
+    """一次连通性探测。预算给到 64（= chat() 那个硬顶）而不是 16：
+    思考型模型 16 token 只够它想，正文一个字都出不来，看着就像没通。
+    再往上给就要先动 chat() 里那行硬顶，而那行是产品红线的守门人。"""
     try:
         text = chat(provider, api_base, api_key, model,
-                    [{"role": "user", "content": "连接测试：回复ok两个字"}], max_tokens=16)
+                    [{"role": "user", "content": "连接测试：回复ok两个字"}], max_tokens=64)
         return True, (text or "").strip()[:50]
     except Exception as e:
         return False, str(e)

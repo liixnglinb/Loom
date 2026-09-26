@@ -72,3 +72,43 @@ def test_llm_module_offers_no_streaming_exit():
     """流式出口已随执行链一起删掉，别再留着名字让人以为能生成正文。"""
     for name in ("chat_stream", "_stream_openai", "_stream_anthropic"):
         assert not hasattr(llm, name), f"llm.{name} 又长回来了"
+
+
+class _ThinkOnlyResp:
+    """思考型模型预算不够时的真实形状（百炼 qwen3.8-flash，max_tokens=16 实测）：
+    只有 thinking 块，stop_reason 是 max_tokens。"""
+    status_code = 200
+    text = ""
+
+    def json(self):
+        return {"stop_reason": "max_tokens", "content": [
+            {"type": "thinking", "thinking": "用户要我回 ok，那我就只回 ok。",
+             "signature": ""}]}
+
+
+def test_anthropic_probe_falls_back_to_thinking_when_there_is_no_text(monkeypatch):
+    """连接是通的、回文却是空的，界面上就是"点了没反应"。
+    没有 text 块时把 thinking 的开头回显出来，至少看得出对面真回了话。"""
+    monkeypatch.setattr(llm.requests, "post",
+                        lambda *a, **k: _ThinkOnlyResp())
+    ok, msg = llm.test_connection("anthropic", "https://gw.example/apps/anthropic",
+                                  "sk-x", "qwen3.8-flash")
+    assert ok
+    assert msg, "只回 thinking 的模型不该把回文清空"
+    assert "ok" in msg and msg.startswith("（思考）"), msg
+
+
+def test_probe_budget_clears_the_thinking_stage(monkeypatch):
+    """探测预算必须给到 64：16 token 连思考都出不来，
+    于是每次测一个推理模型都是绿灯空白（上面那条就是那个形状）。"""
+    sent = {}
+
+    def _post(url, json=None, headers=None, timeout=None):
+        sent["body"] = json
+        return _Resp()
+
+    monkeypatch.setattr(llm.requests, "post", _post)
+    llm.test_connection("anthropic", "https://gw.example/v1", "sk-x", "m")
+    assert sent["body"]["max_tokens"] == 64, sent["body"]
+    # 但绝不允许越过 chat() 那道硬顶
+    assert sent["body"]["max_tokens"] <= 64

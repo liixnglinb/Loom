@@ -176,6 +176,18 @@ curl -s -A "Mozilla/5.0" https://lxlrwxs.top/modelflow/ | grep -o "Loom-[0-9.]*-
   百度千帆 `/v2/tokenplan/personal/v1/messages` 都是 404，两家的 anthropic 路其实各自在 `/anthropic`，已改；
   硅基流动的 `/v1/messages` 返回 401，是唯一一条以 `/v1` 结尾还成立的，所以它在
   `test_anthropic_catalog_bases_are_not_openai_paths` 的名单里。**新增条目按同一办法探，别照文档抄。**
+- **阿里云百炼这一条是拿真 key 验过的（2026-09-26），两个协议都通**：目录里的
+  `https://dashscope.aliyuncs.com/apps/anthropic` 返回 200 且是真 Anthropic 结构；
+  OpenAI 兼容路 `https://dashscope.aliyuncs.com/compatible-mode/v1` 也通，业务空间自己的
+  `https://ws-<id>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`（和 `.../apps/anthropic`）同样通。
+  踩到的一件事：**`/api/providers/test` 不传 `provider` 时默认走 openai 分支**，拿它去打 anthropic 地址
+  会得到一个长得像"路径 404"的错（报错格式是 openai SDK 的 `Error code: 404`）—— 我第一遍就这么误判过，
+  以为目录项坏了。判读探路结果前先确认自己传的是哪个协议。
+- **思考型模型会把小预算整个吃光，「检测连通」因此绿灯空白。** 百炼 `qwen3.8-flash` 实测：
+  `max_tokens=16` 时它只回一个 `thinking` 块、`stop_reason=max_tokens`，一个 `text` 块都没有 ——
+  `_chat_anthropic` 只收 `type=="text"`，于是 `ok=True` 而回文空串，界面上就是"点了没反应"。
+  探测预算已提到 64（`chat()` 那道硬顶不变，那是产品红线的守门人），并且没有 text 块时回退去显示
+  thinking 的开头（打头标 `（思考）`）。接新模型测这条时按同一形状看：`content[]` 里有哪些 type。
 - **`app/cli_inventory.py` 只许回名字、条数、路径 —— 值一个字节都不许进接口。** 它扫的是两家 CLI
   自己的配置面，那些文件里就是真密钥：本机 `~/.claude/settings.json` 的 `env` 里有
   `ANTHROPIC_AUTH_TOKEN`、`~/.claude.json` 里有 `oauthAccount`、`~/.codex/config.toml` 里有
